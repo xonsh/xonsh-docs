@@ -1,0 +1,349 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>xonsh.prompt.vc_branch &#8212; xonsh 0.4.7.dev230 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/numpy_friendly.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.4.7.dev230',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <script type="text/javascript" src="../../../_static/jquery.cookie.js"></script>
+    <script type="text/javascript" src="../../../_static/cloud.js"></script>
+    <link rel="shortcut icon" href="../../../_static/magic_conch.ico"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link rel="top" title="xonsh 0.4.7.dev230 documentation" href="../../../index.html" />
+    <link rel="up" title="Module code" href="../../index.html" /> 
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+  </head>
+  <body role="document">
+    <div class="relbar-top">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../index.html">xonsh 0.4.7.dev230 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for xonsh.prompt.vc_branch</h1><div class="highlight"><pre>
+<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;Prompt formatter for simple version control branchs&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">queue</span>
+<span class="kn">import</span> <span class="nn">builtins</span>
+<span class="kn">import</span> <span class="nn">warnings</span>
+<span class="kn">import</span> <span class="nn">threading</span>
+<span class="kn">import</span> <span class="nn">subprocess</span>
+
+<span class="kn">import</span> <span class="nn">xonsh.tools</span> <span class="k">as</span> <span class="nn">xt</span>
+
+
+<span class="k">def</span> <span class="nf">_get_git_branch</span><span class="p">(</span><span class="n">q</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">branches</span> <span class="o">=</span> <span class="n">xt</span><span class="o">.</span><span class="n">decode_bytes</span><span class="p">(</span><span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">(</span>
+            <span class="p">[</span><span class="s1">&#39;git&#39;</span><span class="p">,</span> <span class="s1">&#39;branch&#39;</span><span class="p">],</span>
+            <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span>
+        <span class="p">))</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+    <span class="k">except</span> <span class="p">(</span><span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">,</span> <span class="ne">OSError</span><span class="p">):</span>
+        <span class="n">q</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">branch</span> <span class="ow">in</span> <span class="n">branches</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">branch</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;* &#39;</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="k">elif</span> <span class="n">branch</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s1">&#39;)&#39;</span><span class="p">):</span>
+                <span class="n">branch</span> <span class="o">=</span> <span class="n">branch</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="o">-</span><span class="mi">1</span><span class="p">][:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">branch</span> <span class="o">=</span> <span class="n">branch</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+            <span class="n">q</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">branch</span><span class="p">)</span>
+            <span class="k">break</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">q</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="get_git_branch"><a class="viewcode-back" href="../../../api/prompt/vc_branch.html#xonsh.prompt.vc_branch.get_git_branch">[docs]</a><span class="k">def</span> <span class="nf">get_git_branch</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Attempts to find the current git branch. If this could not</span>
+<span class="sd">    be determined (timeout, not in a git repo, etc.) then this returns None.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">branch</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">timeout</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;VC_BRANCH_TIMEOUT&#39;</span><span class="p">)</span>
+    <span class="n">q</span> <span class="o">=</span> <span class="n">queue</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
+
+    <span class="n">t</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">_get_git_branch</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">q</span><span class="p">,))</span>
+    <span class="n">t</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">t</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">branch</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">get_nowait</span><span class="p">()</span>
+    <span class="k">except</span> <span class="n">queue</span><span class="o">.</span><span class="n">Empty</span><span class="p">:</span>
+        <span class="n">branch</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">branch</span></div>
+
+
+<span class="k">def</span> <span class="nf">_get_parent_dir_for</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">dir_name</span><span class="p">,</span> <span class="n">timeout</span><span class="p">):</span>
+    <span class="c1"># walk up the directory tree to see if we are inside an hg repo</span>
+    <span class="c1"># the timeout makes sure that we don&#39;t thrash the file system</span>
+    <span class="n">previous_path</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+    <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+    <span class="k">while</span> <span class="n">path</span> <span class="o">!=</span> <span class="n">previous_path</span> <span class="ow">and</span> <span class="p">((</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">timeout</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">dir_name</span><span class="p">)):</span>
+            <span class="k">return</span> <span class="n">path</span>
+        <span class="n">previous_path</span> <span class="o">=</span> <span class="n">path</span>
+        <span class="n">path</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">path</span> <span class="o">==</span> <span class="n">previous_path</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="get_hg_branch"><a class="viewcode-back" href="../../../api/prompt/vc_branch.html#xonsh.prompt.vc_branch.get_hg_branch">[docs]</a><span class="k">def</span> <span class="nf">get_hg_branch</span><span class="p">(</span><span class="n">cwd</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+    <span class="n">cwd</span> <span class="o">=</span> <span class="n">env</span><span class="p">[</span><span class="s1">&#39;PWD&#39;</span><span class="p">]</span>
+    <span class="n">root</span> <span class="o">=</span> <span class="n">_get_parent_dir_for</span><span class="p">(</span><span class="n">cwd</span><span class="p">,</span> <span class="s1">&#39;.hg&#39;</span><span class="p">,</span> <span class="n">env</span><span class="p">[</span><span class="s1">&#39;VC_BRANCH_TIMEOUT&#39;</span><span class="p">])</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="c1"># Bail if we are not in a repo or we timed out</span>
+        <span class="k">if</span> <span class="n">root</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">TimeoutExpired</span><span class="p">([</span><span class="s1">&#39;hg&#39;</span><span class="p">],</span> <span class="n">env</span><span class="p">[</span><span class="s1">&#39;VC_BRANCH_TIMEOUT&#39;</span><span class="p">])</span>
+    <span class="k">if</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;VC_HG_SHOW_BRANCH&#39;</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="c1"># get branch name</span>
+        <span class="n">branch_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">sep</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="n">root</span><span class="p">,</span> <span class="s1">&#39;.hg&#39;</span><span class="p">,</span> <span class="s1">&#39;branch&#39;</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">branch_path</span><span class="p">):</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">branch_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">branch_file</span><span class="p">:</span>
+                <span class="n">branch</span> <span class="o">=</span> <span class="n">branch_file</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">branch</span> <span class="o">=</span> <span class="s1">&#39;default&#39;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">branch</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+    <span class="c1"># add bookmark, if we can</span>
+    <span class="n">bookmark_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">sep</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="n">root</span><span class="p">,</span> <span class="s1">&#39;.hg&#39;</span><span class="p">,</span> <span class="s1">&#39;bookmarks.current&#39;</span><span class="p">])</span>
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">bookmark_path</span><span class="p">):</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">bookmark_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">bookmark_file</span><span class="p">:</span>
+            <span class="n">active_bookmark</span> <span class="o">=</span> <span class="n">bookmark_file</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;VC_HG_SHOW_BRANCH&#39;</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="n">branch</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{0}</span><span class="s2">, </span><span class="si">{1}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="o">*</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">linesep</span><span class="p">)</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span>
+                                         <span class="p">(</span><span class="n">branch</span><span class="p">,</span> <span class="n">active_bookmark</span><span class="p">)))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">branch</span> <span class="o">=</span> <span class="n">active_bookmark</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">linesep</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">branch</span> <span class="o">=</span> <span class="n">branch</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">linesep</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">branch</span></div>
+
+
+<span class="n">_FIRST_BRANCH_TIMEOUT</span> <span class="o">=</span> <span class="kc">True</span>
+
+
+<span class="k">def</span> <span class="nf">_first_branch_timeout_message</span><span class="p">():</span>
+    <span class="k">global</span> <span class="n">_FIRST_BRANCH_TIMEOUT</span>
+    <span class="n">sbtm</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="p">[</span><span class="s1">&#39;SUPPRESS_BRANCH_TIMEOUT_MESSAGE&#39;</span><span class="p">]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">_FIRST_BRANCH_TIMEOUT</span> <span class="ow">or</span> <span class="n">sbtm</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="n">_FIRST_BRANCH_TIMEOUT</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;xonsh: branch timeout: computing the branch name, color, or both &#39;</span>
+          <span class="s1">&#39;timed out while formatting the prompt. You may avoid this by &#39;</span>
+          <span class="s1">&#39;increaing the value of $VC_BRANCH_TIMEOUT or by removing branch &#39;</span>
+          <span class="s1">&#39;fields, like </span><span class="si">{curr_branch}</span><span class="s1">, from your $PROMPT. See the FAQ &#39;</span>
+          <span class="s1">&#39;for more details. This message will be suppressed for the remainder &#39;</span>
+          <span class="s1">&#39;of this session. To suppress this message permanently, set &#39;</span>
+          <span class="s1">&#39;$SUPPRESS_BRANCH_TIMEOUT_MESSAGE = True in your xonshrc file.&#39;</span><span class="p">,</span>
+          <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="current_branch"><a class="viewcode-back" href="../../../api/prompt/vc_branch.html#xonsh.prompt.vc_branch.current_branch">[docs]</a><span class="k">def</span> <span class="nf">current_branch</span><span class="p">(</span><span class="n">pad</span><span class="o">=</span><span class="bp">NotImplemented</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Gets the branch for a current working directory. Returns an empty string</span>
+<span class="sd">    if the cwd is not a repository.  This currently only works for git and hg</span>
+<span class="sd">    and should be extended in the future.  If a timeout occurred, the string</span>
+<span class="sd">    &#39;&lt;branch-timeout&gt;&#39; is returned.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">pad</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">NotImplemented</span><span class="p">:</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;The pad argument of current_branch has no effect now &quot;</span>
+                      <span class="s2">&quot;and will be removed in the future&quot;</span><span class="p">)</span>
+    <span class="n">branch</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">cmds</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_commands_cache__</span>
+    <span class="k">if</span> <span class="n">cmds</span><span class="o">.</span><span class="n">lazy_locate_binary</span><span class="p">(</span><span class="s1">&#39;git&#39;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">cmds</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
+        <span class="n">branch</span> <span class="o">=</span> <span class="n">get_git_branch</span><span class="p">()</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">cmds</span><span class="o">.</span><span class="n">lazy_locate_binary</span><span class="p">(</span><span class="s1">&#39;hg&#39;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">cmds</span><span class="o">.</span><span class="n">is_empty</span><span class="p">())</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">branch</span><span class="p">:</span>
+        <span class="n">branch</span> <span class="o">=</span> <span class="n">get_hg_branch</span><span class="p">()</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">branch</span><span class="p">,</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">TimeoutExpired</span><span class="p">):</span>
+        <span class="n">branch</span> <span class="o">=</span> <span class="s1">&#39;&lt;branch-timeout&gt;&#39;</span>
+        <span class="n">_first_branch_timeout_message</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">branch</span> <span class="ow">or</span> <span class="kc">None</span></div>
+
+
+<span class="k">def</span> <span class="nf">_git_dirty_working_directory</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">include_untracked</span><span class="p">):</span>
+    <span class="n">status</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">cmd</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;git&#39;</span><span class="p">,</span> <span class="s1">&#39;status&#39;</span><span class="p">,</span> <span class="s1">&#39;--porcelain&#39;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">include_untracked</span><span class="p">:</span>
+            <span class="n">cmd</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;--untracked-files=normal&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">cmd</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;--untracked-files=no&#39;</span><span class="p">)</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">)</span>
+    <span class="k">except</span> <span class="p">(</span><span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">,</span> <span class="ne">OSError</span><span class="p">):</span>
+        <span class="n">q</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">status</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">q</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="nb">bool</span><span class="p">(</span><span class="n">status</span><span class="p">))</span>
+
+
+<div class="viewcode-block" id="git_dirty_working_directory"><a class="viewcode-back" href="../../../api/prompt/vc_branch.html#xonsh.prompt.vc_branch.git_dirty_working_directory">[docs]</a><span class="k">def</span> <span class="nf">git_dirty_working_directory</span><span class="p">(</span><span class="n">include_untracked</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Returns whether or not the git directory is dirty. If this could not</span>
+<span class="sd">    be determined (timeout, file not found, etc.) then this returns None.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">timeout</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;VC_BRANCH_TIMEOUT&quot;</span><span class="p">)</span>
+    <span class="n">q</span> <span class="o">=</span> <span class="n">queue</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
+    <span class="n">t</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">_git_dirty_working_directory</span><span class="p">,</span>
+                         <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">include_untracked</span><span class="p">))</span>
+    <span class="n">t</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+    <span class="n">t</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">q</span><span class="o">.</span><span class="n">get_nowait</span><span class="p">()</span>
+    <span class="k">except</span> <span class="n">queue</span><span class="o">.</span><span class="n">Empty</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="hg_dirty_working_directory"><a class="viewcode-back" href="../../../api/prompt/vc_branch.html#xonsh.prompt.vc_branch.hg_dirty_working_directory">[docs]</a><span class="k">def</span> <span class="nf">hg_dirty_working_directory</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Computes whether or not the mercurial working directory is dirty or not.</span>
+<span class="sd">    If this cannot be deterimined, None is returned.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+    <span class="n">cwd</span> <span class="o">=</span> <span class="n">env</span><span class="p">[</span><span class="s1">&#39;PWD&#39;</span><span class="p">]</span>
+    <span class="n">denv</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">detype</span><span class="p">()</span>
+    <span class="n">vcbt</span> <span class="o">=</span> <span class="n">env</span><span class="p">[</span><span class="s1">&#39;VC_BRANCH_TIMEOUT&#39;</span><span class="p">]</span>
+    <span class="c1"># Override user configurations settings and aliases</span>
+    <span class="n">denv</span><span class="p">[</span><span class="s1">&#39;HGRCPATH&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">([</span><span class="s1">&#39;hg&#39;</span><span class="p">,</span> <span class="s1">&#39;identify&#39;</span><span class="p">,</span> <span class="s1">&#39;--id&#39;</span><span class="p">],</span>
+                                    <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span> <span class="n">cwd</span><span class="o">=</span><span class="n">cwd</span><span class="p">,</span>
+                                    <span class="n">timeout</span><span class="o">=</span><span class="n">vcbt</span><span class="p">,</span> <span class="n">universal_newlines</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                                    <span class="n">env</span><span class="o">=</span><span class="n">denv</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">s</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">linesep</span><span class="p">)</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s1">&#39;+&#39;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="p">(</span><span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">,</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">TimeoutExpired</span><span class="p">,</span>
+            <span class="ne">FileNotFoundError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="dirty_working_directory"><a class="viewcode-back" href="../../../api/prompt/vc_branch.html#xonsh.prompt.vc_branch.dirty_working_directory">[docs]</a><span class="k">def</span> <span class="nf">dirty_working_directory</span><span class="p">(</span><span class="n">cwd</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Returns a boolean as to whether there are uncommitted files in version</span>
+<span class="sd">    control repository we are inside. If this cannot be determined, returns</span>
+<span class="sd">    None. Currently supports git and hg.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">dwd</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">cmds</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_commands_cache__</span>
+    <span class="k">if</span> <span class="n">cmds</span><span class="o">.</span><span class="n">lazy_locate_binary</span><span class="p">(</span><span class="s1">&#39;git&#39;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">cmds</span><span class="o">.</span><span class="n">is_empty</span><span class="p">():</span>
+        <span class="n">dwd</span> <span class="o">=</span> <span class="n">git_dirty_working_directory</span><span class="p">()</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">cmds</span><span class="o">.</span><span class="n">lazy_locate_binary</span><span class="p">(</span><span class="s1">&#39;hg&#39;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">cmds</span><span class="o">.</span><span class="n">is_empty</span><span class="p">())</span> <span class="ow">and</span> <span class="p">(</span><span class="n">dwd</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="n">dwd</span> <span class="o">=</span> <span class="n">hg_dirty_working_directory</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">dwd</span></div>
+
+
+<div class="viewcode-block" id="branch_color"><a class="viewcode-back" href="../../../api/prompt/vc_branch.html#xonsh.prompt.vc_branch.branch_color">[docs]</a><span class="k">def</span> <span class="nf">branch_color</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Return red if the current branch is dirty, yellow if the dirtiness can</span>
+<span class="sd">    not be determined, and green if it clean. These are bold, intense colors</span>
+<span class="sd">    for the foreground.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">dwd</span> <span class="o">=</span> <span class="n">dirty_working_directory</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">dwd</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">color</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="si">{BOLD_INTENSE_YELLOW}</span><span class="s1">&#39;</span>
+    <span class="k">elif</span> <span class="n">dwd</span><span class="p">:</span>
+        <span class="n">color</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="si">{BOLD_INTENSE_RED}</span><span class="s1">&#39;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">color</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="si">{BOLD_INTENSE_GREEN}</span><span class="s1">&#39;</span>
+    <span class="k">return</span> <span class="n">color</span></div>
+
+
+<div class="viewcode-block" id="branch_bg_color"><a class="viewcode-back" href="../../../api/prompt/vc_branch.html#xonsh.prompt.vc_branch.branch_bg_color">[docs]</a><span class="k">def</span> <span class="nf">branch_bg_color</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Return red if the current branch is dirty, yellow if the dirtiness can</span>
+<span class="sd">    not be determined, and green if it clean. These are bacground colors.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">dwd</span> <span class="o">=</span> <span class="n">dirty_working_directory</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">dwd</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">color</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="si">{BACKGROUND_YELLOW}</span><span class="s1">&#39;</span>
+    <span class="k">elif</span> <span class="n">dwd</span><span class="p">:</span>
+        <span class="n">color</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="si">{BACKGROUND_RED}</span><span class="s1">&#39;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">color</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="si">{BACKGROUND_GREEN}</span><span class="s1">&#39;</span>
+    <span class="k">return</span> <span class="n">color</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+        <p class="logo"><a href="../../../index.html" title="index">
+          <img class="logo" src="../../../_static/ascii_conch_part_color_tight.png" alt="Logo"/>
+        </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="relbar-bottom">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../index.html">xonsh 0.4.7.dev230 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2015, Anthony Scopatz.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.4.8.
+    </div>
+    <!-- cloud_sptheme 1.4 -->
+  </body>
+</html>

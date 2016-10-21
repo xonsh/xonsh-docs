@@ -1,0 +1,1439 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>xonsh.pyghooks &#8212; xonsh 0.4.7.dev230 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.4.7.dev230',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <script type="text/javascript" src="../../_static/jquery.cookie.js"></script>
+    <script type="text/javascript" src="../../_static/cloud.js"></script>
+    <link rel="shortcut icon" href="../../_static/magic_conch.ico"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="top" title="xonsh 0.4.7.dev230 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+  </head>
+  <body role="document">
+    <div class="relbar-top">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../index.html">xonsh 0.4.7.dev230 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for xonsh.pyghooks</h1><div class="highlight"><pre>
+<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;Hooks for pygments syntax highlighting.&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">string</span>
+<span class="kn">import</span> <span class="nn">builtins</span>
+<span class="kn">from</span> <span class="nn">warnings</span> <span class="k">import</span> <span class="n">warn</span>
+<span class="kn">from</span> <span class="nn">collections</span> <span class="k">import</span> <span class="n">ChainMap</span>
+<span class="kn">from</span> <span class="nn">collections.abc</span> <span class="k">import</span> <span class="n">MutableMapping</span>
+
+<span class="c1"># must come before pygments imports</span>
+<span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="k">import</span> <span class="n">load_module_in_background</span>
+
+<span class="kn">from</span> <span class="nn">pygments.lexer</span> <span class="k">import</span> <span class="n">inherit</span><span class="p">,</span> <span class="n">bygroups</span><span class="p">,</span> <span class="n">include</span>
+<span class="kn">from</span> <span class="nn">pygments.lexers.agile</span> <span class="k">import</span> <span class="n">PythonLexer</span>
+<span class="kn">from</span> <span class="nn">pygments.token</span> <span class="k">import</span> <span class="p">(</span><span class="n">Keyword</span><span class="p">,</span> <span class="n">Name</span><span class="p">,</span> <span class="n">Comment</span><span class="p">,</span> <span class="n">String</span><span class="p">,</span> <span class="n">Error</span><span class="p">,</span> <span class="n">Number</span><span class="p">,</span>
+                            <span class="n">Operator</span><span class="p">,</span> <span class="n">Generic</span><span class="p">,</span> <span class="n">Whitespace</span><span class="p">,</span> <span class="n">Token</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">,</span>
+                            <span class="n">Text</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">pygments.style</span> <span class="k">import</span> <span class="n">Style</span>
+<span class="kn">from</span> <span class="nn">pygments.styles</span> <span class="k">import</span> <span class="n">get_style_by_name</span>
+<span class="kn">import</span> <span class="nn">pygments.util</span>
+
+<span class="kn">from</span> <span class="nn">xonsh.commands_cache</span> <span class="k">import</span> <span class="n">CommandsCache</span>
+<span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="k">import</span> <span class="n">LazyObject</span><span class="p">,</span> <span class="n">LazyDict</span>
+<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="k">import</span> <span class="p">(</span><span class="n">ON_WINDOWS</span><span class="p">,</span> <span class="n">intensify_colors_for_cmd_exe</span><span class="p">,</span>
+                         <span class="n">expand_gray_colors_for_cmd_exe</span><span class="p">)</span>
+
+<span class="n">load_module_in_background</span><span class="p">(</span><span class="s1">&#39;pkg_resources&#39;</span><span class="p">,</span> <span class="n">debug</span><span class="o">=</span><span class="s1">&#39;XONSH_DEBUG&#39;</span><span class="p">,</span>
+                          <span class="n">replacements</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;pygments.plugin&#39;</span><span class="p">:</span> <span class="s1">&#39;pkg_resources&#39;</span><span class="p">})</span>
+
+
+<span class="k">def</span> <span class="nf">_command_is_valid</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
+    <span class="n">cmd_abspath</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="n">cmd</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_commands_cache__</span> <span class="ow">or</span> \
+        <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">cmd_abspath</span><span class="p">)</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">access</span><span class="p">(</span><span class="n">cmd_abspath</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">X_OK</span><span class="p">))</span>
+
+
+<span class="k">def</span> <span class="nf">_command_is_autocd</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;AUTO_CD&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="n">cmd_abspath</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="n">cmd</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">cmd_abspath</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="subproc_cmd_callback"><a class="viewcode-back" href="../../api/pyghooks.html#xonsh.pyghooks.subproc_cmd_callback">[docs]</a><span class="k">def</span> <span class="nf">subproc_cmd_callback</span><span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">match</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Yield Builtin token if match contains valid command,</span>
+<span class="sd">    otherwise fallback to fallback lexer.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cmd</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">()</span>
+    <span class="k">yield</span> <span class="n">match</span><span class="o">.</span><span class="n">start</span><span class="p">(),</span> <span class="n">Name</span><span class="o">.</span><span class="n">Builtin</span> <span class="k">if</span> <span class="n">_command_is_valid</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span> <span class="k">else</span> <span class="n">Error</span><span class="p">,</span> <span class="n">cmd</span></div>
+
+
+<div class="viewcode-block" id="subproc_arg_callback"><a class="viewcode-back" href="../../api/pyghooks.html#xonsh.pyghooks.subproc_arg_callback">[docs]</a><span class="k">def</span> <span class="nf">subproc_arg_callback</span><span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">match</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Check if match contains valid path&quot;&quot;&quot;</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">()</span>
+    <span class="k">yield</span> <span class="p">(</span><span class="n">match</span><span class="o">.</span><span class="n">start</span><span class="p">(),</span>
+           <span class="n">Name</span><span class="o">.</span><span class="n">Constant</span> <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="n">text</span><span class="p">))</span> <span class="k">else</span> <span class="n">Text</span><span class="p">,</span>
+           <span class="n">text</span><span class="p">)</span></div>
+
+
+<span class="n">COMMAND_TOKEN_RE</span> <span class="o">=</span> <span class="s1">r&#39;[^=\s\[\]</span><span class="si">{}</span><span class="s1">()$&quot;</span><span class="se">\&#39;</span><span class="s1">`&lt;&amp;|;!]+(?=\s|$|\)|\]|\}|!)&#39;</span>
+
+
+<div class="viewcode-block" id="XonshLexer"><a class="viewcode-back" href="../../api/pyghooks.html#xonsh.pyghooks.XonshLexer">[docs]</a><span class="k">class</span> <span class="nc">XonshLexer</span><span class="p">(</span><span class="n">PythonLexer</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Xonsh console lexer for pygments.&quot;&quot;&quot;</span>
+
+    <span class="n">name</span> <span class="o">=</span> <span class="s1">&#39;Xonsh lexer&#39;</span>
+    <span class="n">aliases</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;xonsh&#39;</span><span class="p">,</span> <span class="s1">&#39;xsh&#39;</span><span class="p">]</span>
+    <span class="n">filenames</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;*.xsh&#39;</span><span class="p">,</span> <span class="s1">&#39;*xonshrc&#39;</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="c1"># If the lexor is loaded as a pygment plugin, we have to mock</span>
+        <span class="c1"># __xonsh_env__ and __xonsh_commands_cache__</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s1">&#39;__xonsh_env__&#39;</span><span class="p">):</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s1">&#39;__xonsh_env__&#39;</span><span class="p">,</span> <span class="p">{})</span>
+            <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
+                <span class="n">pathext</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;PATHEXT&#39;</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;.EXE&#39;</span><span class="p">,</span> <span class="s1">&#39;.BAT&#39;</span><span class="p">,</span> <span class="s1">&#39;.CMD&#39;</span><span class="p">])</span>
+                <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="p">[</span><span class="s1">&#39;PATHEXT&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pathext</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">pathsep</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s1">&#39;__xonsh_commands_cache__&#39;</span><span class="p">):</span>
+            <span class="nb">setattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s1">&#39;__xonsh_commands_cache__&#39;</span><span class="p">,</span> <span class="n">CommandsCache</span><span class="p">())</span>
+        <span class="n">_</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_commands_cache__</span><span class="o">.</span><span class="n">all_commands</span>  <span class="c1"># NOQA</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="n">tokens</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;mode_switch_brackets&#39;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">(</span><span class="s1">r&#39;(\$)(\{)&#39;</span><span class="p">,</span> <span class="n">bygroups</span><span class="p">(</span><span class="n">Keyword</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">),</span> <span class="s1">&#39;py_curly_bracket&#39;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;(@)(\()&#39;</span><span class="p">,</span> <span class="n">bygroups</span><span class="p">(</span><span class="n">Keyword</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">),</span> <span class="s1">&#39;py_bracket&#39;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;([\!\$])(\()&#39;</span><span class="p">,</span> <span class="n">bygroups</span><span class="p">(</span><span class="n">Keyword</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">),</span>
+             <span class="p">(</span><span class="s1">&#39;subproc_bracket&#39;</span><span class="p">,</span> <span class="s1">&#39;subproc_start&#39;</span><span class="p">)),</span>
+            <span class="p">(</span><span class="s1">r&#39;(@\$)(\()&#39;</span><span class="p">,</span> <span class="n">bygroups</span><span class="p">(</span><span class="n">Keyword</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">),</span>
+             <span class="p">(</span><span class="s1">&#39;subproc_bracket&#39;</span><span class="p">,</span> <span class="s1">&#39;subproc_start&#39;</span><span class="p">)),</span>
+            <span class="p">(</span><span class="s1">r&#39;([\!\$])(\[)&#39;</span><span class="p">,</span> <span class="n">bygroups</span><span class="p">(</span><span class="n">Keyword</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">),</span>
+             <span class="p">(</span><span class="s1">&#39;subproc_square_bracket&#39;</span><span class="p">,</span> <span class="s1">&#39;subproc_start&#39;</span><span class="p">)),</span>
+            <span class="p">(</span><span class="s1">r&#39;(g?)(`)&#39;</span><span class="p">,</span> <span class="n">bygroups</span><span class="p">(</span><span class="n">String</span><span class="o">.</span><span class="n">Affix</span><span class="p">,</span> <span class="n">String</span><span class="o">.</span><span class="n">Backtick</span><span class="p">),</span>
+             <span class="s1">&#39;backtick_re&#39;</span><span class="p">),</span>
+        <span class="p">],</span>
+        <span class="s1">&#39;subproc_bracket&#39;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">(</span><span class="s1">r&#39;\)&#39;</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">,</span> <span class="s1">&#39;#pop&#39;</span><span class="p">),</span>
+            <span class="n">include</span><span class="p">(</span><span class="s1">&#39;subproc&#39;</span><span class="p">),</span>
+        <span class="p">],</span>
+        <span class="s1">&#39;subproc_square_bracket&#39;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">(</span><span class="s1">r&#39;\]&#39;</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">,</span> <span class="s1">&#39;#pop&#39;</span><span class="p">),</span>
+            <span class="n">include</span><span class="p">(</span><span class="s1">&#39;subproc&#39;</span><span class="p">),</span>
+        <span class="p">],</span>
+        <span class="s1">&#39;py_bracket&#39;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">(</span><span class="s1">r&#39;\)&#39;</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">,</span> <span class="s1">&#39;#pop&#39;</span><span class="p">),</span>
+            <span class="n">include</span><span class="p">(</span><span class="s1">&#39;root&#39;</span><span class="p">),</span>
+        <span class="p">],</span>
+        <span class="s1">&#39;py_curly_bracket&#39;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">(</span><span class="s1">r&#39;\}&#39;</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">,</span> <span class="s1">&#39;#pop&#39;</span><span class="p">),</span>
+            <span class="n">include</span><span class="p">(</span><span class="s1">&#39;root&#39;</span><span class="p">),</span>
+        <span class="p">],</span>
+        <span class="s1">&#39;backtick_re&#39;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">(</span><span class="s1">r&#39;[\.\^\$\*\+\?\[\]\|]&#39;</span><span class="p">,</span> <span class="n">String</span><span class="o">.</span><span class="n">Regex</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;({[0-9]+}|{[0-9]+,[0-9]+})\??&#39;</span><span class="p">,</span> <span class="n">String</span><span class="o">.</span><span class="n">Regex</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;</span><span class="se">\\</span><span class="s1">([0-9]+|[AbBdDsSwWZabfnrtuUvx</span><span class="se">\\</span><span class="s1">])&#39;</span><span class="p">,</span> <span class="n">String</span><span class="o">.</span><span class="n">Escape</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;`&#39;</span><span class="p">,</span> <span class="n">String</span><span class="o">.</span><span class="n">Backtick</span><span class="p">,</span> <span class="s1">&#39;#pop&#39;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;[^`\.\^\$\*\+\?\[\]\|]+&#39;</span><span class="p">,</span> <span class="n">String</span><span class="o">.</span><span class="n">Backtick</span><span class="p">),</span>
+        <span class="p">],</span>
+        <span class="s1">&#39;root&#39;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">(</span><span class="s1">r&#39;\?&#39;</span><span class="p">,</span> <span class="n">Keyword</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;(?&lt;=\w)!&#39;</span><span class="p">,</span> <span class="n">Keyword</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;\$\w+&#39;</span><span class="p">,</span> <span class="n">Name</span><span class="o">.</span><span class="n">Variable</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;\(&#39;</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">,</span> <span class="s1">&#39;py_bracket&#39;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;\{&#39;</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">,</span> <span class="s1">&#39;py_curly_bracket&#39;</span><span class="p">),</span>
+            <span class="n">include</span><span class="p">(</span><span class="s1">&#39;mode_switch_brackets&#39;</span><span class="p">),</span>
+            <span class="n">inherit</span><span class="p">,</span>
+        <span class="p">],</span>
+        <span class="s1">&#39;subproc_start&#39;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">(</span><span class="s1">r&#39;\s+&#39;</span><span class="p">,</span> <span class="n">Whitespace</span><span class="p">),</span>
+            <span class="p">(</span><span class="n">COMMAND_TOKEN_RE</span><span class="p">,</span> <span class="n">subproc_cmd_callback</span><span class="p">,</span> <span class="s1">&#39;#pop&#39;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;&#39;</span><span class="p">,</span> <span class="n">Whitespace</span><span class="p">,</span> <span class="s1">&#39;#pop&#39;</span><span class="p">),</span>
+        <span class="p">],</span>
+        <span class="s1">&#39;subproc&#39;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="n">include</span><span class="p">(</span><span class="s1">&#39;mode_switch_brackets&#39;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;&amp;&amp;|\|\|&#39;</span><span class="p">,</span> <span class="n">Operator</span><span class="p">,</span> <span class="s1">&#39;subproc_start&#39;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;&quot;(</span><span class="se">\\\\</span><span class="s1">|</span><span class="se">\\</span><span class="s1">[0-7]+|</span><span class="se">\\</span><span class="s1">.|[^&quot;</span><span class="se">\\</span><span class="s1">])*&quot;&#39;</span><span class="p">,</span> <span class="n">String</span><span class="o">.</span><span class="n">Double</span><span class="p">),</span>
+            <span class="p">(</span><span class="s2">r&quot;&#39;(</span><span class="se">\\\\</span><span class="s2">|</span><span class="se">\\</span><span class="s2">[0-7]+|</span><span class="se">\\</span><span class="s2">.|[^&#39;</span><span class="se">\\</span><span class="s2">])*&#39;&quot;</span><span class="p">,</span> <span class="n">String</span><span class="o">.</span><span class="n">Single</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;(?&lt;=\w|\s)!&#39;</span><span class="p">,</span> <span class="n">Keyword</span><span class="p">,</span> <span class="s1">&#39;subproc_macro&#39;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;^!&#39;</span><span class="p">,</span> <span class="n">Keyword</span><span class="p">,</span> <span class="s1">&#39;subproc_macro&#39;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;;&#39;</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">,</span> <span class="s1">&#39;subproc_start&#39;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;&amp;|=&#39;</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;\|&#39;</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">,</span> <span class="s1">&#39;subproc_start&#39;</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;\s+&#39;</span><span class="p">,</span> <span class="n">Text</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;[^=\s\[\]</span><span class="si">{}</span><span class="s1">()$&quot;</span><span class="se">\&#39;</span><span class="s1">`&lt;&amp;|;]+&#39;</span><span class="p">,</span> <span class="n">subproc_arg_callback</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;&lt;&#39;</span><span class="p">,</span> <span class="n">Text</span><span class="p">),</span>
+            <span class="p">(</span><span class="s1">r&#39;\$\w+&#39;</span><span class="p">,</span> <span class="n">Name</span><span class="o">.</span><span class="n">Variable</span><span class="p">),</span>
+        <span class="p">],</span>
+        <span class="s1">&#39;subproc_macro&#39;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">(</span><span class="s1">r&#39;(\s*)([^\n]+)&#39;</span><span class="p">,</span> <span class="n">bygroups</span><span class="p">(</span><span class="n">Whitespace</span><span class="p">,</span> <span class="n">String</span><span class="p">)),</span>
+            <span class="p">(</span><span class="s1">r&#39;&#39;</span><span class="p">,</span> <span class="n">Whitespace</span><span class="p">,</span> <span class="s1">&#39;#pop&#39;</span><span class="p">),</span>
+        <span class="p">],</span>
+    <span class="p">}</span>
+
+<div class="viewcode-block" id="XonshLexer.get_tokens_unprocessed"><a class="viewcode-back" href="../../api/pyghooks.html#xonsh.pyghooks.XonshLexer.get_tokens_unprocessed">[docs]</a>    <span class="k">def</span> <span class="nf">get_tokens_unprocessed</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Check first command, then call super.get_tokens_unprocessed</span>
+<span class="sd">        with root or subproc state&quot;&quot;&quot;</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;root&#39;</span><span class="p">,</span> <span class="p">)</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="s1">r&#39;(\s*)(</span><span class="si">{}</span><span class="s1">)&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">COMMAND_TOKEN_RE</span><span class="p">),</span> <span class="n">text</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">m</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">yield</span> <span class="n">m</span><span class="o">.</span><span class="n">start</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="n">Whitespace</span><span class="p">,</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">cmd</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+            <span class="n">cmd_is_valid</span> <span class="o">=</span> <span class="n">_command_is_valid</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
+            <span class="n">cmd_is_autocd</span> <span class="o">=</span> <span class="n">_command_is_autocd</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">cmd_is_valid</span> <span class="ow">or</span> <span class="n">cmd_is_autocd</span><span class="p">:</span>
+                <span class="k">yield</span> <span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">start</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span>
+                       <span class="n">Name</span><span class="o">.</span><span class="n">Builtin</span> <span class="k">if</span> <span class="n">cmd_is_valid</span> <span class="k">else</span> <span class="n">Name</span><span class="o">.</span><span class="n">Constant</span><span class="p">,</span>
+                       <span class="n">cmd</span><span class="p">)</span>
+                <span class="n">start</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">end</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+                <span class="n">state</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;subproc&#39;</span><span class="p">,</span> <span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">get_tokens_unprocessed</span><span class="p">(</span><span class="n">text</span><span class="p">[</span><span class="n">start</span><span class="p">:],</span> <span class="n">state</span><span class="p">):</span>
+            <span class="k">yield</span> <span class="n">i</span> <span class="o">+</span> <span class="n">start</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">v</span></div></div>
+
+
+<div class="viewcode-block" id="XonshConsoleLexer"><a class="viewcode-back" href="../../api/pyghooks.html#xonsh.pyghooks.XonshConsoleLexer">[docs]</a><span class="k">class</span> <span class="nc">XonshConsoleLexer</span><span class="p">(</span><span class="n">XonshLexer</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Xonsh console lexer for pygments.&quot;&quot;&quot;</span>
+
+    <span class="n">name</span> <span class="o">=</span> <span class="s1">&#39;Xonsh console lexer&#39;</span>
+    <span class="n">aliases</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;xonshcon&#39;</span><span class="p">]</span>
+    <span class="n">filenames</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="n">tokens</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;root&#39;</span><span class="p">:</span> <span class="p">[(</span><span class="s1">r&#39;^(&gt;&gt;&gt;|\.\.\.) &#39;</span><span class="p">,</span> <span class="n">Generic</span><span class="o">.</span><span class="n">Prompt</span><span class="p">),</span>
+                 <span class="p">(</span><span class="s1">r&#39;\n(&gt;&gt;&gt;|\.\.\.)&#39;</span><span class="p">,</span> <span class="n">Generic</span><span class="o">.</span><span class="n">Prompt</span><span class="p">),</span>
+                 <span class="p">(</span><span class="s1">r&#39;\n(?![&gt;.][&gt;.][&gt;.] )([^\n]*)&#39;</span><span class="p">,</span> <span class="n">Generic</span><span class="o">.</span><span class="n">Output</span><span class="p">),</span>
+                 <span class="p">(</span><span class="s1">r&#39;\n(?![&gt;.][&gt;.][&gt;.] )(.*?)$&#39;</span><span class="p">,</span> <span class="n">Generic</span><span class="o">.</span><span class="n">Output</span><span class="p">),</span>
+                 <span class="n">inherit</span><span class="p">]</span>
+    <span class="p">}</span></div>
+
+
+<span class="c1">#</span>
+<span class="c1"># Colors and Styles</span>
+<span class="c1">#</span>
+
+<span class="n">Color</span> <span class="o">=</span> <span class="n">Token</span><span class="o">.</span><span class="n">Color</span>  <span class="c1"># alias to new color token namespace</span>
+
+<span class="n">RE_BACKGROUND</span> <span class="o">=</span> <span class="n">LazyObject</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s1">&#39;(BG#|BGHEX|BACKGROUND)&#39;</span><span class="p">),</span>
+                           <span class="nb">globals</span><span class="p">(),</span> <span class="s1">&#39;RE_BACKGROUND&#39;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="norm_name"><a class="viewcode-back" href="../../api/pyghooks.html#xonsh.pyghooks.norm_name">[docs]</a><span class="k">def</span> <span class="nf">norm_name</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Normalizes a color name.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">name</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;#&#39;</span><span class="p">,</span> <span class="s1">&#39;HEX&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;BGHEX&#39;</span><span class="p">,</span> <span class="s1">&#39;BACKGROUND_HEX&#39;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="color_by_name"><a class="viewcode-back" href="../../api/pyghooks.html#xonsh.pyghooks.color_by_name">[docs]</a><span class="k">def</span> <span class="nf">color_by_name</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">fg</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">bg</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Converts a color name to a color token, foreground name,</span>
+<span class="sd">    and background name.  Will take into consideration current foreground</span>
+<span class="sd">    and background colors, if provided.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    name : str</span>
+<span class="sd">        Color name.</span>
+<span class="sd">    fg : str, optional</span>
+<span class="sd">        Foreground color name.</span>
+<span class="sd">    bg : str, optional</span>
+<span class="sd">        Background color name.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    tok : Token</span>
+<span class="sd">        Pygments Token.Color subclass</span>
+<span class="sd">    fg : str or None</span>
+<span class="sd">        New computed foreground color name.</span>
+<span class="sd">    bg : str or None</span>
+<span class="sd">        New computed background color name.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;NO_COLOR&#39;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">RE_BACKGROUND</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">m</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># must be foreground color</span>
+        <span class="n">fg</span> <span class="o">=</span> <span class="n">norm_name</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">bg</span> <span class="o">=</span> <span class="n">norm_name</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+    <span class="c1"># assmble token</span>
+    <span class="k">if</span> <span class="n">fg</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">bg</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">tokname</span> <span class="o">=</span> <span class="s1">&#39;NO_COLOR&#39;</span>
+    <span class="k">elif</span> <span class="n">fg</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">tokname</span> <span class="o">=</span> <span class="n">bg</span>
+    <span class="k">elif</span> <span class="n">bg</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">tokname</span> <span class="o">=</span> <span class="n">fg</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">tokname</span> <span class="o">=</span> <span class="n">fg</span> <span class="o">+</span> <span class="s1">&#39;__&#39;</span> <span class="o">+</span> <span class="n">bg</span>
+    <span class="n">tok</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">Color</span><span class="p">,</span> <span class="n">tokname</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">tok</span><span class="p">,</span> <span class="n">fg</span><span class="p">,</span> <span class="n">bg</span></div>
+
+
+<div class="viewcode-block" id="code_by_name"><a class="viewcode-back" href="../../api/pyghooks.html#xonsh.pyghooks.code_by_name">[docs]</a><span class="k">def</span> <span class="nf">code_by_name</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">styles</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Converts a token name into a pygments-style color code.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    name : str</span>
+<span class="sd">        Color token name.</span>
+<span class="sd">    styles : Mapping</span>
+<span class="sd">        Mapping for looking up non-hex colors</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    code : str</span>
+<span class="sd">        Pygments style color code.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">fg</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">bg</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s1">&#39;__&#39;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">fg</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;background_&#39;</span><span class="p">):</span>
+        <span class="n">fg</span><span class="p">,</span> <span class="n">bg</span> <span class="o">=</span> <span class="n">bg</span><span class="p">,</span> <span class="n">fg</span>
+    <span class="n">codes</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="c1"># foreground color</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">fg</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">pass</span>
+    <span class="k">elif</span> <span class="s1">&#39;hex&#39;</span> <span class="ow">in</span> <span class="n">fg</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">fg</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;_&#39;</span><span class="p">):</span>
+            <span class="n">codes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;#&#39;</span><span class="o">+</span><span class="n">p</span><span class="p">[</span><span class="mi">3</span><span class="p">:]</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;hex&#39;</span><span class="p">)</span> <span class="k">else</span> <span class="n">p</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">fgtok</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">Color</span><span class="p">,</span> <span class="n">fg</span><span class="o">.</span><span class="n">upper</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">fgtok</span> <span class="ow">in</span> <span class="n">styles</span><span class="p">:</span>
+            <span class="n">codes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">styles</span><span class="p">[</span><span class="n">fgtok</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">codes</span> <span class="o">+=</span> <span class="n">fg</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;_&#39;</span><span class="p">)</span>
+    <span class="c1"># background color</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">bg</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">pass</span>
+    <span class="k">elif</span> <span class="n">bg</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;background_hex&#39;</span><span class="p">):</span>
+        <span class="n">codes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;bg:#&#39;</span><span class="o">+</span><span class="n">bg</span><span class="p">[</span><span class="mi">14</span><span class="p">:])</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">bgtok</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">Color</span><span class="p">,</span> <span class="n">bg</span><span class="o">.</span><span class="n">upper</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">bgtok</span> <span class="ow">in</span> <span class="n">styles</span><span class="p">:</span>
+            <span class="n">codes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">styles</span><span class="p">[</span><span class="n">bgtok</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">codes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">bg</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;background_&#39;</span><span class="p">,</span> <span class="s1">&#39;bg:&#39;</span><span class="p">))</span>
+    <span class="n">code</span> <span class="o">=</span> <span class="s1">&#39; &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">codes</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">code</span></div>
+
+
+<div class="viewcode-block" id="partial_color_tokenize"><a class="viewcode-back" href="../../api/pyghooks.html#xonsh.pyghooks.partial_color_tokenize">[docs]</a><span class="k">def</span> <span class="nf">partial_color_tokenize</span><span class="p">(</span><span class="n">template</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Tokenizes a template string containing colors. Will return a list</span>
+<span class="sd">    of tuples mapping the token to the string which has that color.</span>
+<span class="sd">    These sub-strings maybe templates themselves.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s1">&#39;__xonsh_shell__&#39;</span><span class="p">):</span>
+        <span class="n">styles</span> <span class="o">=</span> <span class="n">__xonsh_shell__</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">styler</span><span class="o">.</span><span class="n">styles</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">styles</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">color</span> <span class="o">=</span> <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">toks</span><span class="p">,</span> <span class="n">color</span> <span class="o">=</span> <span class="n">_partial_color_tokenize_main</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="n">styles</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="n">toks</span> <span class="o">=</span> <span class="p">[(</span><span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">,</span> <span class="n">template</span><span class="p">)]</span>
+    <span class="k">if</span> <span class="n">styles</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">styles</span><span class="p">[</span><span class="n">color</span><span class="p">]</span>  <span class="c1"># ensure color is available</span>
+    <span class="k">return</span> <span class="n">toks</span></div>
+
+
+<span class="k">def</span> <span class="nf">_partial_color_tokenize_main</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="n">styles</span><span class="p">):</span>
+    <span class="n">formatter</span> <span class="o">=</span> <span class="n">string</span><span class="o">.</span><span class="n">Formatter</span><span class="p">()</span>
+    <span class="n">bopen</span> <span class="o">=</span> <span class="s1">&#39;{&#39;</span>
+    <span class="n">bclose</span> <span class="o">=</span> <span class="s1">&#39;}&#39;</span>
+    <span class="n">colon</span> <span class="o">=</span> <span class="s1">&#39;:&#39;</span>
+    <span class="n">expl</span> <span class="o">=</span> <span class="s1">&#39;!&#39;</span>
+    <span class="n">color</span> <span class="o">=</span> <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span>
+    <span class="n">fg</span> <span class="o">=</span> <span class="n">bg</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+    <span class="n">toks</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">literal</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">conv</span> <span class="ow">in</span> <span class="n">formatter</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">template</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">field</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">+=</span> <span class="n">literal</span>
+        <span class="k">elif</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">KNOWN_COLORS</span> <span class="ow">or</span> <span class="s1">&#39;#&#39;</span> <span class="ow">in</span> <span class="n">field</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">+=</span> <span class="n">literal</span>
+            <span class="n">next_color</span><span class="p">,</span> <span class="n">fg</span><span class="p">,</span> <span class="n">bg</span> <span class="o">=</span> <span class="n">color_by_name</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="n">fg</span><span class="p">,</span> <span class="n">bg</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">next_color</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">color</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">toks</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">color</span><span class="p">,</span> <span class="n">value</span><span class="p">))</span>
+                    <span class="k">if</span> <span class="n">styles</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">styles</span><span class="p">[</span><span class="n">color</span><span class="p">]</span>  <span class="c1"># ensure color is available</span>
+                <span class="n">color</span> <span class="o">=</span> <span class="n">next_color</span>
+                <span class="n">value</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+        <span class="k">elif</span> <span class="n">field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">parts</span> <span class="o">=</span> <span class="p">[</span><span class="n">literal</span><span class="p">,</span> <span class="n">bopen</span><span class="p">,</span> <span class="n">field</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">conv</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">conv</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">expl</span><span class="p">)</span>
+                <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">conv</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">spec</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">colon</span><span class="p">)</span>
+                <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span>
+            <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">bclose</span><span class="p">)</span>
+            <span class="n">value</span> <span class="o">+=</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">+=</span> <span class="n">literal</span>
+    <span class="n">toks</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">color</span><span class="p">,</span> <span class="n">value</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">toks</span><span class="p">,</span> <span class="n">color</span>
+
+
+<div class="viewcode-block" id="CompoundColorMap"><a class="viewcode-back" href="../../api/pyghooks.html#xonsh.pyghooks.CompoundColorMap">[docs]</a><span class="k">class</span> <span class="nc">CompoundColorMap</span><span class="p">(</span><span class="n">MutableMapping</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Looks up color tokes by name, potentailly generating the value</span>
+<span class="sd">    from the lookup.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">styles</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">styles</span> <span class="o">=</span> <span class="n">styles</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">colors</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">colors</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">colors</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">styles</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">styles</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+            <span class="bp">self</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+            <span class="k">return</span> <span class="n">value</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">is</span> <span class="n">Color</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">KeyError</span>
+        <span class="n">pre</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">name</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">key</span><span class="p">)</span><span class="o">.</span><span class="n">rpartition</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">pre</span> <span class="o">!=</span> <span class="s1">&#39;Token.Color&#39;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">KeyError</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">code_by_name</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">styles</span><span class="p">)</span>
+        <span class="bp">self</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="k">return</span> <span class="n">value</span>
+
+    <span class="k">def</span> <span class="nf">__setitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">colors</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+
+    <span class="k">def</span> <span class="nf">__delitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+        <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">colors</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">colors</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">colors</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="XonshStyle"><a class="viewcode-back" href="../../api/pyghooks.html#xonsh.pyghooks.XonshStyle">[docs]</a><span class="k">class</span> <span class="nc">XonshStyle</span><span class="p">(</span><span class="n">Style</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A xonsh pygments style that will dispatch to the correct color map</span>
+<span class="sd">    by using a ChainMap.  The style_name property may be used to reset</span>
+<span class="sd">    the current style.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">style_name</span><span class="o">=</span><span class="s1">&#39;default&#39;</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        style_name : str, optional</span>
+<span class="sd">            The style name to initialize with.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">trap</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c1"># for traping custom colors set by user</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_smap</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_style_name</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">style_name</span> <span class="o">=</span> <span class="n">style_name</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">style_name</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_style_name</span>
+
+    <span class="nd">@style_name</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">style_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_style_name</span> <span class="o">==</span> <span class="n">value</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">STYLES</span><span class="p">:</span>
+            <span class="n">warn</span><span class="p">(</span><span class="s1">&#39;Could not find style </span><span class="si">{0!r}</span><span class="s1">, using default&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">value</span><span class="p">),</span>
+                 <span class="ne">RuntimeWarning</span><span class="p">)</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="s1">&#39;default&#39;</span>
+            <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="p">[</span><span class="s1">&#39;XONSH_COLOR_STYLE&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="n">cmap</span> <span class="o">=</span> <span class="n">STYLES</span><span class="p">[</span><span class="n">value</span><span class="p">]</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_smap</span> <span class="o">=</span> <span class="n">get_style_by_name</span><span class="p">(</span><span class="n">value</span><span class="p">)()</span><span class="o">.</span><span class="n">styles</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">ImportError</span><span class="p">,</span> <span class="n">pygments</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">ClassNotFound</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_smap</span> <span class="o">=</span> <span class="n">XONSH_BASE_STYLE</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">compound</span> <span class="o">=</span> <span class="n">CompoundColorMap</span><span class="p">(</span><span class="n">ChainMap</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">trap</span><span class="p">,</span> <span class="n">cmap</span><span class="p">,</span> <span class="n">PTK_STYLE</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_smap</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">styles</span> <span class="o">=</span> <span class="n">ChainMap</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">trap</span><span class="p">,</span> <span class="n">cmap</span><span class="p">,</span> <span class="n">PTK_STYLE</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_smap</span><span class="p">,</span> <span class="n">compound</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_style_name</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">enhance_colors_for_cmd_exe</span><span class="p">()</span>
+
+    <span class="nd">@style_name</span><span class="o">.</span><span class="n">deleter</span>
+    <span class="k">def</span> <span class="nf">style_name</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_style_name</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+
+<div class="viewcode-block" id="XonshStyle.enhance_colors_for_cmd_exe"><a class="viewcode-back" href="../../api/pyghooks.html#xonsh.pyghooks.XonshStyle.enhance_colors_for_cmd_exe">[docs]</a>    <span class="k">def</span> <span class="nf">enhance_colors_for_cmd_exe</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot; Enhance colors when using cmd.exe on windows.</span>
+<span class="sd">            When using the default style all blue and dark red colors</span>
+<span class="sd">            are changed to CYAN and intence red.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+        <span class="c1"># Ensure we are not using ConEmu</span>
+        <span class="k">if</span> <span class="s1">&#39;CONEMUANSI&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">env</span><span class="p">:</span>
+            <span class="c1"># Auto suggest needs to be a darker shade to be distinguishable</span>
+            <span class="c1"># from the default color</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">styles</span><span class="p">[</span><span class="n">Token</span><span class="o">.</span><span class="n">AutoSuggestion</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;#444444&#39;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_smap</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">expand_gray_colors_for_cmd_exe</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_smap</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;INTENSIFY_COLORS_ON_WIN&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_smap</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">intensify_colors_for_cmd_exe</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_smap</span><span class="p">))</span></div></div>
+
+
+<div class="viewcode-block" id="xonsh_style_proxy"><a class="viewcode-back" href="../../api/pyghooks.html#xonsh.pyghooks.xonsh_style_proxy">[docs]</a><span class="k">def</span> <span class="nf">xonsh_style_proxy</span><span class="p">(</span><span class="n">styler</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Factory for a proxy class to a xonsh style.&quot;&quot;&quot;</span>
+    <span class="k">class</span> <span class="nc">XonshStyleProxy</span><span class="p">(</span><span class="n">Style</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Simple proxy class to fool prompt toolkit.&quot;&quot;&quot;</span>
+
+        <span class="n">target</span> <span class="o">=</span> <span class="n">styler</span>
+        <span class="n">styles</span> <span class="o">=</span> <span class="n">styler</span><span class="o">.</span><span class="n">styles</span>
+
+        <span class="k">def</span> <span class="nf">__new__</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">cls</span><span class="o">.</span><span class="n">target</span>
+
+    <span class="k">return</span> <span class="n">XonshStyleProxy</span></div>
+
+
+<span class="n">PTK_STYLE</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="n">Token</span><span class="o">.</span><span class="n">Menu</span><span class="o">.</span><span class="n">Completions</span><span class="o">.</span><span class="n">Completion</span><span class="o">.</span><span class="n">Current</span><span class="p">:</span> <span class="s1">&#39;bg:#00aaaa #000000&#39;</span><span class="p">,</span>
+    <span class="n">Token</span><span class="o">.</span><span class="n">Menu</span><span class="o">.</span><span class="n">Completions</span><span class="o">.</span><span class="n">Completion</span><span class="p">:</span> <span class="s1">&#39;bg:#008888 #ffffff&#39;</span><span class="p">,</span>
+    <span class="n">Token</span><span class="o">.</span><span class="n">Menu</span><span class="o">.</span><span class="n">Completions</span><span class="o">.</span><span class="n">ProgressButton</span><span class="p">:</span> <span class="s1">&#39;bg:#003333&#39;</span><span class="p">,</span>
+    <span class="n">Token</span><span class="o">.</span><span class="n">Menu</span><span class="o">.</span><span class="n">Completions</span><span class="o">.</span><span class="n">ProgressBar</span><span class="p">:</span> <span class="s1">&#39;bg:#00aaaa&#39;</span><span class="p">,</span>
+    <span class="n">Token</span><span class="o">.</span><span class="n">AutoSuggestion</span><span class="p">:</span> <span class="s1">&#39;#666666&#39;</span><span class="p">,</span>
+    <span class="n">Token</span><span class="o">.</span><span class="n">Aborted</span><span class="p">:</span> <span class="s1">&#39;#888888&#39;</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="n">XONSH_BASE_STYLE</span> <span class="o">=</span> <span class="n">LazyObject</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="p">{</span>
+    <span class="n">Whitespace</span><span class="p">:</span> <span class="s1">&#39;#008080&#39;</span><span class="p">,</span>
+    <span class="n">Comment</span><span class="p">:</span> <span class="s1">&#39;underline&#39;</span><span class="p">,</span>
+    <span class="n">Comment</span><span class="o">.</span><span class="n">Preproc</span><span class="p">:</span> <span class="s1">&#39;underline&#39;</span><span class="p">,</span>
+    <span class="n">Keyword</span><span class="p">:</span> <span class="s1">&#39;bold&#39;</span><span class="p">,</span>
+    <span class="n">Keyword</span><span class="o">.</span><span class="n">Pseudo</span><span class="p">:</span> <span class="s1">&#39;#008000&#39;</span><span class="p">,</span>
+    <span class="n">Keyword</span><span class="o">.</span><span class="n">Type</span><span class="p">:</span> <span class="s1">&#39;&#39;</span><span class="p">,</span>
+    <span class="n">Operator</span><span class="p">:</span> <span class="s1">&#39;#008080&#39;</span><span class="p">,</span>
+    <span class="n">Operator</span><span class="o">.</span><span class="n">Word</span><span class="p">:</span> <span class="s1">&#39;bold&#39;</span><span class="p">,</span>
+    <span class="n">Name</span><span class="o">.</span><span class="n">Builtin</span><span class="p">:</span> <span class="s1">&#39;&#39;</span><span class="p">,</span>
+    <span class="n">Name</span><span class="o">.</span><span class="n">Function</span><span class="p">:</span> <span class="s1">&#39;#000080&#39;</span><span class="p">,</span>
+    <span class="n">Name</span><span class="o">.</span><span class="n">Class</span><span class="p">:</span> <span class="s1">&#39;bold&#39;</span><span class="p">,</span>
+    <span class="n">Name</span><span class="o">.</span><span class="n">Namespace</span><span class="p">:</span> <span class="s1">&#39;bold&#39;</span><span class="p">,</span>
+    <span class="n">Name</span><span class="o">.</span><span class="n">Exception</span><span class="p">:</span> <span class="s1">&#39;bold&#39;</span><span class="p">,</span>
+    <span class="n">Name</span><span class="o">.</span><span class="n">Variable</span><span class="p">:</span> <span class="s1">&#39;#008080&#39;</span><span class="p">,</span>
+    <span class="n">Name</span><span class="o">.</span><span class="n">Constant</span><span class="p">:</span> <span class="s1">&#39;#800000&#39;</span><span class="p">,</span>
+    <span class="n">Name</span><span class="o">.</span><span class="n">Label</span><span class="p">:</span> <span class="s1">&#39;#808000&#39;</span><span class="p">,</span>
+    <span class="n">Name</span><span class="o">.</span><span class="n">Entity</span><span class="p">:</span> <span class="s1">&#39;bold&#39;</span><span class="p">,</span>
+    <span class="n">Name</span><span class="o">.</span><span class="n">Attribute</span><span class="p">:</span> <span class="s1">&#39;#008080&#39;</span><span class="p">,</span>
+    <span class="n">Name</span><span class="o">.</span><span class="n">Tag</span><span class="p">:</span> <span class="s1">&#39;bold&#39;</span><span class="p">,</span>
+    <span class="n">Name</span><span class="o">.</span><span class="n">Decorator</span><span class="p">:</span> <span class="s1">&#39;#008080&#39;</span><span class="p">,</span>
+    <span class="n">String</span><span class="p">:</span> <span class="s1">&#39;&#39;</span><span class="p">,</span>
+    <span class="n">String</span><span class="o">.</span><span class="n">Doc</span><span class="p">:</span> <span class="s1">&#39;underline&#39;</span><span class="p">,</span>
+    <span class="n">String</span><span class="o">.</span><span class="n">Interpol</span><span class="p">:</span> <span class="s1">&#39;bold&#39;</span><span class="p">,</span>
+    <span class="n">String</span><span class="o">.</span><span class="n">Escape</span><span class="p">:</span> <span class="s1">&#39;bold&#39;</span><span class="p">,</span>
+    <span class="n">String</span><span class="o">.</span><span class="n">Regex</span><span class="p">:</span> <span class="s1">&#39;&#39;</span><span class="p">,</span>
+    <span class="n">String</span><span class="o">.</span><span class="n">Symbol</span><span class="p">:</span> <span class="s1">&#39;&#39;</span><span class="p">,</span>
+    <span class="n">String</span><span class="o">.</span><span class="n">Other</span><span class="p">:</span> <span class="s1">&#39;#008000&#39;</span><span class="p">,</span>
+    <span class="n">Number</span><span class="p">:</span> <span class="s1">&#39;#800000&#39;</span><span class="p">,</span>
+    <span class="n">Generic</span><span class="o">.</span><span class="n">Heading</span><span class="p">:</span> <span class="s1">&#39;bold&#39;</span><span class="p">,</span>
+    <span class="n">Generic</span><span class="o">.</span><span class="n">Subheading</span><span class="p">:</span> <span class="s1">&#39;bold&#39;</span><span class="p">,</span>
+    <span class="n">Generic</span><span class="o">.</span><span class="n">Deleted</span><span class="p">:</span> <span class="s1">&#39;#800000&#39;</span><span class="p">,</span>
+    <span class="n">Generic</span><span class="o">.</span><span class="n">Inserted</span><span class="p">:</span> <span class="s1">&#39;#008000&#39;</span><span class="p">,</span>
+    <span class="n">Generic</span><span class="o">.</span><span class="n">Error</span><span class="p">:</span> <span class="s1">&#39;bold&#39;</span><span class="p">,</span>
+    <span class="n">Generic</span><span class="o">.</span><span class="n">Emph</span><span class="p">:</span> <span class="s1">&#39;underline&#39;</span><span class="p">,</span>
+    <span class="n">Generic</span><span class="o">.</span><span class="n">Prompt</span><span class="p">:</span> <span class="s1">&#39;bold&#39;</span><span class="p">,</span>
+    <span class="n">Generic</span><span class="o">.</span><span class="n">Output</span><span class="p">:</span> <span class="s1">&#39;#008080&#39;</span><span class="p">,</span>
+    <span class="n">Generic</span><span class="o">.</span><span class="n">Traceback</span><span class="p">:</span> <span class="s1">&#39;#800000&#39;</span><span class="p">,</span>
+    <span class="n">Error</span><span class="p">:</span> <span class="s1">&#39;#800000&#39;</span><span class="p">,</span>
+    <span class="p">},</span> <span class="nb">globals</span><span class="p">(),</span> <span class="s1">&#39;XONSH_BASE_STYLE&#39;</span><span class="p">)</span>
+
+<span class="n">KNOWN_COLORS</span> <span class="o">=</span> <span class="n">LazyObject</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">([</span>
+    <span class="s1">&#39;BACKGROUND_BLACK&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BACKGROUND_BLUE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BACKGROUND_CYAN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BACKGROUND_GREEN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BACKGROUND_INTENSE_BLACK&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BACKGROUND_INTENSE_BLUE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BACKGROUND_INTENSE_CYAN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BACKGROUND_INTENSE_GREEN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BACKGROUND_INTENSE_PURPLE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BACKGROUND_INTENSE_RED&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BACKGROUND_INTENSE_WHITE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BACKGROUND_INTENSE_YELLOW&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BACKGROUND_PURPLE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BACKGROUND_RED&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BACKGROUND_WHITE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BACKGROUND_YELLOW&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BLACK&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BLUE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_BLACK&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_BLUE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_CYAN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_GREEN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_INTENSE_BLACK&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_INTENSE_BLUE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_INTENSE_CYAN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_INTENSE_GREEN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_INTENSE_PURPLE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_INTENSE_RED&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_INTENSE_WHITE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_INTENSE_YELLOW&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_PURPLE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_RED&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_UNDERLINE_BLACK&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_UNDERLINE_BLUE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_UNDERLINE_CYAN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_UNDERLINE_GREEN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_UNDERLINE_INTENSE_BLACK&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_UNDERLINE_INTENSE_BLUE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_UNDERLINE_INTENSE_CYAN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_UNDERLINE_INTENSE_GREEN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_UNDERLINE_INTENSE_PURPLE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_UNDERLINE_INTENSE_RED&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_UNDERLINE_INTENSE_WHITE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_UNDERLINE_INTENSE_YELLOW&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_UNDERLINE_PURPLE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_UNDERLINE_RED&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_UNDERLINE_WHITE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_UNDERLINE_YELLOW&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_WHITE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;BOLD_YELLOW&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;CYAN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;GREEN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;INTENSE_BLACK&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;INTENSE_BLUE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;INTENSE_CYAN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;INTENSE_GREEN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;INTENSE_PURPLE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;INTENSE_RED&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;INTENSE_WHITE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;INTENSE_YELLOW&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;NO_COLOR&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;PURPLE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;RED&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;UNDERLINE_BLACK&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;UNDERLINE_BLUE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;UNDERLINE_CYAN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;UNDERLINE_GREEN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;UNDERLINE_INTENSE_BLACK&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;UNDERLINE_INTENSE_BLUE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;UNDERLINE_INTENSE_CYAN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;UNDERLINE_INTENSE_GREEN&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;UNDERLINE_INTENSE_PURPLE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;UNDERLINE_INTENSE_RED&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;UNDERLINE_INTENSE_WHITE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;UNDERLINE_INTENSE_YELLOW&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;UNDERLINE_PURPLE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;UNDERLINE_RED&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;UNDERLINE_WHITE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;UNDERLINE_YELLOW&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;WHITE&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;YELLOW&#39;</span><span class="p">,</span>
+    <span class="p">]),</span> <span class="nb">globals</span><span class="p">(),</span> <span class="s1">&#39;KNOWN_COLORS&#39;</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_expand_style</span><span class="p">(</span><span class="n">cmap</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Expands a style in order to more quickly make color map changes.&quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">cmap</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">is</span> <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">key</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">key</span><span class="p">)</span><span class="o">.</span><span class="n">rpartition</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">)</span>
+        <span class="n">cmap</span><span class="p">[</span><span class="nb">getattr</span><span class="p">(</span><span class="n">Color</span><span class="p">,</span> <span class="s1">&#39;BOLD_&#39;</span><span class="o">+</span><span class="n">key</span><span class="p">)]</span> <span class="o">=</span> <span class="s1">&#39;bold &#39;</span> <span class="o">+</span> <span class="n">val</span>
+        <span class="n">cmap</span><span class="p">[</span><span class="nb">getattr</span><span class="p">(</span><span class="n">Color</span><span class="p">,</span> <span class="s1">&#39;UNDERLINE_&#39;</span><span class="o">+</span><span class="n">key</span><span class="p">)]</span> <span class="o">=</span> <span class="s1">&#39;underline &#39;</span> <span class="o">+</span> <span class="n">val</span>
+        <span class="n">cmap</span><span class="p">[</span><span class="nb">getattr</span><span class="p">(</span><span class="n">Color</span><span class="p">,</span> <span class="s1">&#39;BOLD_UNDERLINE_&#39;</span><span class="o">+</span><span class="n">key</span><span class="p">)]</span> <span class="o">=</span> <span class="s1">&#39;bold underline &#39;</span> <span class="o">+</span> <span class="n">val</span>
+        <span class="k">if</span> <span class="n">val</span> <span class="o">==</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">:</span>
+            <span class="n">cmap</span><span class="p">[</span><span class="nb">getattr</span><span class="p">(</span><span class="n">Color</span><span class="p">,</span> <span class="s1">&#39;BACKGROUND_&#39;</span><span class="o">+</span><span class="n">key</span><span class="p">)]</span> <span class="o">=</span> <span class="n">val</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">cmap</span><span class="p">[</span><span class="nb">getattr</span><span class="p">(</span><span class="n">Color</span><span class="p">,</span> <span class="s1">&#39;BACKGROUND_&#39;</span><span class="o">+</span><span class="n">key</span><span class="p">)]</span> <span class="o">=</span> <span class="s1">&#39;bg:&#39;</span> <span class="o">+</span> <span class="n">val</span>
+
+
+<span class="k">def</span> <span class="nf">_bw_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_default_style</span><span class="p">():</span>
+    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">pygments</span><span class="o">.</span><span class="n">style</span><span class="p">,</span> <span class="s1">&#39;ansicolors&#39;</span><span class="p">):</span>
+        <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#ansidarkgray&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#ansiblue&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#ansiturquoise&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#ansigreen&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#ansiblack&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#ansidarkblue&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#ansiteal&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#ansidarkgreen&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#ansipurple&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#ansidarkred&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#ansilightgray&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#ansibrown&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#ansifuchsia&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#ansired&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#ansiwhite&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#ansiyellow&#39;</span><span class="p">,</span>
+            <span class="p">}</span>
+    <span class="k">elif</span> <span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="s1">&#39;CONEMUANSI&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">:</span>
+        <span class="c1"># These colors must match the color specification</span>
+        <span class="c1"># in prompt_toolkit, so the colors are converted</span>
+        <span class="c1"># correctly when using cmd.exe</span>
+        <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#000000&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#0000AA&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#00AAAA&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#00AA00&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#444444&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#4444FF&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#44FFFF&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#44FF44&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#FF44FF&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#FF4444&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#888888&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#FFFF44&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#AA00AA&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#AA0000&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#FFFFFF&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#AAAA00&#39;</span><span class="p">,</span>
+            <span class="p">}</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#000000&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#0000AA&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#00AAAA&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#00AA00&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#555555&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#0000FF&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#55FFFF&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#00FF00&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#FF00FF&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#FF0000&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#aaaaaa&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#FFFF55&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#AA00AA&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#AA0000&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#ffffff&#39;</span><span class="p">,</span>
+            <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#ffff00&#39;</span><span class="p">,</span>
+            <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_monokai_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#1e0010&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#6666ef&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#66d9ef&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#2ee22e&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#5e5e5e&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#2626d7&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#2ed9d9&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#a6e22e&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#ae81ff&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#f92672&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#f8f8f2&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#e6db74&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#960050&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#AF0000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#d7d7d7&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#e2e22e&#39;</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="c1">######################################</span>
+<span class="c1">#   Auto-generated below this line   #</span>
+<span class="c1">######################################</span>
+<span class="k">def</span> <span class="nf">_algol_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#666&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#666&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#666&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#666&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#666&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#FF0000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#666&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#FF0000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#FF0000&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_algol_nu_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#666&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#666&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#666&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#666&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#666&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#FF0000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#666&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#FF0000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#FF0000&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_autumn_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#000080&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#0000aa&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#00aaaa&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#00aa00&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#555555&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#1e90ff&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#1e90ff&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#4c8317&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#FAA&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#aa5500&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#bbbbbb&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#FAA&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#800080&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#aa0000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#aaaaaa&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#aa5500&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_borland_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#000000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#000080&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#008080&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#008800&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#555555&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#0000FF&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#ddffdd&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#888888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#e3d2d2&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#FF0000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#ffdddd&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#e3d2d2&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#800080&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#aa0000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#aaaaaa&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#a61717&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_colorful_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#00C&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#0e84b5&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#00A000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#555&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#33B&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#bbbbbb&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#FAA&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#D42&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#fff0ff&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#FAA&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#800080&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#A00000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#bbbbbb&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#A60&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_emacs_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#008000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#000080&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#04D&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#00A000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#666666&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#04D&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#bbbbbb&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#00BB00&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#AA22FF&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#D2413A&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#bbbbbb&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#bbbbbb&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#800080&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#A00000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#bbbbbb&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#BB6622&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_friendly_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#007020&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#000080&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#0e84b5&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#00A000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#555555&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#70a0d0&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#60add5&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#40a070&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#bb60d5&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#d55537&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#fff0f0&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#bbbbbb&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#800080&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#A00000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#bbbbbb&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#c65d09&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_fruity_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#0f140f&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#0086d2&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#0086d2&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#008800&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#444444&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#0086f7&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#0086f7&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#888888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#ff0086&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#fb660a&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#ffffff&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#cdcaa9&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#ff0086&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#ff0007&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#cdcaa9&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#fb660a&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_igor_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#009C00&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#0000FF&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#007575&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#009C00&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#007575&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#0000FF&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#007575&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#009C00&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#CC00A3&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#C34E00&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#CC00A3&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#C34E00&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#CC00A3&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#C34E00&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#CC00A3&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#C34E00&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_lovelace_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#444444&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#2838b0&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#289870&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#388038&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#666666&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#2838b0&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#888888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#289870&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#a848a8&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#b83838&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#888888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#a89028&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#a848a8&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#c02828&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#888888&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#b85820&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_manni_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#000000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#000099&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#009999&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#00CC00&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#555555&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#9999FF&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#00CCFF&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#99CC66&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#CC00FF&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#FF6600&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#FFCCCC&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#FFCC33&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#CC00FF&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#AA0000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#AAAAAA&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#CC3300&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_murphy_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#000080&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#0e84b5&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#00A000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#555&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#66f&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#5ed&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#5ed&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#e9e&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#f84&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#eee&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#fc8&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#800080&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#A00000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#bbbbbb&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#c65d09&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_native_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#520000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#3677a9&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#24909d&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#589819&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#666666&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#447fcf&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#40ffff&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#6ab825&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#e3d2d2&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#cd2828&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#ffffff&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#ed9d13&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#666666&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#a61717&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#aaaaaa&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#a61717&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_paraiso_dark_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#776e71&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#815ba4&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#06b6ef&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#48b685&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#776e71&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#815ba4&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#5bc4bf&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#48b685&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#e7e9db&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#ef6155&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#e7e9db&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#fec418&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#815ba4&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#ef6155&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#5bc4bf&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#f99b15&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_paraiso_light_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#2f1e2e&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#2f1e2e&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#06b6ef&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#48b685&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#2f1e2e&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#815ba4&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#5bc4bf&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#48b685&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#815ba4&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#ef6155&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#5bc4bf&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#fec418&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#815ba4&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#2f1e2e&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#8d8687&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#f99b15&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_pastie_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#000000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#0000DD&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#0066bb&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#008800&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#555555&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#3333bb&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#ddffdd&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#22bb22&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#e3d2d2&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#dd7700&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#fff0ff&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#e3d2d2&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#bb0066&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#aa0000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#bbbbbb&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#aa6600&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_perldoc_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#000080&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#000080&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#1e889b&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#00aa00&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#555555&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#B452CD&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#bbbbbb&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#228B22&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#B452CD&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#CD5555&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#e3d2d2&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#e3d2d2&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#8B008B&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#aa0000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#a7a7a7&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#cb6c20&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_rrt_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#ff0000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#87ceeb&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#87ceeb&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#00ff00&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#87ceeb&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#87ceeb&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#7fffd4&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#00ff00&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#ee82ee&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#ff0000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#e5e5e5&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#eedd82&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#ee82ee&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#ff0000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#87ceeb&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#ff0000&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_tango_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#000000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#0000cf&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#3465a4&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#00A000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#204a87&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#5c35cc&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#f8f8f8&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#4e9a06&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#f8f8f8&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#ef2929&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#f8f8f8&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#c4a000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#800080&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#a40000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#f8f8f8&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#8f5902&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_trac_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#000000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#000080&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#009999&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#808000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#555555&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#445588&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#ddffdd&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#999988&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#e3d2d2&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#bb8844&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#ffdddd&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#e3d2d2&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#800080&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#aa0000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#aaaaaa&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#808000&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_vim_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#000080&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#000080&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#00cdcd&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#00cd00&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#666699&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#3399cc&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#00cdcd&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#00cd00&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#cd00cd&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#FF0000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#cccccc&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#cdcd00&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#cd00cd&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#cd0000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#cccccc&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#cd0000&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_vs_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#008000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#0000ff&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#2b91af&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#008000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#2b91af&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#2b91af&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#2b91af&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#2b91af&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#2b91af&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#FF0000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#2b91af&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#2b91af&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#a31515&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#a31515&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#2b91af&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#a31515&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="k">def</span> <span class="nf">_xcode_style</span><span class="p">():</span>
+    <span class="n">style</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLACK</span><span class="p">:</span> <span class="s1">&#39;#000000&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">BLUE</span><span class="p">:</span> <span class="s1">&#39;#1C01CE&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">CYAN</span><span class="p">:</span> <span class="s1">&#39;#3F6E75&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">GREEN</span><span class="p">:</span> <span class="s1">&#39;#177500&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLACK</span><span class="p">:</span> <span class="s1">&#39;#3F6E75&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_BLUE</span><span class="p">:</span> <span class="s1">&#39;#2300CE&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_CYAN</span><span class="p">:</span> <span class="s1">&#39;#3F6E75&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_GREEN</span><span class="p">:</span> <span class="s1">&#39;#3F6E75&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_PURPLE</span><span class="p">:</span> <span class="s1">&#39;#A90D91&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_RED</span><span class="p">:</span> <span class="s1">&#39;#C41A16&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_WHITE</span><span class="p">:</span> <span class="s1">&#39;#3F6E75&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">INTENSE_YELLOW</span><span class="p">:</span> <span class="s1">&#39;#836C28&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">NO_COLOR</span><span class="p">:</span> <span class="s1">&#39;noinherit&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">PURPLE</span><span class="p">:</span> <span class="s1">&#39;#A90D91&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">RED</span><span class="p">:</span> <span class="s1">&#39;#C41A16&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">WHITE</span><span class="p">:</span> <span class="s1">&#39;#3F6E75&#39;</span><span class="p">,</span>
+        <span class="n">Color</span><span class="o">.</span><span class="n">YELLOW</span><span class="p">:</span> <span class="s1">&#39;#836C28&#39;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="n">_expand_style</span><span class="p">(</span><span class="n">style</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">style</span>
+
+
+<span class="n">STYLES</span> <span class="o">=</span> <span class="n">LazyDict</span><span class="p">({</span>
+    <span class="s1">&#39;algol&#39;</span><span class="p">:</span> <span class="n">_algol_style</span><span class="p">,</span>
+    <span class="s1">&#39;algol_nu&#39;</span><span class="p">:</span> <span class="n">_algol_nu_style</span><span class="p">,</span>
+    <span class="s1">&#39;autumn&#39;</span><span class="p">:</span> <span class="n">_autumn_style</span><span class="p">,</span>
+    <span class="s1">&#39;borland&#39;</span><span class="p">:</span> <span class="n">_borland_style</span><span class="p">,</span>
+    <span class="s1">&#39;bw&#39;</span><span class="p">:</span> <span class="n">_bw_style</span><span class="p">,</span>
+    <span class="s1">&#39;colorful&#39;</span><span class="p">:</span> <span class="n">_colorful_style</span><span class="p">,</span>
+    <span class="s1">&#39;default&#39;</span><span class="p">:</span> <span class="n">_default_style</span><span class="p">,</span>
+    <span class="s1">&#39;emacs&#39;</span><span class="p">:</span> <span class="n">_emacs_style</span><span class="p">,</span>
+    <span class="s1">&#39;friendly&#39;</span><span class="p">:</span> <span class="n">_friendly_style</span><span class="p">,</span>
+    <span class="s1">&#39;fruity&#39;</span><span class="p">:</span> <span class="n">_fruity_style</span><span class="p">,</span>
+    <span class="s1">&#39;igor&#39;</span><span class="p">:</span> <span class="n">_igor_style</span><span class="p">,</span>
+    <span class="s1">&#39;lovelace&#39;</span><span class="p">:</span> <span class="n">_lovelace_style</span><span class="p">,</span>
+    <span class="s1">&#39;manni&#39;</span><span class="p">:</span> <span class="n">_manni_style</span><span class="p">,</span>
+    <span class="s1">&#39;monokai&#39;</span><span class="p">:</span> <span class="n">_monokai_style</span><span class="p">,</span>
+    <span class="s1">&#39;murphy&#39;</span><span class="p">:</span> <span class="n">_murphy_style</span><span class="p">,</span>
+    <span class="s1">&#39;native&#39;</span><span class="p">:</span> <span class="n">_native_style</span><span class="p">,</span>
+    <span class="s1">&#39;paraiso-dark&#39;</span><span class="p">:</span> <span class="n">_paraiso_dark_style</span><span class="p">,</span>
+    <span class="s1">&#39;paraiso-light&#39;</span><span class="p">:</span> <span class="n">_paraiso_light_style</span><span class="p">,</span>
+    <span class="s1">&#39;pastie&#39;</span><span class="p">:</span> <span class="n">_pastie_style</span><span class="p">,</span>
+    <span class="s1">&#39;perldoc&#39;</span><span class="p">:</span> <span class="n">_perldoc_style</span><span class="p">,</span>
+    <span class="s1">&#39;rrt&#39;</span><span class="p">:</span> <span class="n">_rrt_style</span><span class="p">,</span>
+    <span class="s1">&#39;tango&#39;</span><span class="p">:</span> <span class="n">_tango_style</span><span class="p">,</span>
+    <span class="s1">&#39;trac&#39;</span><span class="p">:</span> <span class="n">_trac_style</span><span class="p">,</span>
+    <span class="s1">&#39;vim&#39;</span><span class="p">:</span> <span class="n">_vim_style</span><span class="p">,</span>
+    <span class="s1">&#39;vs&#39;</span><span class="p">:</span> <span class="n">_vs_style</span><span class="p">,</span>
+    <span class="s1">&#39;xcode&#39;</span><span class="p">:</span> <span class="n">_xcode_style</span><span class="p">,</span>
+    <span class="p">},</span> <span class="nb">globals</span><span class="p">(),</span> <span class="s1">&#39;STYLES&#39;</span><span class="p">)</span>
+
+<span class="k">del</span> <span class="p">(</span><span class="n">_algol_style</span><span class="p">,</span> <span class="n">_algol_nu_style</span><span class="p">,</span> <span class="n">_autumn_style</span><span class="p">,</span> <span class="n">_borland_style</span><span class="p">,</span> <span class="n">_bw_style</span><span class="p">,</span>
+     <span class="n">_colorful_style</span><span class="p">,</span> <span class="n">_default_style</span><span class="p">,</span> <span class="n">_emacs_style</span><span class="p">,</span> <span class="n">_friendly_style</span><span class="p">,</span>
+     <span class="n">_fruity_style</span><span class="p">,</span> <span class="n">_igor_style</span><span class="p">,</span> <span class="n">_lovelace_style</span><span class="p">,</span> <span class="n">_manni_style</span><span class="p">,</span> <span class="n">_monokai_style</span><span class="p">,</span>
+     <span class="n">_murphy_style</span><span class="p">,</span> <span class="n">_native_style</span><span class="p">,</span> <span class="n">_paraiso_dark_style</span><span class="p">,</span> <span class="n">_paraiso_light_style</span><span class="p">,</span>
+     <span class="n">_pastie_style</span><span class="p">,</span> <span class="n">_perldoc_style</span><span class="p">,</span> <span class="n">_rrt_style</span><span class="p">,</span> <span class="n">_tango_style</span><span class="p">,</span> <span class="n">_trac_style</span><span class="p">,</span>
+     <span class="n">_vim_style</span><span class="p">,</span> <span class="n">_vs_style</span><span class="p">,</span> <span class="n">_xcode_style</span><span class="p">)</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+        <p class="logo"><a href="../../index.html" title="index">
+          <img class="logo" src="../../_static/ascii_conch_part_color_tight.png" alt="Logo"/>
+        </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="relbar-bottom">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../index.html">xonsh 0.4.7.dev230 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2015, Anthony Scopatz.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.4.8.
+    </div>
+    <!-- cloud_sptheme 1.4 -->
+  </body>
+</html>
