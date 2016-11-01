@@ -8,7 +8,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>xonsh.proc &#8212; xonsh 0.4.7.dev318 documentation</title>
+    <title>xonsh.proc &#8212; xonsh 0.4.7.dev335 documentation</title>
     
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
@@ -17,7 +17,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../',
-        VERSION:     '0.4.7.dev318',
+        VERSION:     '0.4.7.dev335',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true
@@ -31,7 +31,7 @@
     <link rel="shortcut icon" href="../../_static/magic_conch.ico"/>
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" />
-    <link rel="top" title="xonsh 0.4.7.dev318 documentation" href="../../index.html" />
+    <link rel="top" title="xonsh 0.4.7.dev335 documentation" href="../../index.html" />
     <link rel="up" title="Module code" href="../index.html" />
      
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -50,7 +50,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.4.7.dev318 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.4.7.dev335 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -80,6 +80,7 @@
 <span class="kn">import</span> <span class="nn">time</span>
 <span class="kn">import</span> <span class="nn">queue</span>
 <span class="kn">import</span> <span class="nn">array</span>
+<span class="kn">import</span> <span class="nn">ctypes</span>
 <span class="kn">import</span> <span class="nn">signal</span>
 <span class="kn">import</span> <span class="nn">inspect</span>
 <span class="kn">import</span> <span class="nn">builtins</span>
@@ -94,7 +95,7 @@
                          <span class="n">XonshError</span><span class="p">)</span>
 <span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="k">import</span> <span class="n">lazyobject</span><span class="p">,</span> <span class="n">LazyObject</span>
 <span class="kn">from</span> <span class="nn">xonsh.jobs</span> <span class="k">import</span> <span class="n">wait_for_active_job</span>
-<span class="kn">from</span> <span class="nn">xonsh.lazyimps</span> <span class="k">import</span> <span class="n">fcntl</span><span class="p">,</span> <span class="n">termios</span>
+<span class="kn">from</span> <span class="nn">xonsh.lazyimps</span> <span class="k">import</span> <span class="n">fcntl</span><span class="p">,</span> <span class="n">termios</span><span class="p">,</span> <span class="n">_winapi</span><span class="p">,</span> <span class="n">msvcrt</span><span class="p">,</span> <span class="n">winutils</span>
 
 
 <span class="c1"># termios tc(get|set)attr indexes.</span>
@@ -105,25 +106,6 @@
 <span class="n">ISPEED</span> <span class="o">=</span> <span class="mi">4</span>
 <span class="n">OSPEED</span> <span class="o">=</span> <span class="mi">5</span>
 <span class="n">CC</span> <span class="o">=</span> <span class="mi">6</span>
-
-
-<span class="c1"># force some lazy imports so we don&#39;t have errors on non-windows platforms</span>
-<span class="nd">@lazyobject</span>
-<span class="k">def</span> <span class="nf">_winapi</span><span class="p">():</span>
-    <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
-        <span class="kn">import</span> <span class="nn">_winapi</span> <span class="k">as</span> <span class="nn">m</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">m</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="k">return</span> <span class="n">m</span>
-
-
-<span class="nd">@lazyobject</span>
-<span class="k">def</span> <span class="nf">msvcrt</span><span class="p">():</span>
-    <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
-        <span class="kn">import</span> <span class="nn">msvcrt</span> <span class="k">as</span> <span class="nn">m</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">m</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="k">return</span> <span class="n">m</span>
 
 
 <span class="nd">@lazyobject</span>
@@ -300,7 +282,255 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">thread</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">populate_buffer</span><span class="p">,</span>
                                        <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fd</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">,</span> <span class="n">chunksize</span><span class="p">))</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">thread</span><span class="o">.</span><span class="n">daemon</span> <span class="o">=</span> <span class="kc">True</span>
+
         <span class="bp">self</span><span class="o">.</span><span class="n">thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span></div>
+
+
+<span class="k">def</span> <span class="nf">_expand_console_buffer</span><span class="p">(</span><span class="n">cols</span><span class="p">,</span> <span class="n">max_offset</span><span class="p">,</span> <span class="n">expandsize</span><span class="p">,</span> <span class="n">orig_posize</span><span class="p">,</span> <span class="n">fd</span><span class="p">):</span>
+    <span class="c1"># if we are getting close to the end of the console buffer,</span>
+    <span class="c1"># expand it so that we can read from it successfully.</span>
+    <span class="n">rows</span> <span class="o">=</span> <span class="p">((</span><span class="n">max_offset</span> <span class="o">+</span> <span class="n">expandsize</span><span class="p">)</span><span class="o">//</span><span class="n">cols</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="n">winutils</span><span class="o">.</span><span class="n">set_console_screen_buffer_size</span><span class="p">(</span><span class="n">cols</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">fd</span><span class="o">=</span><span class="n">fd</span><span class="p">)</span>
+    <span class="n">orig_posize</span> <span class="o">=</span> <span class="n">orig_posize</span><span class="p">[:</span><span class="mi">3</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="n">rows</span><span class="p">,)</span>
+    <span class="n">max_offset</span> <span class="o">=</span> <span class="p">(</span><span class="n">rows</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">cols</span>
+    <span class="k">return</span> <span class="n">rows</span><span class="p">,</span> <span class="n">max_offset</span><span class="p">,</span> <span class="n">orig_posize</span>
+
+
+<div class="viewcode-block" id="populate_console"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.populate_console">[docs]</a><span class="k">def</span> <span class="nf">populate_console</span><span class="p">(</span><span class="n">reader</span><span class="p">,</span> <span class="n">fd</span><span class="p">,</span> <span class="n">buffer</span><span class="p">,</span> <span class="n">chunksize</span><span class="p">,</span> <span class="n">queue</span><span class="p">,</span> <span class="n">expandsize</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Reads bytes from the file descriptor and puts lines into the queue.</span>
+<span class="sd">    The reads happend in parallel, using xonsh.winutils.read_console_output_character(),</span>
+<span class="sd">    and is thus only available on windows. If the read fails for any reason, the reader is</span>
+<span class="sd">    flagged as closed.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># OK, so this function is super annoying because Windows stores its</span>
+    <span class="c1"># buffers as a 2D regular, dense array -- without trailing newlines.</span>
+    <span class="c1"># Meanwhile, we want to add *lines* to the queue. Also, as is typical</span>
+    <span class="c1"># with parallel reads, the entire buffer that you ask for may not be</span>
+    <span class="c1"># filled. Thus we have to deal with the full generality.</span>
+    <span class="c1">#   1. reads may end in the middle of a line</span>
+    <span class="c1">#   2. excess whitespace at the end of a line may not be real, unless</span>
+    <span class="c1">#   3. you haven&#39;t read to the end of the line yet!</span>
+    <span class="c1"># So there are alignment issues everywhere.  Also, Windows will automatically</span>
+    <span class="c1"># read past the current cursor position, even though there is presumably</span>
+    <span class="c1"># nothing to see there.</span>
+    <span class="c1">#</span>
+    <span class="c1"># These chunked reads basically need to happen like this because,</span>
+    <span class="c1">#   a. The default buffer size is HUGE for the console (90k lines x 120 cols)</span>
+    <span class="c1">#      as so we can&#39;t just read in everything at the end and see what we</span>
+    <span class="c1">#      care about without a noticible performance hit.</span>
+    <span class="c1">#   b. Even with this huge size, it is still possible to write more lines than</span>
+    <span class="c1">#      this, so we should scroll along with the console.</span>
+    <span class="c1"># Unfortnately, because we do not have control over the terminal emulator,</span>
+    <span class="c1"># It is not possible to compute how far back we should set the begining</span>
+    <span class="c1"># read position because we don&#39;t know how many characters have been popped</span>
+    <span class="c1"># off the top of the buffer. If we did somehow know this number we could do</span>
+    <span class="c1"># something like the following:</span>
+    <span class="c1">#</span>
+    <span class="c1">#    new_offset = (y*cols) + x</span>
+    <span class="c1">#    if new_offset == max_offset:</span>
+    <span class="c1">#        new_offset -= scolled_offset</span>
+    <span class="c1">#        x = new_offset%cols</span>
+    <span class="c1">#        y = new_offset//cols</span>
+    <span class="c1">#        continue</span>
+    <span class="c1">#</span>
+    <span class="c1"># So this method is imperfect and only works as long as the sceen has</span>
+    <span class="c1"># room to expand to.  Thus the trick here is to expand the screen size</span>
+    <span class="c1"># when we get close enough to the end of the screen. There remain some</span>
+    <span class="c1"># async issues related to not being able to set the cursor position.</span>
+    <span class="c1"># but they just affect the alignment / capture of the output of the</span>
+    <span class="c1"># first command run after a screen resize.</span>
+    <span class="k">if</span> <span class="n">expandsize</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">expandsize</span> <span class="o">=</span> <span class="mi">100</span> <span class="o">*</span> <span class="n">chunksize</span>
+    <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">cols</span><span class="p">,</span> <span class="n">rows</span> <span class="o">=</span> <span class="n">posize</span> <span class="o">=</span> <span class="n">winutils</span><span class="o">.</span><span class="n">get_position_size</span><span class="p">(</span><span class="n">fd</span><span class="p">)</span>
+    <span class="n">pre_x</span> <span class="o">=</span> <span class="n">pre_y</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+    <span class="n">orig_posize</span> <span class="o">=</span> <span class="n">posize</span>
+    <span class="n">offset</span> <span class="o">=</span> <span class="p">(</span><span class="n">cols</span><span class="o">*</span><span class="n">y</span><span class="p">)</span> <span class="o">+</span> <span class="n">x</span>
+    <span class="n">max_offset</span> <span class="o">=</span> <span class="p">(</span><span class="n">rows</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">cols</span>
+    <span class="c1"># I believe that there is a bug in PTK that if we reset the</span>
+    <span class="c1"># cursor position, the cursor on the next prompt is accidentally on</span>
+    <span class="c1"># the next line.  If this is fixed, uncomment the following line.</span>
+    <span class="c1">#if max_offset &lt; offset + expandsize:</span>
+    <span class="c1">#    rows, max_offset, orig_posize = _expand_console_buffer(</span>
+    <span class="c1">#                                        cols, max_offset, expandsize,</span>
+    <span class="c1">#                                        orig_posize, fd)</span>
+    <span class="c1">#    winutils.set_console_cursor_position(x, y, fd=fd)</span>
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="n">posize</span> <span class="o">=</span> <span class="n">winutils</span><span class="o">.</span><span class="n">get_position_size</span><span class="p">(</span><span class="n">fd</span><span class="p">)</span>
+        <span class="n">offset</span> <span class="o">=</span> <span class="p">(</span><span class="n">cols</span><span class="o">*</span><span class="n">y</span><span class="p">)</span> <span class="o">+</span> <span class="n">x</span>
+        <span class="k">if</span> <span class="p">((</span><span class="n">posize</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">posize</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">&lt;=</span> <span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span> <span class="ow">and</span> <span class="n">posize</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span> <span class="o">==</span> <span class="p">(</span><span class="n">cols</span><span class="p">,</span> <span class="n">rows</span><span class="p">))</span> <span class="ow">or</span> \
+                <span class="p">(</span><span class="n">pre_x</span> <span class="o">==</span> <span class="n">x</span> <span class="ow">and</span> <span class="n">pre_y</span> <span class="o">==</span> <span class="n">y</span><span class="p">):</span>
+            <span class="c1"># already at or ahead of the current cursor position.</span>
+            <span class="k">if</span> <span class="n">reader</span><span class="o">.</span><span class="n">closed</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">reader</span><span class="o">.</span><span class="n">timeout</span> <span class="o">*</span> <span class="mi">10</span><span class="o">**</span><span class="n">reader</span><span class="o">.</span><span class="n">sleepscale</span><span class="p">)</span>
+                <span class="k">continue</span>
+        <span class="k">elif</span> <span class="n">max_offset</span> <span class="o">&lt;=</span> <span class="n">offset</span> <span class="o">+</span> <span class="n">expandsize</span><span class="p">:</span>
+            <span class="n">ecb</span> <span class="o">=</span> <span class="n">_expand_console_buffer</span><span class="p">(</span><span class="n">cols</span><span class="p">,</span> <span class="n">max_offset</span><span class="p">,</span> <span class="n">expandsize</span><span class="p">,</span>
+                                         <span class="n">orig_posize</span><span class="p">,</span> <span class="n">fd</span><span class="p">)</span>
+            <span class="n">rows</span><span class="p">,</span> <span class="n">max_offset</span><span class="p">,</span> <span class="n">orig_posize</span> <span class="o">=</span> <span class="n">ecb</span>
+            <span class="k">continue</span>
+        <span class="k">elif</span> <span class="n">posize</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span> <span class="o">==</span> <span class="p">(</span><span class="n">cols</span><span class="p">,</span> <span class="n">rows</span><span class="p">):</span>
+            <span class="c1"># cursor updated but screen size is the same.</span>
+            <span class="k">pass</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># screen size changed, which is offset preserving</span>
+            <span class="n">orig_posize</span> <span class="o">=</span> <span class="n">posize</span>
+            <span class="n">cols</span><span class="p">,</span> <span class="n">rows</span> <span class="o">=</span> <span class="n">posize</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">offset</span> <span class="o">%</span> <span class="n">cols</span>
+            <span class="n">y</span> <span class="o">=</span> <span class="n">offset</span> <span class="o">//</span> <span class="n">cols</span>
+            <span class="n">pre_x</span> <span class="o">=</span> <span class="n">pre_y</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+            <span class="n">max_offset</span> <span class="o">=</span> <span class="p">(</span><span class="n">rows</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">cols</span>
+            <span class="k">continue</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="n">winutils</span><span class="o">.</span><span class="n">read_console_output_character</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="n">y</span><span class="p">,</span> <span class="n">fd</span><span class="o">=</span><span class="n">fd</span><span class="p">,</span>
+                                                         <span class="n">buf</span><span class="o">=</span><span class="n">buffer</span><span class="p">,</span>
+                                                         <span class="n">bufsize</span><span class="o">=</span><span class="n">chunksize</span><span class="p">,</span>
+                                                         <span class="n">raw</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">OSError</span><span class="p">,</span> <span class="ne">IOError</span><span class="p">):</span>
+            <span class="n">reader</span><span class="o">.</span><span class="n">closed</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">break</span>
+        <span class="c1"># cursor position and offset</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">reader</span><span class="o">.</span><span class="n">closed</span><span class="p">:</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="n">buf</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span>
+        <span class="n">nread</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">nread</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">reader</span><span class="o">.</span><span class="n">timeout</span> <span class="o">*</span> <span class="mi">10</span><span class="o">**</span><span class="n">reader</span><span class="o">.</span><span class="n">sleepscale</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="n">cur_x</span><span class="p">,</span> <span class="n">cur_y</span> <span class="o">=</span> <span class="n">posize</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">posize</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">cur_offset</span> <span class="o">=</span> <span class="p">(</span><span class="n">cols</span><span class="o">*</span><span class="n">cur_y</span><span class="p">)</span> <span class="o">+</span> <span class="n">cur_x</span>
+        <span class="n">beg_offset</span> <span class="o">=</span> <span class="p">(</span><span class="n">cols</span><span class="o">*</span><span class="n">y</span><span class="p">)</span> <span class="o">+</span> <span class="n">x</span>
+        <span class="n">end_offset</span> <span class="o">=</span> <span class="n">beg_offset</span> <span class="o">+</span> <span class="n">nread</span>
+        <span class="k">if</span> <span class="n">end_offset</span> <span class="o">&gt;</span> <span class="n">cur_offset</span> <span class="ow">and</span> <span class="n">cur_offset</span> <span class="o">!=</span> <span class="n">max_offset</span><span class="p">:</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="n">buf</span><span class="p">[:</span><span class="n">cur_offset</span><span class="o">-</span><span class="n">end_offset</span><span class="p">]</span>
+        <span class="c1"># convert to lines</span>
+        <span class="n">xshift</span> <span class="o">=</span> <span class="n">cols</span> <span class="o">-</span> <span class="n">x</span>
+        <span class="n">yshift</span> <span class="o">=</span> <span class="p">(</span><span class="n">nread</span> <span class="o">//</span> <span class="n">cols</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="mi">1</span> <span class="k">if</span> <span class="n">nread</span> <span class="o">%</span> <span class="n">cols</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span><span class="n">buf</span><span class="p">[:</span><span class="n">xshift</span><span class="p">]]</span>
+        <span class="n">lines</span> <span class="o">+=</span> <span class="p">[</span><span class="n">buf</span><span class="p">[</span><span class="n">l</span> <span class="o">*</span> <span class="n">cols</span> <span class="o">+</span> <span class="n">xshift</span><span class="p">:(</span><span class="n">l</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">cols</span> <span class="o">+</span> <span class="n">xshift</span><span class="p">]</span>
+                  <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">yshift</span><span class="p">)]</span>
+        <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span><span class="n">line</span> <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">lines</span> <span class="k">if</span> <span class="n">line</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">lines</span><span class="p">:</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">reader</span><span class="o">.</span><span class="n">timeout</span> <span class="o">*</span> <span class="mi">10</span><span class="o">**</span><span class="n">reader</span><span class="o">.</span><span class="n">sleepscale</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="c1"># put lines in the queue</span>
+        <span class="n">nl</span> <span class="o">=</span> <span class="n">b</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span>
+        <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">lines</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+            <span class="n">queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span> <span class="o">+</span> <span class="n">nl</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span> <span class="o">==</span> <span class="n">xshift</span><span class="p">:</span>
+            <span class="n">queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">lines</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span> <span class="o">+</span> <span class="n">nl</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">lines</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="c1"># update x and y locations</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">beg_offset</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">))</span> <span class="o">%</span> <span class="n">cols</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">new_offset</span> <span class="o">=</span> <span class="n">beg_offset</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">new_offset</span> <span class="o">=</span> <span class="n">beg_offset</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="o">.</span><span class="n">rstrip</span><span class="p">())</span>
+        <span class="n">pre_x</span> <span class="o">=</span> <span class="n">x</span>
+        <span class="n">pre_y</span> <span class="o">=</span> <span class="n">y</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">new_offset</span> <span class="o">%</span> <span class="n">cols</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">new_offset</span> <span class="o">//</span> <span class="n">cols</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">reader</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ConsoleParallelReader"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.ConsoleParallelReader">[docs]</a><span class="k">class</span> <span class="nc">ConsoleParallelReader</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Parallel reader for consoles that runs in a background thread.</span>
+<span class="sd">    This is only needed, available, and useful on Windows.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fd</span><span class="p">,</span> <span class="n">buffer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">chunksize</span><span class="o">=</span><span class="mi">1024</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        fd : int</span>
+<span class="sd">            Standard buffer file descriptor, 0 for stdin, 1 for stdout (default),</span>
+<span class="sd">            and 2 for stderr.</span>
+<span class="sd">        buffer : ctypes.c_wchar_p, optional</span>
+<span class="sd">            An existing buffer to (re-)use.</span>
+<span class="sd">        chunksize : int, optional</span>
+<span class="sd">            The max size of the parallel reads, default 1 kb.</span>
+<span class="sd">        timeout : float, optional</span>
+<span class="sd">            The queue reading timeout.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fd</span> <span class="o">=</span> <span class="n">fd</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="o">=</span> <span class="n">buffer</span>  <span class="c1"># this cannot be public</span>
+        <span class="k">if</span> <span class="n">buffer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">c_char_p</span><span class="p">(</span><span class="n">b</span><span class="s2">&quot; &quot;</span> <span class="o">*</span> <span class="n">chunksize</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">chunksize</span> <span class="o">=</span> <span class="n">chunksize</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">queue</span> <span class="o">=</span> <span class="n">queue</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="n">timeout</span> <span class="ow">or</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;XONSH_PROC_FREQUENCY&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">closed</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="c1"># start reading from stream</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">thread</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">populate_console</span><span class="p">,</span>
+                                       <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fd</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span><span class="p">,</span>
+                                             <span class="n">chunksize</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">thread</span><span class="o">.</span><span class="n">daemon</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+<div class="viewcode-block" id="ConsoleParallelReader.close"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.ConsoleParallelReader.close">[docs]</a>    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;close the reader&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">closed</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<div class="viewcode-block" id="ConsoleParallelReader.read_queue"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.ConsoleParallelReader.read_queue">[docs]</a>    <span class="k">def</span> <span class="nf">read_queue</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Reads a single &#39;line&#39; from the queue.&quot;&quot;&quot;</span>
+        <span class="n">timeout</span> <span class="o">=</span> <span class="n">timeout</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">block</span><span class="o">=</span><span class="n">timeout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span>
+                                  <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">queue</span><span class="o">.</span><span class="n">Empty</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">timeout</span> <span class="o">*</span> <span class="mi">10</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">b</span><span class="s1">&#39;&#39;</span></div>
+
+<div class="viewcode-block" id="ConsoleParallelReader.read"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.ConsoleParallelReader.read">[docs]</a>    <span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Reads bytes from the file.&quot;&quot;&quot;</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">buf</span> <span class="o">=</span> <span class="n">b</span><span class="s1">&#39;&#39;</span>
+        <span class="k">while</span> <span class="n">size</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">i</span> <span class="o">!=</span> <span class="n">size</span><span class="p">:</span>
+            <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_queue</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">line</span><span class="p">:</span>
+                <span class="n">buf</span> <span class="o">+=</span> <span class="n">line</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="n">i</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">buf</span></div>
+
+<div class="viewcode-block" id="ConsoleParallelReader.readline"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.ConsoleParallelReader.readline">[docs]</a>    <span class="k">def</span> <span class="nf">readline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Reads a line, or a partial line from the file descriptor.&quot;&quot;&quot;</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">nl</span> <span class="o">=</span> <span class="n">b</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span>
+        <span class="n">buf</span> <span class="o">=</span> <span class="n">b</span><span class="s1">&#39;&#39;</span>
+        <span class="k">while</span> <span class="n">size</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">i</span> <span class="o">!=</span> <span class="n">size</span><span class="p">:</span>
+            <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_queue</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">line</span><span class="p">:</span>
+                <span class="n">buf</span> <span class="o">+=</span> <span class="n">line</span>
+                <span class="k">if</span> <span class="n">line</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">nl</span><span class="p">):</span>
+                    <span class="k">break</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="n">i</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">buf</span></div>
+
+<div class="viewcode-block" id="ConsoleParallelReader.readlines"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.ConsoleParallelReader.readlines">[docs]</a>    <span class="k">def</span> <span class="nf">readlines</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hint</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Reads lines from the file descriptor.&quot;&quot;&quot;</span>
+        <span class="n">lines</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span> <span class="o">!=</span> <span class="n">hint</span><span class="p">:</span>
+            <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">readline</span><span class="p">(</span><span class="n">size</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">line</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">lines</span></div>
+
+<div class="viewcode-block" id="ConsoleParallelReader.fileno"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.ConsoleParallelReader.fileno">[docs]</a>    <span class="k">def</span> <span class="nf">fileno</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns the file descriptor number.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">fd</span></div>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="ConsoleParallelReader.readable"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.ConsoleParallelReader.readable">[docs]</a>    <span class="k">def</span> <span class="nf">readable</span><span class="p">():</span>
+        <span class="sd">&quot;&quot;&quot;Returns true, because this object is always readable.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="kc">True</span></div></div>
 
 
 <div class="viewcode-block" id="safe_fdclose"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.safe_fdclose">[docs]</a><span class="k">def</span> <span class="nf">safe_fdclose</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="n">cache</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
@@ -353,7 +583,7 @@
     <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">stdout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">RLock</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">stdout_fd</span> <span class="o">=</span> <span class="n">stdout</span><span class="o">.</span><span class="n">fileno</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stdout_fd</span> <span class="o">=</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">stdout</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">stdout</span><span class="o">.</span><span class="n">fileno</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_set_pty_size</span><span class="p">()</span>
         <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">orig_stdin</span> <span class="o">=</span> <span class="n">stdin</span>
@@ -383,6 +613,8 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">old_winch_handler</span> <span class="o">=</span> <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGWINCH</span><span class="p">,</span>
                                                        <span class="bp">self</span><span class="o">.</span><span class="n">_signal_winch</span><span class="p">)</span>
         <span class="c1"># start up process</span>
+        <span class="k">if</span> <span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="n">stdout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">set_handle_inheritable</span><span class="p">(</span><span class="n">stdout</span><span class="o">.</span><span class="n">fileno</span><span class="p">(),</span> <span class="kc">False</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">proc</span> <span class="o">=</span> <span class="n">proc</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span>
                                             <span class="n">stdin</span><span class="o">=</span><span class="n">stdin</span><span class="p">,</span>
                                             <span class="n">stdout</span><span class="o">=</span><span class="n">stdout</span><span class="p">,</span>
@@ -443,6 +675,7 @@
         <span class="c1"># loop over reads while process is running.</span>
         <span class="n">cnt</span> <span class="o">=</span> <span class="mi">1</span>
         <span class="k">while</span> <span class="n">proc</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+
             <span class="n">i</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_write</span><span class="p">(</span><span class="n">procout</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">__stdout__</span><span class="p">)</span>
             <span class="n">j</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_write</span><span class="p">(</span><span class="n">procerr</span><span class="p">,</span> <span class="n">stderr</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">__stderr__</span><span class="p">)</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">suspended</span><span class="p">:</span>
@@ -554,7 +787,7 @@
         <span class="sd">&quot;&quot;&quot;Sets the window size of the child pty based on the window size of</span>
 <span class="sd">        our own controlling terminal.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">isatty</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stdout_fd</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">ON_WINDOWS</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">isatty</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stdout_fd</span><span class="p">):</span>
             <span class="k">return</span>
         <span class="c1"># Get the terminal size of the real terminal, set it on the</span>
         <span class="c1">#       pseudoterminal.</span>
@@ -1187,7 +1420,6 @@
                     <span class="n">p2cread</span> <span class="o">=</span> <span class="n">Handle</span><span class="p">(</span><span class="n">p2cread</span><span class="p">)</span>
                     <span class="n">_winapi</span><span class="o">.</span><span class="n">CloseHandle</span><span class="p">(</span><span class="n">_</span><span class="p">)</span>
             <span class="k">elif</span> <span class="n">stdin</span> <span class="o">==</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">:</span>
-                <span class="n">p2cread</span><span class="p">,</span> <span class="n">p2cwrite</span> <span class="o">=</span> <span class="n">_winapi</span><span class="o">.</span><span class="n">CreatePipe</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
                 <span class="n">p2cread</span><span class="p">,</span> <span class="n">p2cwrite</span> <span class="o">=</span> <span class="n">Handle</span><span class="p">(</span><span class="n">p2cread</span><span class="p">),</span> <span class="n">Handle</span><span class="p">(</span><span class="n">p2cwrite</span><span class="p">)</span>
             <span class="k">elif</span> <span class="n">stdin</span> <span class="o">==</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">:</span>
                 <span class="n">p2cread</span> <span class="o">=</span> <span class="n">msvcrt</span><span class="o">.</span><span class="n">get_osfhandle</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_devnull</span><span class="p">())</span>
@@ -1507,17 +1739,18 @@
 <span class="sd">        exactly as found.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># get approriate handles</span>
+        <span class="n">spec</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">spec</span>
         <span class="n">proc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">proc</span>
         <span class="n">timeout</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;XONSH_PROC_FREQUENCY&#39;</span><span class="p">)</span>
         <span class="c1"># get the correct stdout</span>
         <span class="n">stdout</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">stdout</span>
-        <span class="k">if</span> <span class="p">((</span><span class="n">stdout</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">safe_readable</span><span class="p">(</span><span class="n">stdout</span><span class="p">))</span> <span class="ow">and</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">spec</span><span class="o">.</span><span class="n">captured_stdout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">):</span>
-            <span class="n">stdout</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">spec</span><span class="o">.</span><span class="n">captured_stdout</span>
+        <span class="k">if</span> <span class="p">((</span><span class="n">stdout</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">spec</span><span class="o">.</span><span class="n">stdout</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">safe_readable</span><span class="p">(</span><span class="n">stdout</span><span class="p">))</span>
+                <span class="ow">and</span> <span class="n">spec</span><span class="o">.</span><span class="n">captured_stdout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">):</span>
+            <span class="n">stdout</span> <span class="o">=</span> <span class="n">spec</span><span class="o">.</span><span class="n">captured_stdout</span>
         <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;buffer&#39;</span><span class="p">):</span>
             <span class="n">stdout</span> <span class="o">=</span> <span class="n">stdout</span><span class="o">.</span><span class="n">buffer</span>
         <span class="k">if</span> <span class="n">stdout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> \
-                <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stdout</span><span class="p">,</span> <span class="p">(</span><span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">,</span> <span class="n">NonBlockingFDReader</span><span class="p">)):</span>
+                <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stdout</span><span class="p">,</span> <span class="p">(</span><span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">,</span> <span class="n">NonBlockingFDReader</span><span class="p">,</span> <span class="n">ConsoleParallelReader</span><span class="p">)):</span>
             <span class="n">stdout</span> <span class="o">=</span> <span class="n">NonBlockingFDReader</span><span class="p">(</span><span class="n">stdout</span><span class="o">.</span><span class="n">fileno</span><span class="p">(),</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">stdout</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">safe_readable</span><span class="p">(</span><span class="n">stdout</span><span class="p">):</span>
             <span class="c1"># we get here if the process is not threadable or the</span>
@@ -1530,13 +1763,13 @@
             <span class="k">raise</span> <span class="ne">StopIteration</span>
         <span class="c1"># get the correct stderr</span>
         <span class="n">stderr</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">stderr</span>
-        <span class="k">if</span> <span class="p">((</span><span class="n">stderr</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">safe_readable</span><span class="p">(</span><span class="n">stderr</span><span class="p">))</span> <span class="ow">and</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">spec</span><span class="o">.</span><span class="n">captured_stderr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">):</span>
-            <span class="n">stderr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">spec</span><span class="o">.</span><span class="n">captured_stderr</span>
+        <span class="k">if</span> <span class="p">((</span><span class="n">stderr</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">spec</span><span class="o">.</span><span class="n">stderr</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">safe_readable</span><span class="p">(</span><span class="n">stderr</span><span class="p">))</span>
+                <span class="ow">and</span> <span class="n">spec</span><span class="o">.</span><span class="n">captured_stderr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">):</span>
+            <span class="n">stderr</span> <span class="o">=</span> <span class="n">spec</span><span class="o">.</span><span class="n">captured_stderr</span>
         <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s1">&#39;buffer&#39;</span><span class="p">):</span>
             <span class="n">stderr</span> <span class="o">=</span> <span class="n">stderr</span><span class="o">.</span><span class="n">buffer</span>
         <span class="k">if</span> <span class="n">stderr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> \
-                <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="p">(</span><span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">,</span> <span class="n">NonBlockingFDReader</span><span class="p">)):</span>
+                <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="p">(</span><span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">,</span> <span class="n">NonBlockingFDReader</span><span class="p">,</span> <span class="n">ConsoleParallelReader</span><span class="p">)):</span>
             <span class="n">stderr</span> <span class="o">=</span> <span class="n">NonBlockingFDReader</span><span class="p">(</span><span class="n">stderr</span><span class="o">.</span><span class="n">fileno</span><span class="p">(),</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
         <span class="c1"># read from process while it is running</span>
         <span class="n">check_prev_done</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">procs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
@@ -1568,7 +1801,7 @@
                     <span class="n">check_prev_done</span> <span class="o">=</span> <span class="kc">True</span>
                 <span class="k">elif</span> <span class="n">prev_end_time</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                     <span class="c1"># or see if we already know that the next-to-last</span>
-                    <span class="c1"># proc in teh pipeline has ended.</span>
+                    <span class="c1"># proc in the pipeline has ended.</span>
                     <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prev_procs_done</span><span class="p">():</span>
                         <span class="c1"># if it has, record the time</span>
                         <span class="n">prev_end_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
@@ -1608,6 +1841,8 @@
         <span class="n">err</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;XONSH_ENCODING_ERRORS&#39;</span><span class="p">)</span>
         <span class="n">lines</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lines</span>
         <span class="n">stream</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">captured</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">STDOUT_CAPTURE_KINDS</span>
+        <span class="k">if</span> <span class="n">stream</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">spec</span><span class="o">.</span><span class="n">stdout</span><span class="p">:</span>
+            <span class="n">stream</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="n">stdout_has_buffer</span> <span class="o">=</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s1">&#39;buffer&#39;</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">iterraw</span><span class="p">():</span>
             <span class="c1"># write to stdout line ASAP, if needed</span>
@@ -1948,7 +2183,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.4.7.dev318 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.4.7.dev335 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
       </ul>
