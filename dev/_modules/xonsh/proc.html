@@ -8,7 +8,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>xonsh.proc &#8212; xonsh 0.4.7.dev350 documentation</title>
+    <title>xonsh.proc &#8212; xonsh 0.4.7.dev353 documentation</title>
     
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
@@ -17,7 +17,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../',
-        VERSION:     '0.4.7.dev350',
+        VERSION:     '0.4.7.dev353',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true
@@ -31,7 +31,7 @@
     <link rel="shortcut icon" href="../../_static/magic_conch.ico"/>
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" />
-    <link rel="top" title="xonsh 0.4.7.dev350 documentation" href="../../index.html" />
+    <link rel="top" title="xonsh 0.4.7.dev353 documentation" href="../../index.html" />
     <link rel="up" title="Module code" href="../index.html" />
      
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -50,7 +50,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.4.7.dev350 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.4.7.dev353 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -134,13 +134,96 @@
     <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">b</span><span class="s1">&#39;(</span><span class="se">\x9B</span><span class="s1">|</span><span class="se">\x1B</span><span class="s1">\[)[0-?]*[ -\/]*[@-~]&#39;</span><span class="p">)</span>
 
 
-<div class="viewcode-block" id="populate_char_queue"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.populate_char_queue">[docs]</a><span class="k">def</span> <span class="nf">populate_char_queue</span><span class="p">(</span><span class="n">reader</span><span class="p">,</span> <span class="n">fd</span><span class="p">,</span> <span class="n">queue</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;Reads single characters from a file descriptor into a queue.</span>
+<div class="viewcode-block" id="QueueReader"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.QueueReader">[docs]</a><span class="k">class</span> <span class="nc">QueueReader</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Provides a file-like interface to reading from a queue.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fd</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        fd : int</span>
+<span class="sd">            A file descriptor</span>
+<span class="sd">        timeout : float or None, optional</span>
+<span class="sd">            The queue reading timeout.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fd</span> <span class="o">=</span> <span class="n">fd</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="n">timeout</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">closed</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">queue</span> <span class="o">=</span> <span class="n">queue</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
+
+<div class="viewcode-block" id="QueueReader.close"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.QueueReader.close">[docs]</a>    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;close the reader&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">closed</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<div class="viewcode-block" id="QueueReader.read_queue"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.QueueReader.read_queue">[docs]</a>    <span class="k">def</span> <span class="nf">read_queue</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Reads a single chunk from the queue. This is non-blocking.&quot;&quot;&quot;</span>
+        <span class="n">timeout</span> <span class="o">=</span> <span class="n">timeout</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">block</span><span class="o">=</span><span class="n">timeout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span>
+                                  <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">queue</span><span class="o">.</span><span class="n">Empty</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">timeout</span> <span class="o">*</span> <span class="mi">10</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">b</span><span class="s1">&#39;&#39;</span></div>
+
+<div class="viewcode-block" id="QueueReader.read"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.QueueReader.read">[docs]</a>    <span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Reads bytes from the file.&quot;&quot;&quot;</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">buf</span> <span class="o">=</span> <span class="n">b</span><span class="s1">&#39;&#39;</span>
+        <span class="k">while</span> <span class="n">size</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">i</span> <span class="o">!=</span> <span class="n">size</span><span class="p">:</span>
+            <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_queue</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">line</span><span class="p">:</span>
+                <span class="n">buf</span> <span class="o">+=</span> <span class="n">line</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="n">i</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">buf</span></div>
+
+<div class="viewcode-block" id="QueueReader.readline"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.QueueReader.readline">[docs]</a>    <span class="k">def</span> <span class="nf">readline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Reads a line, or a partial line from the file descriptor.&quot;&quot;&quot;</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">nl</span> <span class="o">=</span> <span class="n">b</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span>
+        <span class="n">buf</span> <span class="o">=</span> <span class="n">b</span><span class="s1">&#39;&#39;</span>
+        <span class="k">while</span> <span class="n">size</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">i</span> <span class="o">!=</span> <span class="n">size</span><span class="p">:</span>
+            <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_queue</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">line</span><span class="p">:</span>
+                <span class="n">buf</span> <span class="o">+=</span> <span class="n">line</span>
+                <span class="k">if</span> <span class="n">line</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">nl</span><span class="p">):</span>
+                    <span class="k">break</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="n">i</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">buf</span></div>
+
+<div class="viewcode-block" id="QueueReader.readlines"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.QueueReader.readlines">[docs]</a>    <span class="k">def</span> <span class="nf">readlines</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hint</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Reads lines from the file descriptor.&quot;&quot;&quot;</span>
+        <span class="n">lines</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span> <span class="o">!=</span> <span class="n">hint</span><span class="p">:</span>
+            <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">readline</span><span class="p">(</span><span class="n">size</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">line</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">lines</span></div>
+
+<div class="viewcode-block" id="QueueReader.fileno"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.QueueReader.fileno">[docs]</a>    <span class="k">def</span> <span class="nf">fileno</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns the file descriptor number.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">fd</span></div>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="QueueReader.readable"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.QueueReader.readable">[docs]</a>    <span class="k">def</span> <span class="nf">readable</span><span class="p">():</span>
+        <span class="sd">&quot;&quot;&quot;Returns true, because this object is always readable.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="kc">True</span></div></div>
+
+
+<div class="viewcode-block" id="populate_fd_queue"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.populate_fd_queue">[docs]</a><span class="k">def</span> <span class="nf">populate_fd_queue</span><span class="p">(</span><span class="n">reader</span><span class="p">,</span> <span class="n">fd</span><span class="p">,</span> <span class="n">queue</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Reads 1 kb of data from a file descriptor into a queue.</span>
 <span class="sd">    If this ends or fails, it flags the calling reader object as closed.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">c</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">c</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="mi">1024</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
             <span class="n">reader</span><span class="o">.</span><span class="n">closed</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="k">break</span>
@@ -151,7 +234,7 @@
             <span class="k">break</span></div>
 
 
-<div class="viewcode-block" id="NonBlockingFDReader"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.NonBlockingFDReader">[docs]</a><span class="k">class</span> <span class="nc">NonBlockingFDReader</span><span class="p">:</span>
+<div class="viewcode-block" id="NonBlockingFDReader"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.NonBlockingFDReader">[docs]</a><span class="k">class</span> <span class="nc">NonBlockingFDReader</span><span class="p">(</span><span class="n">QueueReader</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;A class for reading characters from a file descriptor on a background</span>
 <span class="sd">    thread. This has the advantages that the calling thread can close the</span>
 <span class="sd">    file and that the reading does not block the calling thread.</span>
@@ -166,76 +249,12 @@
 <span class="sd">        timeout : float or None, optional</span>
 <span class="sd">            The queue reading timeout.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">fd</span> <span class="o">=</span> <span class="n">fd</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">queue</span> <span class="o">=</span> <span class="n">queue</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="n">timeout</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">closed</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
         <span class="c1"># start reading from stream</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">thread</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">populate_char_queue</span><span class="p">,</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">thread</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">populate_fd_queue</span><span class="p">,</span>
                                        <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">fd</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="p">))</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">thread</span><span class="o">.</span><span class="n">daemon</span> <span class="o">=</span> <span class="kc">True</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
-
-<div class="viewcode-block" id="NonBlockingFDReader.read_char"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.NonBlockingFDReader.read_char">[docs]</a>    <span class="k">def</span> <span class="nf">read_char</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;Reads a single character from the queue.&quot;&quot;&quot;</span>
-        <span class="n">timeout</span> <span class="o">=</span> <span class="n">timeout</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span> <span class="o">=</span> <span class="mi">0</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">block</span><span class="o">=</span><span class="n">timeout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span>
-                                  <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
-        <span class="k">except</span> <span class="n">queue</span><span class="o">.</span><span class="n">Empty</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
-            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">timeout</span> <span class="o">*</span> <span class="mi">10</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">b</span><span class="s1">&#39;&#39;</span></div>
-
-<div class="viewcode-block" id="NonBlockingFDReader.read"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.NonBlockingFDReader.read">[docs]</a>    <span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;Reads bytes from the file.&quot;&quot;&quot;</span>
-        <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="n">buf</span> <span class="o">=</span> <span class="n">b</span><span class="s1">&#39;&#39;</span>
-        <span class="k">while</span> <span class="n">i</span> <span class="o">!=</span> <span class="n">size</span><span class="p">:</span>
-            <span class="n">c</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_char</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">c</span><span class="p">:</span>
-                <span class="n">buf</span> <span class="o">+=</span> <span class="n">c</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="k">break</span>
-            <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>
-        <span class="k">return</span> <span class="n">buf</span></div>
-
-<div class="viewcode-block" id="NonBlockingFDReader.readline"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.NonBlockingFDReader.readline">[docs]</a>    <span class="k">def</span> <span class="nf">readline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;Reads a line, or a partial line from the file descriptor.&quot;&quot;&quot;</span>
-        <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="n">nl</span> <span class="o">=</span> <span class="n">b</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span>
-        <span class="n">buf</span> <span class="o">=</span> <span class="n">b</span><span class="s1">&#39;&#39;</span>
-        <span class="k">while</span> <span class="n">i</span> <span class="o">!=</span> <span class="n">size</span><span class="p">:</span>
-            <span class="n">c</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_char</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">c</span><span class="p">:</span>
-                <span class="n">buf</span> <span class="o">+=</span> <span class="n">c</span>
-                <span class="k">if</span> <span class="n">c</span> <span class="o">==</span> <span class="n">nl</span><span class="p">:</span>
-                    <span class="k">break</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="k">break</span>
-            <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>
-        <span class="k">return</span> <span class="n">buf</span></div>
-
-<div class="viewcode-block" id="NonBlockingFDReader.readlines"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.NonBlockingFDReader.readlines">[docs]</a>    <span class="k">def</span> <span class="nf">readlines</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hint</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;Reads lines from the file descriptor.&quot;&quot;&quot;</span>
-        <span class="n">lines</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span> <span class="o">!=</span> <span class="n">hint</span><span class="p">:</span>
-            <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">readline</span><span class="p">(</span><span class="n">size</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">line</span><span class="p">:</span>
-                <span class="k">break</span>
-            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">lines</span></div>
-
-<div class="viewcode-block" id="NonBlockingFDReader.fileno"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.NonBlockingFDReader.fileno">[docs]</a>    <span class="k">def</span> <span class="nf">fileno</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;Returns the file descriptor number.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">fd</span></div>
-
-    <span class="nd">@staticmethod</span>
-<div class="viewcode-block" id="NonBlockingFDReader.readable"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.NonBlockingFDReader.readable">[docs]</a>    <span class="k">def</span> <span class="nf">readable</span><span class="p">():</span>
-        <span class="sd">&quot;&quot;&quot;Returns true, because this object is always readable.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="kc">True</span></div></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="populate_buffer"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.populate_buffer">[docs]</a><span class="k">def</span> <span class="nf">populate_buffer</span><span class="p">(</span><span class="n">reader</span><span class="p">,</span> <span class="n">fd</span><span class="p">,</span> <span class="n">buffer</span><span class="p">,</span> <span class="n">chunksize</span><span class="p">):</span>
@@ -433,7 +452,7 @@
         <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">reader</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="ConsoleParallelReader"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.ConsoleParallelReader">[docs]</a><span class="k">class</span> <span class="nc">ConsoleParallelReader</span><span class="p">:</span>
+<div class="viewcode-block" id="ConsoleParallelReader"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.ConsoleParallelReader">[docs]</a><span class="k">class</span> <span class="nc">ConsoleParallelReader</span><span class="p">(</span><span class="n">QueueReader</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Parallel reader for consoles that runs in a background thread.</span>
 <span class="sd">    This is only needed, available, and useful on Windows.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -452,85 +471,18 @@
 <span class="sd">        timeout : float, optional</span>
 <span class="sd">            The queue reading timeout.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">fd</span> <span class="o">=</span> <span class="n">fd</span>
+        <span class="n">timeout</span> <span class="o">=</span> <span class="n">timeout</span> <span class="ow">or</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;XONSH_PROC_FREQUENCY&#39;</span><span class="p">)</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="o">=</span> <span class="n">buffer</span>  <span class="c1"># this cannot be public</span>
         <span class="k">if</span> <span class="n">buffer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">c_char_p</span><span class="p">(</span><span class="n">b</span><span class="s2">&quot; &quot;</span> <span class="o">*</span> <span class="n">chunksize</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">chunksize</span> <span class="o">=</span> <span class="n">chunksize</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">queue</span> <span class="o">=</span> <span class="n">queue</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="n">timeout</span> <span class="ow">or</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;XONSH_PROC_FREQUENCY&#39;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">closed</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="c1"># start reading from stream</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">thread</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">populate_console</span><span class="p">,</span>
                                        <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fd</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span><span class="p">,</span>
                                              <span class="n">chunksize</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="p">))</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">thread</span><span class="o">.</span><span class="n">daemon</span> <span class="o">=</span> <span class="kc">True</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
-
-<div class="viewcode-block" id="ConsoleParallelReader.close"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.ConsoleParallelReader.close">[docs]</a>    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;close the reader&quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">closed</span> <span class="o">=</span> <span class="kc">True</span></div>
-
-<div class="viewcode-block" id="ConsoleParallelReader.read_queue"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.ConsoleParallelReader.read_queue">[docs]</a>    <span class="k">def</span> <span class="nf">read_queue</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;Reads a single &#39;line&#39; from the queue.&quot;&quot;&quot;</span>
-        <span class="n">timeout</span> <span class="o">=</span> <span class="n">timeout</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span> <span class="o">=</span> <span class="mi">0</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">block</span><span class="o">=</span><span class="n">timeout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span>
-                                  <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
-        <span class="k">except</span> <span class="n">queue</span><span class="o">.</span><span class="n">Empty</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
-            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">timeout</span> <span class="o">*</span> <span class="mi">10</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">sleepscale</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">b</span><span class="s1">&#39;&#39;</span></div>
-
-<div class="viewcode-block" id="ConsoleParallelReader.read"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.ConsoleParallelReader.read">[docs]</a>    <span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;Reads bytes from the file.&quot;&quot;&quot;</span>
-        <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="n">buf</span> <span class="o">=</span> <span class="n">b</span><span class="s1">&#39;&#39;</span>
-        <span class="k">while</span> <span class="n">size</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">i</span> <span class="o">!=</span> <span class="n">size</span><span class="p">:</span>
-            <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_queue</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">line</span><span class="p">:</span>
-                <span class="n">buf</span> <span class="o">+=</span> <span class="n">line</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="k">break</span>
-            <span class="n">i</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">buf</span></div>
-
-<div class="viewcode-block" id="ConsoleParallelReader.readline"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.ConsoleParallelReader.readline">[docs]</a>    <span class="k">def</span> <span class="nf">readline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;Reads a line, or a partial line from the file descriptor.&quot;&quot;&quot;</span>
-        <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="n">nl</span> <span class="o">=</span> <span class="n">b</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span>
-        <span class="n">buf</span> <span class="o">=</span> <span class="n">b</span><span class="s1">&#39;&#39;</span>
-        <span class="k">while</span> <span class="n">size</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">i</span> <span class="o">!=</span> <span class="n">size</span><span class="p">:</span>
-            <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_queue</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">line</span><span class="p">:</span>
-                <span class="n">buf</span> <span class="o">+=</span> <span class="n">line</span>
-                <span class="k">if</span> <span class="n">line</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">nl</span><span class="p">):</span>
-                    <span class="k">break</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="k">break</span>
-            <span class="n">i</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">buf</span></div>
-
-<div class="viewcode-block" id="ConsoleParallelReader.readlines"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.ConsoleParallelReader.readlines">[docs]</a>    <span class="k">def</span> <span class="nf">readlines</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hint</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;Reads lines from the file descriptor.&quot;&quot;&quot;</span>
-        <span class="n">lines</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span> <span class="o">!=</span> <span class="n">hint</span><span class="p">:</span>
-            <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">readline</span><span class="p">(</span><span class="n">size</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">line</span><span class="p">:</span>
-                <span class="k">break</span>
-            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">lines</span></div>
-
-<div class="viewcode-block" id="ConsoleParallelReader.fileno"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.ConsoleParallelReader.fileno">[docs]</a>    <span class="k">def</span> <span class="nf">fileno</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;Returns the file descriptor number.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">fd</span></div>
-
-    <span class="nd">@staticmethod</span>
-<div class="viewcode-block" id="ConsoleParallelReader.readable"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.ConsoleParallelReader.readable">[docs]</a>    <span class="k">def</span> <span class="nf">readable</span><span class="p">():</span>
-        <span class="sd">&quot;&quot;&quot;Returns true, because this object is always readable.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="kc">True</span></div></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">thread</span><span class="o">.</span><span class="n">start</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="safe_fdclose"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.safe_fdclose">[docs]</a><span class="k">def</span> <span class="nf">safe_fdclose</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="n">cache</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
@@ -711,37 +663,37 @@
         <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
 
     <span class="k">def</span> <span class="nf">_read_write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reader</span><span class="p">,</span> <span class="n">writer</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;Read from a buffer and write into memory or back down to</span>
-<span class="sd">        the standard buffer, line-by-line, as approriate. Returns the number of</span>
-<span class="sd">        lines read.</span>
+        <span class="sd">&quot;&quot;&quot;Reads a chunk of bytes from a buffer and write into memory or back</span>
+<span class="sd">        down to the standard buffer, as approriate. Returns the number of</span>
+<span class="sd">        successful reads.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">reader</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="mi">0</span>
         <span class="n">i</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
-        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">line</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">reader</span><span class="o">.</span><span class="n">readline</span><span class="p">,</span> <span class="n">b</span><span class="s1">&#39;&#39;</span><span class="p">)):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_alt_mode_switch</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">writer</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">chunk</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">reader</span><span class="o">.</span><span class="n">read_queue</span><span class="p">,</span> <span class="n">b</span><span class="s1">&#39;&#39;</span><span class="p">)):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_alt_mode_switch</span><span class="p">(</span><span class="n">chunk</span><span class="p">,</span> <span class="n">writer</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">i</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">:</span>
             <span class="n">writer</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
             <span class="n">stdbuf</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
         <span class="k">return</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span>
 
-    <span class="k">def</span> <span class="nf">_alt_mode_switch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">membuf</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">_alt_mode_switch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">chunk</span><span class="p">,</span> <span class="n">membuf</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Enables recursively switching between normal capturing mode</span>
 <span class="sd">        and &#39;alt&#39; mode, which passes through values to the standard</span>
 <span class="sd">        buffer. Pagers, text editors, curses applications, etc. use</span>
 <span class="sd">        alternate mode.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">i</span><span class="p">,</span> <span class="n">flag</span> <span class="o">=</span> <span class="n">findfirst</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">ALTERNATE_MODE_FLAGS</span><span class="p">)</span>
+        <span class="n">i</span><span class="p">,</span> <span class="n">flag</span> <span class="o">=</span> <span class="n">findfirst</span><span class="p">(</span><span class="n">chunk</span><span class="p">,</span> <span class="n">ALTERNATE_MODE_FLAGS</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">flag</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_alt_mode_writer</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">membuf</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_alt_mode_writer</span><span class="p">(</span><span class="n">chunk</span><span class="p">,</span> <span class="n">membuf</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="c1"># This code is executed when the child process switches the</span>
             <span class="c1"># terminal into or out of alternate mode. The line below assumes</span>
             <span class="c1"># that the user has opened vim, less, or similar, and writes writes</span>
             <span class="c1"># to stdin.</span>
             <span class="n">j</span> <span class="o">=</span> <span class="n">i</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">flag</span><span class="p">)</span>
-            <span class="c1"># write the first part of the line in the current mode.</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_alt_mode_writer</span><span class="p">(</span><span class="n">line</span><span class="p">[:</span><span class="n">i</span><span class="p">],</span> <span class="n">membuf</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">)</span>
+            <span class="c1"># write the first part of the chunk in the current mode.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_alt_mode_writer</span><span class="p">(</span><span class="n">chunk</span><span class="p">[:</span><span class="n">i</span><span class="p">],</span> <span class="n">membuf</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">)</span>
             <span class="c1"># switch modes</span>
             <span class="c1"># write the flag itself the current mode where alt mode is on</span>
             <span class="c1"># so that it is streamed to the termial ASAP.</span>
@@ -757,21 +709,21 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">in_alt_mode</span> <span class="o">=</span> <span class="n">alt_mode</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_disable_cbreak_stdin</span><span class="p">()</span>
             <span class="c1"># recurse this function, but without the current flag.</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_alt_mode_switch</span><span class="p">(</span><span class="n">line</span><span class="p">[</span><span class="n">j</span><span class="p">:],</span> <span class="n">membuf</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_alt_mode_switch</span><span class="p">(</span><span class="n">chunk</span><span class="p">[</span><span class="n">j</span><span class="p">:],</span> <span class="n">membuf</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">_alt_mode_writer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">membuf</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">_alt_mode_writer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">chunk</span><span class="p">,</span> <span class="n">membuf</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Write bytes to the standard buffer if in alt mode or otherwise</span>
 <span class="sd">        to the in-memory buffer.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">line</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">chunk</span><span class="p">:</span>
             <span class="k">pass</span>  <span class="c1"># don&#39;t write empty values</span>
         <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_alt_mode</span><span class="p">:</span>
-            <span class="n">stdbuf</span><span class="o">.</span><span class="n">buffer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+            <span class="n">stdbuf</span><span class="o">.</span><span class="n">buffer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
                 <span class="n">p</span> <span class="o">=</span> <span class="n">membuf</span><span class="o">.</span><span class="n">tell</span><span class="p">()</span>
                 <span class="n">membuf</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">io</span><span class="o">.</span><span class="n">SEEK_END</span><span class="p">)</span>
-                <span class="n">membuf</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+                <span class="n">membuf</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span>
                 <span class="n">membuf</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
 
     <span class="c1">#</span>
@@ -2183,7 +2135,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.4.7.dev350 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.4.7.dev353 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
       </ul>
