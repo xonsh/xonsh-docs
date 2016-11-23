@@ -8,7 +8,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>xonsh.shell &#8212; xonsh 0.4.7.dev435 documentation</title>
+    <title>xonsh.shell &#8212; xonsh 0.4.7.dev443 documentation</title>
     
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
@@ -17,7 +17,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../',
-        VERSION:     '0.4.7.dev435',
+        VERSION:     '0.4.7.dev443',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true
@@ -31,7 +31,7 @@
     <link rel="shortcut icon" href="../../_static/magic_conch.ico"/>
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" />
-    <link rel="top" title="xonsh 0.4.7.dev435 documentation" href="../../index.html" />
+    <link rel="top" title="xonsh 0.4.7.dev443 documentation" href="../../index.html" />
     <link rel="up" title="Module code" href="../index.html" />
      
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -50,7 +50,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.4.7.dev435 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.4.7.dev443 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -67,7 +67,9 @@
 <span></span><span class="c1"># -*- coding: utf-8 -*-</span>
 <span class="sd">&quot;&quot;&quot;The xonsh shell&quot;&quot;&quot;</span>
 <span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">sys</span>
 <span class="kn">import</span> <span class="nn">random</span>
+<span class="kn">import</span> <span class="nn">difflib</span>
 <span class="kn">import</span> <span class="nn">builtins</span>
 <span class="kn">import</span> <span class="nn">warnings</span>
 
@@ -76,12 +78,12 @@
 <span class="kn">from</span> <span class="nn">xonsh.execer</span> <span class="k">import</span> <span class="n">Execer</span>
 <span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="k">import</span> <span class="p">(</span><span class="n">best_shell_type</span><span class="p">,</span> <span class="n">has_prompt_toolkit</span><span class="p">,</span>
                             <span class="n">ptk_version_is_supported</span><span class="p">)</span>
-<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="k">import</span> <span class="n">XonshError</span><span class="p">,</span> <span class="n">to_bool_or_int</span>
+<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="k">import</span> <span class="n">XonshError</span><span class="p">,</span> <span class="n">to_bool_or_int</span><span class="p">,</span> <span class="n">print_exception</span>
 <span class="kn">from</span> <span class="nn">xonsh.events</span> <span class="k">import</span> <span class="n">events</span>
 
 
 <span class="n">events</span><span class="o">.</span><span class="n">doc</span><span class="p">(</span><span class="s1">&#39;on_precommand&#39;</span><span class="p">,</span> <span class="s2">&quot;&quot;&quot;</span>
-<span class="s2">on_precommand(cmd: str) -&gt; None</span>
+<span class="s2">on_precommand(cmd: str) -&gt; str</span>
 
 <span class="s2">Fires just before a command is executed.</span>
 <span class="s2">&quot;&quot;&quot;</span><span class="p">)</span>
@@ -91,6 +93,34 @@
 
 <span class="s2">Fires just after a command is executed.</span>
 <span class="s2">&quot;&quot;&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="fire_precommand"><a class="viewcode-back" href="../../api/shell.html#xonsh.shell.fire_precommand">[docs]</a><span class="k">def</span> <span class="nf">fire_precommand</span><span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="n">show_diff</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Returns the results of firing the precommand handles.&quot;&quot;&quot;</span>
+    <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">limit</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">getrecursionlimit</span><span class="p">()</span>
+    <span class="n">lst</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+    <span class="n">raw</span> <span class="o">=</span> <span class="n">src</span>
+    <span class="k">while</span> <span class="n">src</span> <span class="o">!=</span> <span class="n">lst</span><span class="p">:</span>
+        <span class="n">lst</span> <span class="o">=</span> <span class="n">src</span>
+        <span class="n">srcs</span> <span class="o">=</span> <span class="n">events</span><span class="o">.</span><span class="n">on_precommand</span><span class="o">.</span><span class="n">fire</span><span class="p">(</span><span class="n">src</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">srcs</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">s</span> <span class="o">!=</span> <span class="n">lst</span><span class="p">:</span>
+                <span class="n">src</span> <span class="o">=</span> <span class="n">s</span>
+                <span class="k">break</span>
+        <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="n">limit</span><span class="p">:</span>
+            <span class="n">print_exception</span><span class="p">(</span><span class="s1">&#39;Modifcations to source input took more than &#39;</span>
+                            <span class="s1">&#39;the recursion limit number of interations to &#39;</span>
+                            <span class="s1">&#39;converge.&#39;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">show_diff</span> <span class="ow">and</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;XONSH_DEBUG&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">src</span> <span class="o">!=</span> <span class="n">raw</span><span class="p">:</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="o">.</span><span class="n">writelines</span><span class="p">(</span><span class="n">difflib</span><span class="o">.</span><span class="n">unified_diff</span><span class="p">(</span>
+            <span class="n">raw</span><span class="o">.</span><span class="n">splitlines</span><span class="p">(</span><span class="n">keepends</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+            <span class="n">src</span><span class="o">.</span><span class="n">splitlines</span><span class="p">(</span><span class="n">keepends</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+            <span class="n">fromfile</span><span class="o">=</span><span class="s1">&#39;before precommand event&#39;</span><span class="p">,</span>
+            <span class="n">tofile</span><span class="o">=</span><span class="s1">&#39;after precommand event&#39;</span><span class="p">,</span>
+        <span class="p">))</span>
+    <span class="k">return</span> <span class="n">src</span></div>
 
 
 <div class="viewcode-block" id="Shell"><a class="viewcode-back" href="../../api/shell.html#xonsh.shell.Shell">[docs]</a><span class="k">class</span> <span class="nc">Shell</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
@@ -238,7 +268,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.4.7.dev435 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.4.7.dev443 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
       </ul>
