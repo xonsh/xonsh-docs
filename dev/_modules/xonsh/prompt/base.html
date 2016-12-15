@@ -1,0 +1,361 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>xonsh.prompt.base &#8212; xonsh 0.4.7.dev724 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/numpy_friendly.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.4.7.dev724',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <script type="text/javascript" src="../../../_static/jquery.cookie.js"></script>
+    <script type="text/javascript" src="../../../_static/cloud.js"></script>
+    <link rel="shortcut icon" href="../../../_static/magic_conch.ico"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+     
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="canonical" href="http://xon.sh/_modules/xonsh/prompt/base.html"/>
+
+  </head>
+  <body role="document">
+    <div class="relbar-top">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../index.html">xonsh 0.4.7.dev724 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for xonsh.prompt.base</h1><div class="highlight"><pre>
+<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;Base prompt, provides PROMPT_FIELDS and prompt related functions&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">builtins</span>
+<span class="kn">import</span> <span class="nn">itertools</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">socket</span>
+<span class="kn">import</span> <span class="nn">string</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+
+<span class="kn">import</span> <span class="nn">xonsh.lazyasd</span> <span class="k">as</span> <span class="nn">xl</span>
+<span class="kn">import</span> <span class="nn">xonsh.tools</span> <span class="k">as</span> <span class="nn">xt</span>
+<span class="kn">import</span> <span class="nn">xonsh.platform</span> <span class="k">as</span> <span class="nn">xp</span>
+
+<span class="kn">from</span> <span class="nn">xonsh.prompt.cwd</span> <span class="k">import</span> <span class="p">(</span>
+    <span class="n">_collapsed_pwd</span><span class="p">,</span> <span class="n">_replace_home_cwd</span><span class="p">,</span> <span class="n">_dynamically_collapsed_pwd</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">xonsh.prompt.job</span> <span class="k">import</span> <span class="n">_current_job</span>
+<span class="kn">from</span> <span class="nn">xonsh.prompt.env</span> <span class="k">import</span> <span class="p">(</span><span class="n">env_name</span><span class="p">,</span> <span class="n">vte_new_tab_cwd</span><span class="p">)</span>
+<span class="kn">from</span> <span class="nn">xonsh.prompt.vc</span> <span class="k">import</span> <span class="p">(</span>
+    <span class="n">current_branch</span><span class="p">,</span> <span class="n">branch_color</span><span class="p">,</span> <span class="n">branch_bg_color</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">xonsh.prompt.gitstatus</span> <span class="k">import</span> <span class="n">gitstatus_prompt</span>
+
+
+<span class="nd">@xt</span><span class="o">.</span><span class="n">lazyobject</span>
+<span class="k">def</span> <span class="nf">DEFAULT_PROMPT</span><span class="p">():</span>
+    <span class="k">return</span> <span class="n">default_prompt</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="PromptFormatter"><a class="viewcode-back" href="../../../api/prompt/base.html#xonsh.prompt.base.PromptFormatter">[docs]</a><span class="k">class</span> <span class="nc">PromptFormatter</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Class that holds all the related prompt formatting methods,</span>
+<span class="sd">    uses the ``PROMPT_FIELDS`` envvar (no color formatting).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cache</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">def</span> <span class="nf">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">template</span><span class="o">=</span><span class="n">DEFAULT_PROMPT</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Formats a xonsh prompt template string.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">fields</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fields</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;PROMPT_FIELDS&#39;</span><span class="p">,</span> <span class="n">PROMPT_FIELDS</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">fields</span> <span class="o">=</span> <span class="n">fields</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">prompt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_format_prompt</span><span class="p">(</span><span class="n">template</span><span class="o">=</span><span class="n">template</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_failover_template_format</span><span class="p">(</span><span class="n">template</span><span class="p">)</span>
+        <span class="c1"># keep cache only during building prompt</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">prompt</span>
+
+    <span class="k">def</span> <span class="nf">_format_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">template</span><span class="o">=</span><span class="n">DEFAULT_PROMPT</span><span class="p">):</span>
+        <span class="n">template</span> <span class="o">=</span> <span class="n">template</span><span class="p">()</span> <span class="k">if</span> <span class="n">callable</span><span class="p">(</span><span class="n">template</span><span class="p">)</span> <span class="k">else</span> <span class="n">template</span>
+        <span class="n">toks</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">literal</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">conv</span> <span class="ow">in</span> <span class="n">_FORMATTER</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">template</span><span class="p">):</span>
+            <span class="n">toks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">literal</span><span class="p">)</span>
+            <span class="n">entry</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_format_field</span><span class="p">(</span><span class="n">field</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">conv</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">entry</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">toks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
+        <span class="k">return</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">toks</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_format_field</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">conv</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">field</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="k">elif</span> <span class="n">field</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;$&#39;</span><span class="p">):</span>
+            <span class="n">val</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="p">[</span><span class="n">field</span><span class="p">[</span><span class="mi">1</span><span class="p">:]]</span>
+            <span class="k">return</span> <span class="n">_format_value</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">conv</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">field</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">:</span>
+            <span class="n">val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_field_value</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">_format_value</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">conv</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># color or unkown field, return as is</span>
+            <span class="k">return</span> <span class="s1">&#39;{&#39;</span> <span class="o">+</span> <span class="n">field</span> <span class="o">+</span> <span class="s1">&#39;}&#39;</span>
+
+    <span class="k">def</span> <span class="nf">_get_field_value</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
+        <span class="n">field_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">field</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">field_value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span class="p">[</span><span class="n">field_value</span><span class="p">]</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">field_value</span><span class="p">()</span> <span class="k">if</span> <span class="n">callable</span><span class="p">(</span><span class="n">field_value</span><span class="p">)</span> <span class="k">else</span> <span class="n">field_value</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span class="p">[</span><span class="n">field_value</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;prompt: error: on field </span><span class="si">{!r}</span><span class="s1">&#39;</span>
+                  <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">field</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+            <span class="n">xt</span><span class="o">.</span><span class="n">print_exception</span><span class="p">()</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="s1">&#39;(ERROR:</span><span class="si">{}</span><span class="s1">)&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">value</span></div>
+
+
+<span class="nd">@xl</span><span class="o">.</span><span class="n">lazyobject</span>
+<span class="k">def</span> <span class="nf">PROMPT_FIELDS</span><span class="p">():</span>
+    <span class="k">return</span> <span class="nb">dict</span><span class="p">(</span>
+        <span class="n">user</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;USERNAME&#39;</span> <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="k">else</span> <span class="s1">&#39;USER&#39;</span><span class="p">,</span> <span class="s1">&#39;&lt;user&gt;&#39;</span><span class="p">),</span>
+        <span class="n">prompt_end</span><span class="o">=</span><span class="s1">&#39;#&#39;</span> <span class="k">if</span> <span class="n">xt</span><span class="o">.</span><span class="n">is_superuser</span><span class="p">()</span> <span class="k">else</span> <span class="s1">&#39;$&#39;</span><span class="p">,</span>
+        <span class="n">hostname</span><span class="o">=</span><span class="n">socket</span><span class="o">.</span><span class="n">gethostname</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="n">cwd</span><span class="o">=</span><span class="n">_dynamically_collapsed_pwd</span><span class="p">,</span>
+        <span class="n">cwd_dir</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">_replace_home_cwd</span><span class="p">()),</span>
+        <span class="n">cwd_base</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">_replace_home_cwd</span><span class="p">()),</span>
+        <span class="n">short_cwd</span><span class="o">=</span><span class="n">_collapsed_pwd</span><span class="p">,</span>
+        <span class="n">curr_branch</span><span class="o">=</span><span class="n">current_branch</span><span class="p">,</span>
+        <span class="n">branch_color</span><span class="o">=</span><span class="n">branch_color</span><span class="p">,</span>
+        <span class="n">branch_bg_color</span><span class="o">=</span><span class="n">branch_bg_color</span><span class="p">,</span>
+        <span class="n">current_job</span><span class="o">=</span><span class="n">_current_job</span><span class="p">,</span>
+        <span class="n">env_name</span><span class="o">=</span><span class="n">env_name</span><span class="p">,</span>
+        <span class="n">vte_new_tab_cwd</span><span class="o">=</span><span class="n">vte_new_tab_cwd</span><span class="p">,</span>
+        <span class="n">gitstatus</span><span class="o">=</span><span class="n">gitstatus_prompt</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="nd">@xl</span><span class="o">.</span><span class="n">lazyobject</span>
+<span class="k">def</span> <span class="nf">_FORMATTER</span><span class="p">():</span>
+    <span class="k">return</span> <span class="n">string</span><span class="o">.</span><span class="n">Formatter</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="default_prompt"><a class="viewcode-back" href="../../../api/prompt/base.html#xonsh.prompt.base.default_prompt">[docs]</a><span class="k">def</span> <span class="nf">default_prompt</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Creates a new instance of the default prompt.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_CYGWIN</span><span class="p">:</span>
+        <span class="n">dp</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;{env_name:</span><span class="si">{}</span><span class="s1"> }</span><span class="si">{BOLD_GREEN}{user}</span><span class="s1">@</span><span class="si">{hostname}</span><span class="s1">&#39;</span>
+              <span class="s1">&#39;</span><span class="si">{BOLD_BLUE}</span><span class="s1"> </span><span class="si">{cwd}</span><span class="s1"> </span><span class="si">{prompt_end}{NO_COLOR}</span><span class="s1"> &#39;</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
+        <span class="n">dp</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;{env_name:</span><span class="si">{}</span><span class="s1"> }&#39;</span>
+              <span class="s1">&#39;</span><span class="si">{BOLD_INTENSE_GREEN}{user}</span><span class="s1">@</span><span class="si">{hostname}{BOLD_INTENSE_CYAN}</span><span class="s1"> &#39;</span>
+              <span class="s1">&#39;</span><span class="si">{cwd}{branch_color}</span><span class="s1">{curr_branch: </span><span class="si">{}</span><span class="s1">}</span><span class="si">{NO_COLOR}</span><span class="s1"> &#39;</span>
+              <span class="s1">&#39;</span><span class="si">{BOLD_INTENSE_CYAN}{prompt_end}{NO_COLOR}</span><span class="s1"> &#39;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">dp</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;{env_name:</span><span class="si">{}</span><span class="s1"> }&#39;</span>
+              <span class="s1">&#39;</span><span class="si">{BOLD_GREEN}{user}</span><span class="s1">@</span><span class="si">{hostname}{BOLD_BLUE}</span><span class="s1"> &#39;</span>
+              <span class="s1">&#39;</span><span class="si">{cwd}{branch_color}</span><span class="s1">{curr_branch: </span><span class="si">{}</span><span class="s1">}</span><span class="si">{NO_COLOR}</span><span class="s1"> &#39;</span>
+              <span class="s1">&#39;</span><span class="si">{BOLD_BLUE}{prompt_end}{NO_COLOR}</span><span class="s1"> &#39;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">dp</span></div>
+
+
+<span class="k">def</span> <span class="nf">_failover_template_format</span><span class="p">(</span><span class="n">template</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">callable</span><span class="p">(</span><span class="n">template</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># Exceptions raises from function of producing $PROMPT</span>
+            <span class="c1"># in user&#39;s xonshrc should not crash xonsh</span>
+            <span class="k">return</span> <span class="n">template</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="n">xt</span><span class="o">.</span><span class="n">print_exception</span><span class="p">()</span>
+            <span class="k">return</span> <span class="s1">&#39;$ &#39;</span>
+    <span class="k">return</span> <span class="n">template</span>
+
+
+<span class="nd">@xt</span><span class="o">.</span><span class="n">lazyobject</span>
+<span class="k">def</span> <span class="nf">RE_HIDDEN</span><span class="p">():</span>
+    <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\001</span><span class="s1">.*?</span><span class="se">\002</span><span class="s1">&#39;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="multiline_prompt"><a class="viewcode-back" href="../../../api/prompt/base.html#xonsh.prompt.base.multiline_prompt">[docs]</a><span class="k">def</span> <span class="nf">multiline_prompt</span><span class="p">(</span><span class="n">curr</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Returns the filler text for the prompt in multiline scenarios.&quot;&quot;&quot;</span>
+    <span class="n">line</span> <span class="o">=</span> <span class="n">curr</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span> <span class="ow">in</span> <span class="n">curr</span> <span class="k">else</span> <span class="n">curr</span>
+    <span class="n">line</span> <span class="o">=</span> <span class="n">RE_HIDDEN</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">line</span><span class="p">)</span>  <span class="c1"># gets rid of colors</span>
+    <span class="c1"># most prompts end in whitespace, head is the part before that.</span>
+    <span class="n">head</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span>
+    <span class="n">headlen</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">head</span><span class="p">)</span>
+    <span class="c1"># tail is the trailing whitespace</span>
+    <span class="n">tail</span> <span class="o">=</span> <span class="n">line</span> <span class="k">if</span> <span class="n">headlen</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="n">line</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="n">head</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="c1"># now to constuct the actual string</span>
+    <span class="n">dots</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;MULTILINE_PROMPT&#39;</span><span class="p">)</span>
+    <span class="n">dots</span> <span class="o">=</span> <span class="n">dots</span><span class="p">()</span> <span class="k">if</span> <span class="n">callable</span><span class="p">(</span><span class="n">dots</span><span class="p">)</span> <span class="k">else</span> <span class="n">dots</span>
+    <span class="k">if</span> <span class="n">dots</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">dots</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s1">&#39;&#39;</span>
+    <span class="n">tokstr</span> <span class="o">=</span> <span class="n">xt</span><span class="o">.</span><span class="n">format_color</span><span class="p">(</span><span class="n">dots</span><span class="p">,</span> <span class="n">hide</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">baselen</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">basetoks</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">tokstr</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\001</span><span class="s1">&#39;</span><span class="p">):</span>
+        <span class="n">pre</span><span class="p">,</span> <span class="n">sep</span><span class="p">,</span> <span class="n">post</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\002</span><span class="s1">&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sep</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">basetoks</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">pre</span><span class="p">))</span>
+            <span class="n">baselen</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">pre</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">basetoks</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="s1">&#39;</span><span class="se">\001</span><span class="s1">&#39;</span> <span class="o">+</span> <span class="n">pre</span> <span class="o">+</span> <span class="s1">&#39;</span><span class="se">\002</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">post</span><span class="p">))</span>
+            <span class="n">baselen</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">post</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">baselen</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">xt</span><span class="o">.</span><span class="n">format_color</span><span class="p">(</span><span class="s1">&#39;</span><span class="si">{NO_COLOR}</span><span class="s1">&#39;</span> <span class="o">+</span> <span class="n">tail</span><span class="p">,</span> <span class="n">hide</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">toks</span> <span class="o">=</span> <span class="n">basetoks</span> <span class="o">*</span> <span class="p">(</span><span class="n">headlen</span> <span class="o">//</span> <span class="n">baselen</span><span class="p">)</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="n">headlen</span> <span class="o">%</span> <span class="n">baselen</span>
+    <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">tok</span> <span class="ow">in</span> <span class="n">basetoks</span><span class="p">:</span>
+        <span class="n">slen</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">tok</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">newcount</span> <span class="o">=</span> <span class="n">slen</span> <span class="o">+</span> <span class="n">count</span>
+        <span class="k">if</span> <span class="n">slen</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">elif</span> <span class="n">newcount</span> <span class="o">&lt;=</span> <span class="n">n</span><span class="p">:</span>
+            <span class="n">toks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">toks</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">tok</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">tok</span><span class="p">[</span><span class="mi">1</span><span class="p">][:</span><span class="n">n</span> <span class="o">-</span> <span class="n">count</span><span class="p">]))</span>
+        <span class="n">count</span> <span class="o">=</span> <span class="n">newcount</span>
+        <span class="k">if</span> <span class="n">n</span> <span class="o">&lt;=</span> <span class="n">count</span><span class="p">:</span>
+            <span class="k">break</span>
+    <span class="n">toks</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">xt</span><span class="o">.</span><span class="n">format_color</span><span class="p">(</span><span class="s1">&#39;</span><span class="si">{NO_COLOR}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">hide</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span> <span class="n">tail</span><span class="p">))</span>
+    <span class="n">rtn</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">itertools</span><span class="o">.</span><span class="n">chain</span><span class="o">.</span><span class="n">from_iterable</span><span class="p">(</span><span class="n">toks</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">rtn</span></div>
+
+
+<div class="viewcode-block" id="is_template_string"><a class="viewcode-back" href="../../../api/prompt/base.html#xonsh.prompt.base.is_template_string">[docs]</a><span class="k">def</span> <span class="nf">is_template_string</span><span class="p">(</span><span class="n">template</span><span class="p">,</span> <span class="n">PROMPT_FIELDS</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Returns whether or not the string is a valid template.&quot;&quot;&quot;</span>
+    <span class="n">template</span> <span class="o">=</span> <span class="n">template</span><span class="p">()</span> <span class="k">if</span> <span class="n">callable</span><span class="p">(</span><span class="n">template</span><span class="p">)</span> <span class="k">else</span> <span class="n">template</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">included_names</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">i</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">_FORMATTER</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">template</span><span class="p">))</span>
+    <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="n">included_names</span><span class="o">.</span><span class="n">discard</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">PROMPT_FIELDS</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">fmtter</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;PROMPT_FIELDS&#39;</span><span class="p">,</span> <span class="n">PROMPT_FIELDS</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">fmtter</span> <span class="o">=</span> <span class="n">PROMPT_FIELDS</span>
+    <span class="n">known_names</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">fmtter</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+    <span class="k">return</span> <span class="n">included_names</span> <span class="o">&lt;=</span> <span class="n">known_names</span></div>
+
+
+<span class="k">def</span> <span class="nf">_format_value</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">conv</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Formats a value from a template string {val!conv:spec}. The spec is</span>
+<span class="sd">    applied as a format string itself, but if the value is None, the result</span>
+<span class="sd">    will be empty. The purpose of this is to allow optional parts in a</span>
+<span class="sd">    prompt string. For example, if the prompt contains &#39;{current_job:{} | }&#39;,</span>
+<span class="sd">    and &#39;current_job&#39; returns &#39;sleep&#39;, the result is &#39;sleep | &#39;, and if</span>
+<span class="sd">    &#39;current_job&#39; returns None, the result is &#39;&#39;.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">val</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s1">&#39;&#39;</span>
+    <span class="n">val</span> <span class="o">=</span> <span class="n">_FORMATTER</span><span class="o">.</span><span class="n">convert_field</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="n">conv</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">spec</span><span class="p">:</span>
+        <span class="n">val</span> <span class="o">=</span> <span class="n">_FORMATTER</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">spec</span><span class="p">,</span> <span class="n">val</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">val</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">val</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+        <p class="logo"><a href="../../../index.html" title="index">
+          <img class="logo" src="../../../_static/ascii_conch_part_color_tight.png" alt="Logo"/>
+        </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+    
+    
+        <div class="sidebar-toggle-group no-js">
+            
+            <button class="sidebar-toggle" id="sidebar-hide" title="Hide the sidebar menu">
+                 «
+                <span class="show-for-small">hide menu</span>
+                
+            </button>
+            <button class="sidebar-toggle" id="sidebar-show" title="Show the sidebar menu">
+                
+                <span class="show-for-small">menu</span>
+                <span class="hide-for-small">sidebar</span>
+                 »
+            </button>
+        </div>
+    
+      <div class="clearer"></div>
+    </div>
+    <div class="relbar-bottom">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../index.html">xonsh 0.4.7.dev724 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2015, Anthony Scopatz.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.1.
+    </div>
+    <!-- cloud_sptheme 1.4 -->
+  </body>
+</html>

@@ -1,0 +1,256 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>xonsh.completers.bash &#8212; xonsh 0.4.7.dev724 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/numpy_friendly.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.4.7.dev724',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <script type="text/javascript" src="../../../_static/jquery.cookie.js"></script>
+    <script type="text/javascript" src="../../../_static/cloud.js"></script>
+    <link rel="shortcut icon" href="../../../_static/magic_conch.ico"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+     
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="canonical" href="http://xon.sh/_modules/xonsh/completers/bash.html"/>
+
+  </head>
+  <body role="document">
+    <div class="relbar-top">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../index.html">xonsh 0.4.7.dev724 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for xonsh.completers.bash</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">shlex</span>
+<span class="kn">import</span> <span class="nn">pathlib</span>
+<span class="kn">import</span> <span class="nn">builtins</span>
+<span class="kn">import</span> <span class="nn">subprocess</span>
+
+<span class="kn">import</span> <span class="nn">xonsh.platform</span> <span class="k">as</span> <span class="nn">xp</span>
+
+<span class="kn">from</span> <span class="nn">xonsh.completers.path</span> <span class="k">import</span> <span class="n">_quote_paths</span>
+
+<span class="n">BASH_COMPLETE_SCRIPT</span> <span class="o">=</span> <span class="s2">r&quot;&quot;&quot;</span>
+<span class="si">{source}</span><span class="s2"></span>
+
+<span class="s2"># Override some functions in bash-completion, do not quote for readline</span>
+<span class="s2">quote_readline()</span>
+<span class="s2">{{</span>
+<span class="s2">    echo &quot;$1&quot;</span>
+<span class="s2">}}</span>
+
+<span class="s2">_quote_readline_by_ref()</span>
+<span class="s2">{{</span>
+<span class="s2">    if [[ $1 == \&#39;* ]]; then</span>
+<span class="s2">        # Leave out first character</span>
+<span class="s2">        printf -v $2 </span><span class="si">%s</span><span class="s2"> &quot;${{1:1}}&quot;</span>
+<span class="s2">    else</span>
+<span class="s2">        printf -v $2 </span><span class="si">%s</span><span class="s2"> &quot;$1&quot;</span>
+<span class="s2">    fi</span>
+
+<span class="s2">    [[ ${{!2}} == \$* ]] &amp;&amp; eval $2=${{!2}}</span>
+<span class="s2">}}</span>
+
+
+<span class="s2">function _get_complete_statement {{</span>
+<span class="s2">    complete -p </span><span class="si">{cmd}</span><span class="s2"> 2&gt; /dev/null || echo &quot;-F _minimal&quot;</span>
+<span class="s2">}}</span>
+
+<span class="s2">_complete_stmt=$(_get_complete_statement)</span>
+<span class="s2">if echo &quot;$_complete_stmt&quot; | grep --quiet -e &quot;_minimal&quot;</span>
+<span class="s2">then</span>
+<span class="s2">    declare -f _completion_loader &gt; /dev/null &amp;&amp; _completion_loader </span><span class="si">{cmd}</span><span class="s2"></span>
+<span class="s2">    _complete_stmt=$(_get_complete_statement)</span>
+<span class="s2">fi</span>
+
+<span class="s2">_func=$(echo &quot;$_complete_stmt&quot; | grep -o -e &#39;-F \w\+&#39; | cut -d &#39; &#39; -f 2)</span>
+<span class="s2">declare -f &quot;$_func&quot; &gt; /dev/null || exit 1</span>
+
+<span class="s2">echo &quot;$_complete_stmt&quot;</span>
+<span class="s2">COMP_WORDS=(</span><span class="si">{line}</span><span class="s2">)</span>
+<span class="s2">COMP_LINE=</span><span class="si">{comp_line}</span><span class="s2"></span>
+<span class="s2">COMP_POINT=${{#COMP_LINE}}</span>
+<span class="s2">COMP_COUNT=</span><span class="si">{end}</span><span class="s2"></span>
+<span class="s2">COMP_CWORD=</span><span class="si">{n}</span><span class="s2"></span>
+<span class="s2">$_func </span><span class="si">{cmd}</span><span class="s2"> </span><span class="si">{prefix}</span><span class="s2"> </span><span class="si">{prev}</span><span class="s2"></span>
+
+<span class="s2">for ((i=0;i&lt;${{#COMPREPLY[*]}};i++)) do echo ${{COMPREPLY[i]}}; done</span>
+<span class="s2">&quot;&quot;&quot;</span>
+
+
+<div class="viewcode-block" id="complete_from_bash"><a class="viewcode-back" href="../../../api/completers/bash.html#xonsh.completers.bash.complete_from_bash">[docs]</a><span class="k">def</span> <span class="nf">complete_from_bash</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">begidx</span><span class="p">,</span> <span class="n">endidx</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Completes based on results from BASH completion.&quot;&quot;&quot;</span>
+    <span class="n">source</span> <span class="o">=</span> <span class="n">_get_completions_source</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">source</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">set</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="n">prefix</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;$&#39;</span><span class="p">):</span>  <span class="c1"># do not complete env variables</span>
+        <span class="k">return</span> <span class="nb">set</span><span class="p">()</span>
+
+    <span class="n">splt</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+    <span class="n">cmd</span> <span class="o">=</span> <span class="n">splt</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">idx</span> <span class="o">=</span> <span class="n">n</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">prev</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+    <span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="n">tok</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">splt</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">tok</span> <span class="o">==</span> <span class="n">prefix</span><span class="p">:</span>
+            <span class="n">idx</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">idx</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">idx</span> <span class="o">&gt;=</span> <span class="n">begidx</span><span class="p">:</span>
+                <span class="k">break</span>
+        <span class="n">prev</span> <span class="o">=</span> <span class="n">tok</span>
+
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">prefix_quoted</span> <span class="o">=</span> <span class="s1">&#39;&quot;&quot;&#39;</span>
+        <span class="n">n</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">prefix_quoted</span> <span class="o">=</span> <span class="n">shlex</span><span class="o">.</span><span class="n">quote</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
+
+    <span class="n">script</span> <span class="o">=</span> <span class="n">BASH_COMPLETE_SCRIPT</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+        <span class="n">source</span><span class="o">=</span><span class="n">source</span><span class="p">,</span> <span class="n">line</span><span class="o">=</span><span class="s1">&#39; &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">shlex</span><span class="o">.</span><span class="n">quote</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">splt</span><span class="p">),</span>
+        <span class="n">comp_line</span><span class="o">=</span><span class="n">shlex</span><span class="o">.</span><span class="n">quote</span><span class="p">(</span><span class="n">line</span><span class="p">),</span> <span class="n">n</span><span class="o">=</span><span class="n">n</span><span class="p">,</span> <span class="n">cmd</span><span class="o">=</span><span class="n">shlex</span><span class="o">.</span><span class="n">quote</span><span class="p">(</span><span class="n">cmd</span><span class="p">),</span>
+        <span class="n">end</span><span class="o">=</span><span class="n">endidx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="n">prefix_quoted</span><span class="p">,</span> <span class="n">prev</span><span class="o">=</span><span class="n">shlex</span><span class="o">.</span><span class="n">quote</span><span class="p">(</span><span class="n">prev</span><span class="p">),</span>
+    <span class="p">)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">xp</span><span class="o">.</span><span class="n">bash_command</span><span class="p">(),</span> <span class="s1">&#39;-c&#39;</span><span class="p">,</span> <span class="n">script</span><span class="p">],</span> <span class="n">universal_newlines</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">detype</span><span class="p">())</span>
+    <span class="k">except</span> <span class="p">(</span><span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">,</span> <span class="ne">FileNotFoundError</span><span class="p">,</span>
+            <span class="ne">UnicodeDecodeError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">set</span><span class="p">()</span>
+
+    <span class="n">out</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+    <span class="n">complete_stmt</span> <span class="o">=</span> <span class="n">out</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+
+    <span class="c1"># From GNU Bash document: The results of the expansion are prefix-matched</span>
+    <span class="c1"># against the word being completed</span>
+    <span class="n">commprefix</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">commonprefix</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
+    <span class="n">strip_len</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">while</span> <span class="n">strip_len</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">prefix</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">commprefix</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">prefix</span><span class="p">[</span><span class="n">strip_len</span><span class="p">:]):</span>
+            <span class="k">break</span>
+        <span class="n">strip_len</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="k">if</span> <span class="s1">&#39;-o noquote&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">complete_stmt</span><span class="p">:</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">_quote_paths</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="s1">&#39;-o nospace&#39;</span> <span class="ow">in</span> <span class="n">complete_stmt</span><span class="p">:</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="nb">set</span><span class="p">([</span><span class="n">x</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">out</span><span class="p">])</span>
+
+    <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span> <span class="o">-</span> <span class="n">strip_len</span></div>
+
+
+<span class="k">def</span> <span class="nf">_get_completions_source</span><span class="p">():</span>
+    <span class="n">completers</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;BASH_COMPLETIONS&#39;</span><span class="p">,</span> <span class="p">())</span>
+    <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="nb">map</span><span class="p">(</span><span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">,</span> <span class="n">completers</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">is_file</span><span class="p">():</span>
+            <span class="k">return</span> <span class="s1">&#39;source &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">as_posix</span><span class="p">())</span>
+    <span class="k">return</span> <span class="kc">None</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+        <p class="logo"><a href="../../../index.html" title="index">
+          <img class="logo" src="../../../_static/ascii_conch_part_color_tight.png" alt="Logo"/>
+        </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+    
+    
+        <div class="sidebar-toggle-group no-js">
+            
+            <button class="sidebar-toggle" id="sidebar-hide" title="Hide the sidebar menu">
+                 «
+                <span class="show-for-small">hide menu</span>
+                
+            </button>
+            <button class="sidebar-toggle" id="sidebar-show" title="Show the sidebar menu">
+                
+                <span class="show-for-small">menu</span>
+                <span class="hide-for-small">sidebar</span>
+                 »
+            </button>
+        </div>
+    
+      <div class="clearer"></div>
+    </div>
+    <div class="relbar-bottom">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../index.html">xonsh 0.4.7.dev724 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2015, Anthony Scopatz.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.1.
+    </div>
+    <!-- cloud_sptheme 1.4 -->
+  </body>
+</html>

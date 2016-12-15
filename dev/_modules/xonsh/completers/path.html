@@ -1,0 +1,433 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>xonsh.completers.path &#8212; xonsh 0.4.7.dev724 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/numpy_friendly.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.4.7.dev724',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <script type="text/javascript" src="../../../_static/jquery.cookie.js"></script>
+    <script type="text/javascript" src="../../../_static/cloud.js"></script>
+    <link rel="shortcut icon" href="../../../_static/magic_conch.ico"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+     
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="canonical" href="http://xon.sh/_modules/xonsh/completers/path.html"/>
+
+  </head>
+  <body role="document">
+    <div class="relbar-top">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../index.html">xonsh 0.4.7.dev724 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for xonsh.completers.path</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">ast</span>
+<span class="kn">import</span> <span class="nn">builtins</span>
+
+<span class="kn">import</span> <span class="nn">xonsh.tools</span> <span class="k">as</span> <span class="nn">xt</span>
+<span class="kn">import</span> <span class="nn">xonsh.platform</span> <span class="k">as</span> <span class="nn">xp</span>
+<span class="kn">import</span> <span class="nn">xonsh.lazyasd</span> <span class="k">as</span> <span class="nn">xl</span>
+
+<span class="kn">from</span> <span class="nn">xonsh.completers.tools</span> <span class="k">import</span> <span class="n">get_filter_function</span>
+
+
+<span class="nd">@xl</span><span class="o">.</span><span class="n">lazyobject</span>
+<span class="k">def</span> <span class="nf">PATTERN_NEED_QUOTES</span><span class="p">():</span>
+    <span class="n">pattern</span> <span class="o">=</span> <span class="s1">r&#39;\s`\$\{\}\,\*\(\)&quot;</span><span class="se">\&#39;</span><span class="s1">\?&amp;&#39;</span>
+    <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
+        <span class="n">pattern</span> <span class="o">+=</span> <span class="s1">&#39;%&#39;</span>
+    <span class="n">pattern</span> <span class="o">=</span> <span class="s1">&#39;[&#39;</span> <span class="o">+</span> <span class="n">pattern</span> <span class="o">+</span> <span class="s1">&#39;]&#39;</span> <span class="o">+</span> <span class="s1">r&#39;|\band\b|\bor\b&#39;</span>
+    <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">pattern</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_path_from_partial_string</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">pos</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">pos</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">pos</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+    <span class="n">partial</span> <span class="o">=</span> <span class="n">inp</span><span class="p">[:</span><span class="n">pos</span><span class="p">]</span>
+    <span class="n">startix</span><span class="p">,</span> <span class="n">endix</span><span class="p">,</span> <span class="n">quote</span> <span class="o">=</span> <span class="n">xt</span><span class="o">.</span><span class="n">check_for_partial_string</span><span class="p">(</span><span class="n">partial</span><span class="p">)</span>
+    <span class="n">_post</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">startix</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">elif</span> <span class="n">endix</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">string</span> <span class="o">=</span> <span class="n">partial</span><span class="p">[</span><span class="n">startix</span><span class="p">:]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">endix</span> <span class="o">!=</span> <span class="n">pos</span><span class="p">:</span>
+            <span class="n">_test</span> <span class="o">=</span> <span class="n">partial</span><span class="p">[</span><span class="n">endix</span><span class="p">:</span><span class="n">pos</span><span class="p">]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span><span class="n">i</span> <span class="o">==</span> <span class="s1">&#39; &#39;</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">_test</span><span class="p">):</span>
+                <span class="n">_post</span> <span class="o">=</span> <span class="n">_test</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">string</span> <span class="o">=</span> <span class="n">partial</span><span class="p">[</span><span class="n">startix</span><span class="p">:</span><span class="n">endix</span><span class="p">]</span>
+    <span class="n">end</span> <span class="o">=</span> <span class="n">xt</span><span class="o">.</span><span class="n">RE_STRING_START</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">quote</span><span class="p">)</span>
+    <span class="n">_string</span> <span class="o">=</span> <span class="n">string</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">_string</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">end</span><span class="p">):</span>
+        <span class="n">_string</span> <span class="o">=</span> <span class="n">_string</span> <span class="o">+</span> <span class="n">end</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">val</span> <span class="o">=</span> <span class="n">ast</span><span class="o">.</span><span class="n">literal_eval</span><span class="p">(</span><span class="n">_string</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">SyntaxError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">):</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+        <span class="n">val</span> <span class="o">=</span> <span class="n">val</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;XONSH_ENCODING&#39;</span><span class="p">),</span>
+                         <span class="n">errors</span><span class="o">=</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;XONSH_ENCODING_ERRORS&#39;</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">string</span> <span class="o">+</span> <span class="n">_post</span><span class="p">,</span> <span class="n">val</span> <span class="o">+</span> <span class="n">_post</span><span class="p">,</span> <span class="n">quote</span><span class="p">,</span> <span class="n">end</span>
+
+
+<span class="k">def</span> <span class="nf">_normpath</span><span class="p">(</span><span class="n">p</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Wraps os.normpath() to avoid removing &#39;./&#39; at the beginning</span>
+<span class="sd">    and &#39;/&#39; at the end. On windows it does the same with backslashes</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">initial_dotslash</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">curdir</span> <span class="o">+</span> <span class="n">os</span><span class="o">.</span><span class="n">sep</span><span class="p">)</span>
+    <span class="n">initial_dotslash</span> <span class="o">|=</span> <span class="p">(</span><span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="n">p</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">curdir</span> <span class="o">+</span> <span class="n">os</span><span class="o">.</span><span class="n">altsep</span><span class="p">))</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span>
+    <span class="n">trailing_slash</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">sep</span><span class="p">)</span>
+    <span class="n">trailing_slash</span> <span class="o">|=</span> <span class="p">(</span><span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="n">p</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">altsep</span><span class="p">))</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">normpath</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">initial_dotslash</span> <span class="ow">and</span> <span class="n">p</span> <span class="o">!=</span> <span class="s1">&#39;.&#39;</span><span class="p">:</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">curdir</span><span class="p">,</span> <span class="n">p</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">trailing_slash</span><span class="p">:</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;FORCE_POSIX_PATHS&#39;</span><span class="p">):</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">sep</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">altsep</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">p</span>
+
+
+<span class="k">def</span> <span class="nf">_startswithlow</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">startlow</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">startlow</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">startlow</span> <span class="o">=</span> <span class="n">start</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">x</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">start</span><span class="p">)</span> <span class="ow">or</span> <span class="n">x</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">startlow</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_startswithnorm</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">startlow</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">x</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">start</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_env</span><span class="p">(</span><span class="n">prefix</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">prefix</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;$&#39;</span><span class="p">):</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="n">prefix</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s1">&#39;$&#39;</span> <span class="o">+</span> <span class="n">k</span>
+                <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+                <span class="k">if</span> <span class="n">get_filter_function</span><span class="p">()(</span><span class="n">k</span><span class="p">,</span> <span class="n">key</span><span class="p">)}</span>
+    <span class="k">return</span> <span class="p">()</span>
+
+
+<span class="k">def</span> <span class="nf">_dots</span><span class="p">(</span><span class="n">prefix</span><span class="p">):</span>
+    <span class="n">slash</span> <span class="o">=</span> <span class="n">xt</span><span class="o">.</span><span class="n">get_sep</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">slash</span> <span class="o">==</span> <span class="s1">&#39;</span><span class="se">\\</span><span class="s1">&#39;</span><span class="p">:</span>
+        <span class="n">slash</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+    <span class="k">if</span> <span class="n">prefix</span> <span class="ow">in</span> <span class="p">{</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="s1">&#39;.&#39;</span><span class="p">}:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="o">+</span><span class="n">slash</span><span class="p">,</span> <span class="s1">&#39;..&#39;</span><span class="o">+</span><span class="n">slash</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">prefix</span> <span class="o">==</span> <span class="s1">&#39;..&#39;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="s1">&#39;..&#39;</span><span class="o">+</span><span class="n">slash</span><span class="p">,)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">()</span>
+
+
+<span class="k">def</span> <span class="nf">_add_cdpaths</span><span class="p">(</span><span class="n">paths</span><span class="p">,</span> <span class="n">prefix</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Completes current prefix using CDPATH&quot;&quot;&quot;</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+    <span class="n">csc</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;CASE_SENSITIVE_COMPLETIONS&#39;</span><span class="p">)</span>
+    <span class="n">glob_sorted</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;GLOB_SORTED&#39;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">cdp</span> <span class="ow">in</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;CDPATH&#39;</span><span class="p">):</span>
+        <span class="n">test_glob</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">cdp</span><span class="p">,</span> <span class="n">prefix</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;*&#39;</span>
+        <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">xt</span><span class="o">.</span><span class="n">iglobpath</span><span class="p">(</span><span class="n">test_glob</span><span class="p">,</span> <span class="n">ignore_case</span><span class="o">=</span><span class="p">(</span><span class="ow">not</span> <span class="n">csc</span><span class="p">),</span>
+                              <span class="n">sort_result</span><span class="o">=</span><span class="n">glob_sorted</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+                <span class="n">paths</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">s</span><span class="p">))</span>
+
+
+<span class="k">def</span> <span class="nf">_quote_to_use</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="n">single</span> <span class="o">=</span> <span class="s2">&quot;&#39;&quot;</span>
+    <span class="n">double</span> <span class="o">=</span> <span class="s1">&#39;&quot;&#39;</span>
+    <span class="k">if</span> <span class="n">single</span> <span class="ow">in</span> <span class="n">x</span> <span class="ow">and</span> <span class="n">double</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">x</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">double</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">single</span>
+
+
+<span class="k">def</span> <span class="nf">_quote_paths</span><span class="p">(</span><span class="n">paths</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">):</span>
+    <span class="n">expand_path</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_expand_path__</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">space</span> <span class="o">=</span> <span class="s1">&#39; &#39;</span>
+    <span class="n">backslash</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="se">\\</span><span class="s1">&#39;</span>
+    <span class="n">double_backslash</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="se">\\\\</span><span class="s1">&#39;</span>
+    <span class="n">slash</span> <span class="o">=</span> <span class="n">xt</span><span class="o">.</span><span class="n">get_sep</span><span class="p">()</span>
+    <span class="n">orig_start</span> <span class="o">=</span> <span class="n">start</span>
+    <span class="n">orig_end</span> <span class="o">=</span> <span class="n">end</span>
+    <span class="c1"># quote on all or none, to make readline completes to max prefix</span>
+    <span class="n">need_quotes</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span>
+        <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">PATTERN_NEED_QUOTES</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span> <span class="ow">or</span>
+        <span class="p">(</span><span class="n">backslash</span> <span class="ow">in</span> <span class="n">x</span> <span class="ow">and</span> <span class="n">slash</span> <span class="o">!=</span> <span class="n">backslash</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">:</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="n">orig_start</span>
+        <span class="n">end</span> <span class="o">=</span> <span class="n">orig_end</span>
+        <span class="k">if</span> <span class="n">start</span> <span class="o">==</span> <span class="s1">&#39;&#39;</span> <span class="ow">and</span> <span class="n">need_quotes</span><span class="p">:</span>
+            <span class="n">start</span> <span class="o">=</span> <span class="n">end</span> <span class="o">=</span> <span class="n">_quote_to_use</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">expand_path</span><span class="p">(</span><span class="n">s</span><span class="p">)):</span>
+            <span class="n">_tail</span> <span class="o">=</span> <span class="n">slash</span>
+        <span class="k">elif</span> <span class="n">end</span> <span class="o">==</span> <span class="s1">&#39;&#39;</span><span class="p">:</span>
+            <span class="n">_tail</span> <span class="o">=</span> <span class="n">space</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">_tail</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+        <span class="k">if</span> <span class="n">start</span> <span class="o">!=</span> <span class="s1">&#39;&#39;</span> <span class="ow">and</span> <span class="s1">&#39;r&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">start</span> <span class="ow">and</span> <span class="n">backslash</span> <span class="ow">in</span> <span class="n">s</span><span class="p">:</span>
+            <span class="n">start</span> <span class="o">=</span> <span class="s1">&#39;r</span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="n">start</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">s</span> <span class="o">+</span> <span class="n">_tail</span>
+        <span class="k">if</span> <span class="n">end</span> <span class="o">!=</span> <span class="s1">&#39;&#39;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;r&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">start</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
+                <span class="n">s</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">backslash</span><span class="p">,</span> <span class="n">double_backslash</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">backslash</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">s</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">double_backslash</span><span class="p">):</span>
+                <span class="n">s</span> <span class="o">+=</span> <span class="n">backslash</span>
+        <span class="k">if</span> <span class="n">end</span> <span class="ow">in</span> <span class="n">s</span><span class="p">:</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">end</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\\</span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">end</span><span class="p">))</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">start</span> <span class="o">+</span> <span class="n">s</span> <span class="o">+</span> <span class="n">end</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">out</span>
+
+
+<span class="k">def</span> <span class="nf">_joinpath</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+    <span class="c1"># convert our tuple representation back into a string representing a path</span>
+    <span class="k">if</span> <span class="n">path</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s1">&#39;&#39;</span>
+    <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s1">&#39;&#39;</span>
+    <span class="k">elif</span> <span class="n">path</span> <span class="o">==</span> <span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">,):</span>
+        <span class="k">return</span> <span class="n">xt</span><span class="o">.</span><span class="n">get_sep</span><span class="p">()</span>
+    <span class="k">elif</span> <span class="n">path</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;&#39;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">xt</span><span class="o">.</span><span class="n">get_sep</span><span class="p">()</span> <span class="o">+</span> <span class="n">_normpath</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="o">*</span><span class="n">path</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_normpath</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="o">*</span><span class="n">path</span><span class="p">))</span>
+
+
+<span class="k">def</span> <span class="nf">_splitpath</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+    <span class="c1"># convert a path into an intermediate tuple representation</span>
+    <span class="c1"># if this tuple starts with &#39;&#39;, it means that the path was an absolute path</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">_normpath</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">xt</span><span class="o">.</span><span class="n">get_sep</span><span class="p">()):</span>
+        <span class="n">pre</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">pre</span> <span class="o">=</span> <span class="p">()</span>
+    <span class="k">return</span> <span class="n">pre</span> <span class="o">+</span> <span class="n">_splitpath_helper</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="p">())</span>
+
+
+<span class="k">def</span> <span class="nf">_splitpath_helper</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">sofar</span><span class="o">=</span><span class="p">()):</span>
+    <span class="n">folder</span><span class="p">,</span> <span class="n">path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">path</span><span class="p">:</span>
+        <span class="n">sofar</span> <span class="o">=</span> <span class="n">sofar</span> <span class="o">+</span> <span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="p">)</span>
+    <span class="k">if</span> <span class="p">(</span><span class="ow">not</span> <span class="n">folder</span> <span class="ow">or</span> <span class="n">folder</span> <span class="o">==</span> <span class="n">xt</span><span class="o">.</span><span class="n">get_sep</span><span class="p">()</span> <span class="ow">or</span>
+       <span class="p">(</span><span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">splitdrive</span><span class="p">(</span><span class="n">path</span><span class="p">)[</span><span class="mi">0</span><span class="p">])):</span>
+        <span class="k">return</span> <span class="n">sofar</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">_splitpath_helper</span><span class="p">(</span><span class="n">folder</span><span class="p">,</span> <span class="n">sofar</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="subsequence_match"><a class="viewcode-back" href="../../../api/completers/path.html#xonsh.completers.path.subsequence_match">[docs]</a><span class="k">def</span> <span class="nf">subsequence_match</span><span class="p">(</span><span class="n">ref</span><span class="p">,</span> <span class="n">typed</span><span class="p">,</span> <span class="n">csc</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Detects whether typed is a subsequence of ref.</span>
+
+<span class="sd">    Returns ``True`` if the characters in ``typed`` appear (in order) in</span>
+<span class="sd">    ``ref``, regardless of exactly where in ``ref`` they occur.  If ``csc`` is</span>
+<span class="sd">    ``False``, ignore the case of ``ref`` and ``typed``.</span>
+
+<span class="sd">    Used in &quot;subsequence&quot; path completion (e.g., ``~/u/ro`` expands to</span>
+<span class="sd">    ``~/lou/carcohl``)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">csc</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_subsequence_match_iter</span><span class="p">(</span><span class="n">ref</span><span class="p">,</span> <span class="n">typed</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_subsequence_match_iter</span><span class="p">(</span><span class="n">ref</span><span class="o">.</span><span class="n">lower</span><span class="p">(),</span> <span class="n">typed</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span></div>
+
+
+<span class="k">def</span> <span class="nf">_subsequence_match_iter</span><span class="p">(</span><span class="n">ref</span><span class="p">,</span> <span class="n">typed</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">typed</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">ref</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">elif</span> <span class="n">ref</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">typed</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="n">_subsequence_match_iter</span><span class="p">(</span><span class="n">ref</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">typed</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_subsequence_match_iter</span><span class="p">(</span><span class="n">ref</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">typed</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_expand_one</span><span class="p">(</span><span class="n">sofar</span><span class="p">,</span> <span class="n">nextone</span><span class="p">,</span> <span class="n">csc</span><span class="p">):</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">glob_sorted</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;GLOB_SORTED&#39;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">sofar</span><span class="p">:</span>
+        <span class="n">_glob</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">_joinpath</span><span class="p">(</span><span class="n">i</span><span class="p">),</span> <span class="s1">&#39;*&#39;</span><span class="p">)</span> <span class="k">if</span> <span class="n">i</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s1">&#39;*&#39;</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">xt</span><span class="o">.</span><span class="n">iglobpath</span><span class="p">(</span><span class="n">_glob</span><span class="p">,</span> <span class="n">sort_result</span><span class="o">=</span><span class="n">glob_sorted</span><span class="p">):</span>
+            <span class="n">j</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">j</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">subsequence_match</span><span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="n">nextone</span><span class="p">,</span> <span class="n">csc</span><span class="p">):</span>
+                <span class="n">out</span><span class="o">.</span><span class="n">add</span><span class="p">((</span><span class="n">i</span> <span class="ow">or</span> <span class="p">())</span> <span class="o">+</span> <span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="p">))</span>
+    <span class="k">return</span> <span class="n">out</span>
+
+
+<div class="viewcode-block" id="complete_path"><a class="viewcode-back" href="../../../api/completers/path.html#xonsh.completers.path.complete_path">[docs]</a><span class="k">def</span> <span class="nf">complete_path</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">cdpath</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">filtfunc</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Completes based on a path name.&quot;&quot;&quot;</span>
+    <span class="c1"># string stuff for automatic quoting</span>
+    <span class="n">path_str_start</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+    <span class="n">path_str_end</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">_path_from_partial_string</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">end</span><span class="p">)</span>
+    <span class="n">lprefix</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">p</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">lprefix</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">prefix</span> <span class="o">=</span> <span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">path_str_start</span> <span class="o">=</span> <span class="n">p</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="n">path_str_end</span> <span class="o">=</span> <span class="n">p</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span>
+    <span class="n">tilde</span> <span class="o">=</span> <span class="s1">&#39;~&#39;</span>
+    <span class="n">paths</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+    <span class="n">csc</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;CASE_SENSITIVE_COMPLETIONS&#39;</span><span class="p">)</span>
+    <span class="n">glob_sorted</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;GLOB_SORTED&#39;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">xt</span><span class="o">.</span><span class="n">iglobpath</span><span class="p">(</span><span class="n">prefix</span> <span class="o">+</span> <span class="s1">&#39;*&#39;</span><span class="p">,</span> <span class="n">ignore_case</span><span class="o">=</span><span class="p">(</span><span class="ow">not</span> <span class="n">csc</span><span class="p">),</span>
+                          <span class="n">sort_result</span><span class="o">=</span><span class="n">glob_sorted</span><span class="p">):</span>
+        <span class="n">paths</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">paths</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;SUBSEQUENCE_PATH_COMPLETION&#39;</span><span class="p">):</span>
+        <span class="c1"># this block implements &#39;subsequence&#39; matching, similar to fish and zsh.</span>
+        <span class="c1"># matches are based on subsequences, not substrings.</span>
+        <span class="c1"># e.g., ~/u/ro completes to ~/lou/carcolh</span>
+        <span class="c1"># see above functions for details.</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">_splitpath</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="n">prefix</span><span class="p">))</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;&#39;</span><span class="p">:</span>
+                <span class="n">basedir</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="p">)</span>
+                <span class="n">p</span> <span class="o">=</span> <span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">basedir</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">matches_so_far</span> <span class="o">=</span> <span class="p">{</span><span class="n">basedir</span><span class="p">}</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">p</span><span class="p">:</span>
+                <span class="n">matches_so_far</span> <span class="o">=</span> <span class="n">_expand_one</span><span class="p">(</span><span class="n">matches_so_far</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">csc</span><span class="p">)</span>
+            <span class="n">paths</span> <span class="o">|=</span> <span class="p">{</span><span class="n">_joinpath</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">matches_so_far</span><span class="p">}</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">paths</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;FUZZY_PATH_COMPLETION&#39;</span><span class="p">):</span>
+        <span class="n">threshold</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;SUGGEST_THRESHOLD&#39;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">xt</span><span class="o">.</span><span class="n">iglobpath</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;*&#39;</span><span class="p">,</span>
+                              <span class="n">ignore_case</span><span class="o">=</span><span class="p">(</span><span class="ow">not</span> <span class="n">csc</span><span class="p">),</span>
+                              <span class="n">sort_result</span><span class="o">=</span><span class="n">glob_sorted</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">xt</span><span class="o">.</span><span class="n">levenshtein</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="n">threshold</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">threshold</span><span class="p">:</span>
+                <span class="n">paths</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">tilde</span> <span class="ow">in</span> <span class="n">prefix</span><span class="p">:</span>
+        <span class="n">home</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="n">tilde</span><span class="p">)</span>
+        <span class="n">paths</span> <span class="o">=</span> <span class="p">{</span><span class="n">s</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">home</span><span class="p">,</span> <span class="n">tilde</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">}</span>
+    <span class="k">if</span> <span class="n">cdpath</span><span class="p">:</span>
+        <span class="n">_add_cdpaths</span><span class="p">(</span><span class="n">paths</span><span class="p">,</span> <span class="n">prefix</span><span class="p">)</span>
+    <span class="n">paths</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="nb">filter</span><span class="p">(</span><span class="n">filtfunc</span><span class="p">,</span> <span class="n">paths</span><span class="p">))</span>
+    <span class="n">paths</span> <span class="o">=</span> <span class="n">_quote_paths</span><span class="p">({</span><span class="n">_normpath</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">},</span>
+                         <span class="n">path_str_start</span><span class="p">,</span>
+                         <span class="n">path_str_end</span><span class="p">)</span>
+    <span class="n">paths</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">filter</span><span class="p">(</span><span class="n">filtfunc</span><span class="p">,</span> <span class="n">_dots</span><span class="p">(</span><span class="n">prefix</span><span class="p">)))</span>
+    <span class="n">paths</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">filter</span><span class="p">(</span><span class="n">filtfunc</span><span class="p">,</span> <span class="n">_env</span><span class="p">(</span><span class="n">prefix</span><span class="p">)))</span>
+    <span class="k">return</span> <span class="n">paths</span><span class="p">,</span> <span class="n">lprefix</span></div>
+
+
+<div class="viewcode-block" id="complete_dir"><a class="viewcode-back" href="../../../api/completers/path.html#xonsh.completers.path.complete_dir">[docs]</a><span class="k">def</span> <span class="nf">complete_dir</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">cdpath</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">complete_path</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">cdpath</span><span class="p">,</span>
+                         <span class="n">filtfunc</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">)</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+        <p class="logo"><a href="../../../index.html" title="index">
+          <img class="logo" src="../../../_static/ascii_conch_part_color_tight.png" alt="Logo"/>
+        </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+    
+    
+        <div class="sidebar-toggle-group no-js">
+            
+            <button class="sidebar-toggle" id="sidebar-hide" title="Hide the sidebar menu">
+                 «
+                <span class="show-for-small">hide menu</span>
+                
+            </button>
+            <button class="sidebar-toggle" id="sidebar-show" title="Show the sidebar menu">
+                
+                <span class="show-for-small">menu</span>
+                <span class="hide-for-small">sidebar</span>
+                 »
+            </button>
+        </div>
+    
+      <div class="clearer"></div>
+    </div>
+    <div class="relbar-bottom">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../index.html">xonsh 0.4.7.dev724 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2015, Anthony Scopatz.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.1.
+    </div>
+    <!-- cloud_sptheme 1.4 -->
+  </body>
+</html>
