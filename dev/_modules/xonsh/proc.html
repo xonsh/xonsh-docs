@@ -8,7 +8,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>xonsh.proc &#8212; xonsh 0.4.7.dev676 documentation</title>
+    <title>xonsh.proc &#8212; xonsh 0.4.7.dev679 documentation</title>
     
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
@@ -17,7 +17,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../',
-        VERSION:     '0.4.7.dev676',
+        VERSION:     '0.4.7.dev679',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -49,7 +49,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.4.7.dev676 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.4.7.dev679 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -1789,6 +1789,7 @@
         <span class="k">if</span> <span class="ow">not</span> <span class="n">stdout</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">safe_readable</span><span class="p">(</span><span class="n">stdout</span><span class="p">):</span>
             <span class="c1"># we get here if the process is not threadable or the</span>
             <span class="c1"># class is the real Popen</span>
+            <span class="n">PrevProcCloser</span><span class="p">(</span><span class="n">pipeline</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
             <span class="n">wait_for_active_job</span><span class="p">()</span>
             <span class="n">proc</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_endtime</span><span class="p">()</span>
@@ -2223,6 +2224,62 @@
         <span class="k">pass</span>
     <span class="k">if</span> <span class="n">can_send_signal</span><span class="p">:</span>
         <span class="n">p</span><span class="o">.</span><span class="n">send_signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGCONT</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="PrevProcCloser"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.PrevProcCloser">[docs]</a><span class="k">class</span> <span class="nc">PrevProcCloser</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Previous process closer thread for pipelines whose last command</span>
+<span class="sd">    is itself unthreadable. This makes sure that the pipeline is</span>
+<span class="sd">    driven foreward and does not deadlock.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pipeline</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        pipeline : CommandPipeline</span>
+<span class="sd">            The pipeline whose prev procs we should close.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pipeline</span> <span class="o">=</span> <span class="n">pipeline</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">daemon</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+<div class="viewcode-block" id="PrevProcCloser.run"><a class="viewcode-back" href="../../api/proc.html#xonsh.proc.PrevProcCloser.run">[docs]</a>    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Runs the closing algorithim.&quot;&quot;&quot;</span>
+        <span class="n">pipeline</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pipeline</span>
+        <span class="n">check_prev_done</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">pipeline</span><span class="o">.</span><span class="n">procs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+        <span class="k">if</span> <span class="n">check_prev_done</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">proc</span> <span class="o">=</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">proc</span>
+        <span class="n">prev_end_time</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">timeout</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;XONSH_PROC_FREQUENCY&#39;</span><span class="p">)</span>
+        <span class="n">sleeptime</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">timeout</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">)</span>
+        <span class="k">while</span> <span class="n">proc</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">check_prev_done</span><span class="p">:</span>
+                <span class="c1"># In the case of pipelines with more than one command</span>
+                <span class="c1"># we should give the commands a little time</span>
+                <span class="c1"># to start up fully. This is particularly true for</span>
+                <span class="c1"># GNU Parallel, which has a long startup time.</span>
+                <span class="k">pass</span>
+            <span class="k">elif</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">_prev_procs_done</span><span class="p">():</span>
+                <span class="n">pipeline</span><span class="o">.</span><span class="n">_close_prev_procs</span><span class="p">()</span>
+                <span class="n">proc</span><span class="o">.</span><span class="n">prevs_are_closed</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="k">break</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">check_prev_done</span><span class="p">:</span>
+                <span class="c1"># if we are piping...</span>
+                <span class="k">if</span> <span class="n">prev_end_time</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="c1"># or see if we already know that the next-to-last</span>
+                    <span class="c1"># proc in the pipeline has ended.</span>
+                    <span class="k">if</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">_prev_procs_done</span><span class="p">():</span>
+                        <span class="c1"># if it has, record the time</span>
+                        <span class="n">prev_end_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+                <span class="k">elif</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">prev_end_time</span> <span class="o">&gt;=</span> <span class="mf">0.1</span><span class="p">:</span>
+                    <span class="c1"># if we still don&#39;t have any output, even though the</span>
+                    <span class="c1"># next-to-last proc has finished, wait a bit to make</span>
+                    <span class="c1"># sure we have fully started up, etc.</span>
+                    <span class="n">check_prev_done</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="c1"># this is for CPU usage</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">sleeptime</span><span class="p">)</span></div></div>
 </pre></div>
 
           </div>
@@ -2275,7 +2332,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.4.7.dev676 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.4.7.dev679 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
       </ul>
