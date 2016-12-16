@@ -1,0 +1,373 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>xonsh.history.sqlite &#8212; xonsh 0.4.7.dev660 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/numpy_friendly.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.4.7.dev660',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <script type="text/javascript" src="../../../_static/jquery.cookie.js"></script>
+    <script type="text/javascript" src="../../../_static/cloud.js"></script>
+    <link rel="shortcut icon" href="../../../_static/magic_conch.ico"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+     
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="canonical" href="http://xon.sh/_modules/xonsh/history/sqlite.html"/>
+
+  </head>
+  <body role="document">
+    <div class="relbar-top">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../index.html">xonsh 0.4.7.dev660 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for xonsh.history.sqlite</h1><div class="highlight"><pre>
+<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;Implements the xonsh history backend via sqlite3.&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">builtins</span>
+<span class="kn">import</span> <span class="nn">collections</span>
+<span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">sqlite3</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">threading</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="kn">from</span> <span class="nn">xonsh.history.base</span> <span class="k">import</span> <span class="n">History</span>
+<span class="kn">import</span> <span class="nn">xonsh.tools</span> <span class="k">as</span> <span class="nn">xt</span>
+
+
+<span class="k">def</span> <span class="nf">_xh_sqlite_get_file_name</span><span class="p">():</span>
+    <span class="n">envs</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+    <span class="n">file_name</span> <span class="o">=</span> <span class="n">envs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;XONSH_HISTORY_SQLITE_FILE&#39;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">file_name</span><span class="p">:</span>
+        <span class="n">data_dir</span> <span class="o">=</span> <span class="n">envs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;XONSH_DATA_DIR&#39;</span><span class="p">)</span>
+        <span class="n">file_name</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">data_dir</span><span class="p">,</span> <span class="s1">&#39;xonsh-history.sqlite&#39;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">xt</span><span class="o">.</span><span class="n">expanduser_abs_path</span><span class="p">(</span><span class="n">file_name</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_xh_sqlite_get_conn</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">filename</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">filename</span> <span class="o">=</span> <span class="n">_xh_sqlite_get_file_name</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_xh_sqlite_create_history_table</span><span class="p">(</span><span class="n">cursor</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Create Table for history items.</span>
+
+<span class="sd">    Columns:</span>
+<span class="sd">        info - JSON formated, reserved for future extension.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        CREATE TABLE IF NOT EXISTS xonsh_history</span>
+<span class="s2">             (inp TEXT,</span>
+<span class="s2">              rtn INTEGER,</span>
+<span class="s2">              tsb REAL,</span>
+<span class="s2">              tse REAL,</span>
+<span class="s2">              sessionid TEXT,</span>
+<span class="s2">              out TEXT,</span>
+<span class="s2">              info TEXT</span>
+<span class="s2">             )</span>
+<span class="s2">    &quot;&quot;&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_xh_sqlite_insert_command</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">sessionid</span><span class="p">,</span> <span class="n">store_stdout</span><span class="p">):</span>
+    <span class="n">sql</span> <span class="o">=</span> <span class="s1">&#39;INSERT INTO xonsh_history (inp, rtn, tsb, tse, sessionid&#39;</span>
+    <span class="n">tss</span> <span class="o">=</span> <span class="n">cmd</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;ts&#39;</span><span class="p">,</span> <span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">])</span>
+    <span class="n">params</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">cmd</span><span class="p">[</span><span class="s1">&#39;inp&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(),</span>
+        <span class="n">cmd</span><span class="p">[</span><span class="s1">&#39;rtn&#39;</span><span class="p">],</span>
+        <span class="n">tss</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="n">tss</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+        <span class="n">sessionid</span><span class="p">,</span>
+    <span class="p">]</span>
+    <span class="k">if</span> <span class="n">store_stdout</span> <span class="ow">and</span> <span class="s1">&#39;out&#39;</span> <span class="ow">in</span> <span class="n">cmd</span><span class="p">:</span>
+        <span class="n">sql</span> <span class="o">+=</span> <span class="s1">&#39;, out&#39;</span>
+        <span class="n">params</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cmd</span><span class="p">[</span><span class="s1">&#39;out&#39;</span><span class="p">])</span>
+    <span class="k">if</span> <span class="s1">&#39;info&#39;</span> <span class="ow">in</span> <span class="n">cmd</span><span class="p">:</span>
+        <span class="n">sql</span> <span class="o">+=</span> <span class="s1">&#39;, info&#39;</span>
+        <span class="n">info</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">cmd</span><span class="p">[</span><span class="s1">&#39;info&#39;</span><span class="p">])</span>
+        <span class="n">params</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">info</span><span class="p">)</span>
+    <span class="n">sql</span> <span class="o">+=</span> <span class="s1">&#39;) VALUES (&#39;</span> <span class="o">+</span> <span class="p">(</span><span class="s1">&#39;?, &#39;</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">params</span><span class="p">))</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s1">&#39;, &#39;</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;)&#39;</span>
+    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">params</span><span class="p">))</span>
+
+
+<span class="k">def</span> <span class="nf">_xh_sqlite_get_count</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">sessionid</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="n">sql</span> <span class="o">=</span> <span class="s1">&#39;SELECT count(*) FROM xonsh_history &#39;</span>
+    <span class="n">params</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">sessionid</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">sql</span> <span class="o">+=</span> <span class="s1">&#39;WHERE sessionid = ? &#39;</span>
+        <span class="n">params</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">sessionid</span><span class="p">))</span>
+    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">params</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+
+
+<span class="k">def</span> <span class="nf">_xh_sqlite_get_records</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">sessionid</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="n">sql</span> <span class="o">=</span> <span class="s1">&#39;SELECT inp, tsb, rtn FROM xonsh_history &#39;</span>
+    <span class="n">params</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">sessionid</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">sql</span> <span class="o">+=</span> <span class="s1">&#39;WHERE sessionid = ? &#39;</span>
+        <span class="n">params</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sessionid</span><span class="p">)</span>
+    <span class="n">sql</span> <span class="o">+=</span> <span class="s1">&#39;ORDER BY tsb &#39;</span>
+    <span class="k">if</span> <span class="n">reverse</span><span class="p">:</span>
+        <span class="n">sql</span> <span class="o">+=</span> <span class="s1">&#39;DESC &#39;</span>
+    <span class="k">if</span> <span class="n">limit</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">sql</span> <span class="o">+=</span> <span class="s1">&#39;LIMIT </span><span class="si">%d</span><span class="s1"> &#39;</span> <span class="o">%</span> <span class="n">limit</span>
+    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">params</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()</span>
+
+
+<span class="k">def</span> <span class="nf">_xh_sqlite_delete_records</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">size_to_keep</span><span class="p">):</span>
+    <span class="n">sql</span> <span class="o">=</span> <span class="s1">&#39;SELECT min(tsb) FROM (&#39;</span>
+    <span class="n">sql</span> <span class="o">+=</span> <span class="s1">&#39;SELECT tsb FROM xonsh_history ORDER BY tsb DESC &#39;</span>
+    <span class="n">sql</span> <span class="o">+=</span> <span class="s1">&#39;LIMIT </span><span class="si">%d</span><span class="s1">)&#39;</span> <span class="o">%</span> <span class="n">size_to_keep</span>
+    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">)</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">result</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="n">max_tsb</span> <span class="o">=</span> <span class="n">result</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">sql</span> <span class="o">=</span> <span class="s1">&#39;DELETE FROM xonsh_history WHERE tsb &lt; ?&#39;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="p">(</span><span class="n">max_tsb</span><span class="p">,))</span>
+    <span class="k">return</span> <span class="n">result</span><span class="o">.</span><span class="n">rowcount</span>
+
+
+<span class="k">def</span> <span class="nf">xh_sqlite_append_history</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">sessionid</span><span class="p">,</span> <span class="n">store_stdout</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">with</span> <span class="n">_xh_sqlite_get_conn</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">_xh_sqlite_create_history_table</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+        <span class="n">_xh_sqlite_insert_command</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">sessionid</span><span class="p">,</span> <span class="n">store_stdout</span><span class="p">)</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+
+
+<span class="k">def</span> <span class="nf">xh_sqlite_get_count</span><span class="p">(</span><span class="n">sessionid</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">with</span> <span class="n">_xh_sqlite_get_conn</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">_xh_sqlite_get_count</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">sessionid</span><span class="o">=</span><span class="n">sessionid</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">xh_sqlite_items</span><span class="p">(</span><span class="n">sessionid</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">with</span> <span class="n">_xh_sqlite_get_conn</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">_xh_sqlite_create_history_table</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_xh_sqlite_get_records</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">sessionid</span><span class="o">=</span><span class="n">sessionid</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">xh_sqlite_delete_items</span><span class="p">(</span><span class="n">size_to_keep</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">with</span> <span class="n">_xh_sqlite_get_conn</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">_xh_sqlite_create_history_table</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_xh_sqlite_delete_records</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">size_to_keep</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="SqliteHistoryGC"><a class="viewcode-back" href="../../../api/history/sqlite.html#xonsh.history.sqlite.SqliteHistoryGC">[docs]</a><span class="k">class</span> <span class="nc">SqliteHistoryGC</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Shell history garbage collection.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wait_for_shell</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                 <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Thread responsible for garbage collecting old history.</span>
+
+<span class="sd">        May wait for shell (and for xonshrc to have been loaded) to start work.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">daemon</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">filename</span> <span class="o">=</span> <span class="n">filename</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">size</span> <span class="o">=</span> <span class="n">size</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wait_for_shell</span> <span class="o">=</span> <span class="n">wait_for_shell</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">wait_for_shell</span><span class="p">:</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.01</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">hsize</span><span class="p">,</span> <span class="n">units</span> <span class="o">=</span> <span class="n">xt</span><span class="o">.</span><span class="n">to_history_tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">envs</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+            <span class="n">hsize</span><span class="p">,</span> <span class="n">units</span> <span class="o">=</span> <span class="n">envs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;XONSH_HISTORY_SIZE&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">units</span> <span class="o">!=</span> <span class="s1">&#39;commands&#39;</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;sqlite backed history gc currently only supports &#39;</span>
+                  <span class="s1">&#39;&quot;commands&quot; as units&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="k">if</span> <span class="n">hsize</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">xh_sqlite_delete_items</span><span class="p">(</span><span class="n">hsize</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="SqliteHistory"><a class="viewcode-back" href="../../../api/history/sqlite.html#xonsh.history.sqlite.SqliteHistory">[docs]</a><span class="k">class</span> <span class="nc">SqliteHistory</span><span class="p">(</span><span class="n">History</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Xonsh history backend implemented with sqlite3.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gc</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">filename</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">filename</span> <span class="o">=</span> <span class="n">_xh_sqlite_get_file_name</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">filename</span> <span class="o">=</span> <span class="n">filename</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gc</span> <span class="o">=</span> <span class="n">SqliteHistoryGC</span><span class="p">()</span> <span class="k">if</span> <span class="n">gc</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_hist_inp</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">inps</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rtns</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">outs</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tss</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">def</span> <span class="nf">append</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cmd</span><span class="p">):</span>
+        <span class="n">envs</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+        <span class="n">opts</span> <span class="o">=</span> <span class="n">envs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;HISTCONTROL&#39;</span><span class="p">)</span>
+        <span class="n">inp</span> <span class="o">=</span> <span class="n">cmd</span><span class="p">[</span><span class="s1">&#39;inp&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">inps</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+        <span class="n">store_stdout</span> <span class="o">=</span> <span class="n">envs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;XONSH_STORE_STDOUT&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">store_stdout</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">outs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cmd</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;out&#39;</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">outs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rtns</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cmd</span><span class="p">[</span><span class="s1">&#39;rtn&#39;</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tss</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cmd</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;ts&#39;</span><span class="p">,</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">)))</span>
+
+        <span class="n">opts</span> <span class="o">=</span> <span class="n">envs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;HISTCONTROL&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="s1">&#39;ignoredups&#39;</span> <span class="ow">in</span> <span class="n">opts</span> <span class="ow">and</span> <span class="n">inp</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">_last_hist_inp</span><span class="p">:</span>
+            <span class="c1"># Skipping dup cmd</span>
+            <span class="k">return</span>
+        <span class="k">if</span> <span class="s1">&#39;ignoreerr&#39;</span> <span class="ow">in</span> <span class="n">opts</span> <span class="ow">and</span> <span class="n">cmd</span><span class="p">[</span><span class="s1">&#39;rtn&#39;</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c1"># Skipping failed cmd</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_hist_inp</span> <span class="o">=</span> <span class="n">inp</span>
+        <span class="n">xh_sqlite_append_history</span><span class="p">(</span>
+            <span class="n">cmd</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sessionid</span><span class="p">),</span> <span class="n">store_stdout</span><span class="p">,</span>
+            <span class="n">filename</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">)</span>
+
+<div class="viewcode-block" id="SqliteHistory.all_items"><a class="viewcode-back" href="../../../api/history/sqlite.html#xonsh.history.sqlite.SqliteHistory.all_items">[docs]</a>    <span class="k">def</span> <span class="nf">all_items</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Display all history items.&quot;&quot;&quot;</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">xh_sqlite_items</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">):</span>
+            <span class="k">yield</span> <span class="p">{</span><span class="s1">&#39;inp&#39;</span><span class="p">:</span> <span class="n">item</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="s1">&#39;ts&#39;</span><span class="p">:</span> <span class="n">item</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="s1">&#39;rtn&#39;</span><span class="p">:</span> <span class="n">item</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="s1">&#39;ind&#39;</span><span class="p">:</span> <span class="n">i</span><span class="p">}</span>
+            <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span></div>
+
+<div class="viewcode-block" id="SqliteHistory.items"><a class="viewcode-back" href="../../../api/history/sqlite.html#xonsh.history.sqlite.SqliteHistory.items">[docs]</a>    <span class="k">def</span> <span class="nf">items</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Display history items of current session.&quot;&quot;&quot;</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">xh_sqlite_items</span><span class="p">(</span>
+                <span class="n">sessionid</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sessionid</span><span class="p">),</span> <span class="n">filename</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">):</span>
+            <span class="k">yield</span> <span class="p">{</span><span class="s1">&#39;inp&#39;</span><span class="p">:</span> <span class="n">item</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="s1">&#39;ts&#39;</span><span class="p">:</span> <span class="n">item</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="s1">&#39;rtn&#39;</span><span class="p">:</span> <span class="n">item</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="s1">&#39;ind&#39;</span><span class="p">:</span> <span class="n">i</span><span class="p">}</span>
+            <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span></div>
+
+    <span class="k">def</span> <span class="nf">info</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">collections</span><span class="o">.</span><span class="n">OrderedDict</span><span class="p">()</span>
+        <span class="n">data</span><span class="p">[</span><span class="s1">&#39;backend&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;sqlite&#39;</span>
+        <span class="n">data</span><span class="p">[</span><span class="s1">&#39;sessionid&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sessionid</span><span class="p">)</span>
+        <span class="n">data</span><span class="p">[</span><span class="s1">&#39;filename&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">filename</span>
+        <span class="n">data</span><span class="p">[</span><span class="s1">&#39;session items&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">xh_sqlite_get_count</span><span class="p">(</span>
+            <span class="n">sessionid</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">sessionid</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">)</span>
+        <span class="n">data</span><span class="p">[</span><span class="s1">&#39;all items&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">xh_sqlite_get_count</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">)</span>
+        <span class="n">envs</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+        <span class="n">data</span><span class="p">[</span><span class="s1">&#39;gc options&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">envs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;XONSH_HISTORY_SIZE&#39;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">data</span>
+
+    <span class="k">def</span> <span class="nf">run_gc</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gc</span> <span class="o">=</span> <span class="n">SqliteHistoryGC</span><span class="p">(</span><span class="n">wait_for_shell</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">size</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">blocking</span><span class="p">:</span>
+            <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">gc</span><span class="o">.</span><span class="n">is_alive</span><span class="p">():</span>
+                <span class="k">continue</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+        <p class="logo"><a href="../../../index.html" title="index">
+          <img class="logo" src="../../../_static/ascii_conch_part_color_tight.png" alt="Logo"/>
+        </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+    
+    
+        <div class="sidebar-toggle-group no-js">
+            
+            <button class="sidebar-toggle" id="sidebar-hide" title="Hide the sidebar menu">
+                 «
+                <span class="show-for-small">hide menu</span>
+                
+            </button>
+            <button class="sidebar-toggle" id="sidebar-show" title="Show the sidebar menu">
+                
+                <span class="show-for-small">menu</span>
+                <span class="hide-for-small">sidebar</span>
+                 »
+            </button>
+        </div>
+    
+      <div class="clearer"></div>
+    </div>
+    <div class="relbar-bottom">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../index.html">xonsh 0.4.7.dev660 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2015, Anthony Scopatz.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.1.
+    </div>
+    <!-- cloud_sptheme 1.4 -->
+  </body>
+</html>

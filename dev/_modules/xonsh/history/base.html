@@ -1,0 +1,302 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>xonsh.history.base &#8212; xonsh 0.4.7.dev660 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/numpy_friendly.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.4.7.dev660',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <script type="text/javascript" src="../../../_static/jquery.cookie.js"></script>
+    <script type="text/javascript" src="../../../_static/cloud.js"></script>
+    <link rel="shortcut icon" href="../../../_static/magic_conch.ico"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+     
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="canonical" href="http://xon.sh/_modules/xonsh/history/base.html"/>
+
+  </head>
+  <body role="document">
+    <div class="relbar-top">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../index.html">xonsh 0.4.7.dev660 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for xonsh.history.base</h1><div class="highlight"><pre>
+<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;Base class of Xonsh History backends.&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">uuid</span>
+<span class="kn">import</span> <span class="nn">xonsh.tools</span> <span class="k">as</span> <span class="nn">xt</span>
+
+
+<div class="viewcode-block" id="History"><a class="viewcode-back" href="../../../api/history/base.html#xonsh.history.base.History">[docs]</a><span class="k">class</span> <span class="nc">History</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Xonsh history backend base class.</span>
+
+<span class="sd">    History objects should be created via a subclass of History.</span>
+
+<span class="sd">    Indexing</span>
+<span class="sd">    --------</span>
+<span class="sd">    History object acts like a sequence that can be indexed in a special</span>
+<span class="sd">    way that adds extra functionality. Note that the most recent command</span>
+<span class="sd">    is the last item in history.</span>
+
+<span class="sd">    The index acts as a filter with two parts, command and argument,</span>
+<span class="sd">    separated by comma. Based on the type of each part different</span>
+<span class="sd">    filtering can be achieved,</span>
+
+<span class="sd">        for the command part:</span>
+
+<span class="sd">            - an int returns the command in that position.</span>
+<span class="sd">            - a slice returns a list of commands.</span>
+<span class="sd">            - a string returns the most recent command containing the string.</span>
+
+<span class="sd">        for the argument part:</span>
+
+<span class="sd">            - an int returns the argument of the command in that position.</span>
+<span class="sd">            - a slice returns a part of the command based on the argument</span>
+<span class="sd">              position.</span>
+
+<span class="sd">    The argument part of the filter can be omitted but the command part is</span>
+<span class="sd">    required. Command arguments are separated by white space.</span>
+
+<span class="sd">    If the filtering produces only one result it is returned as a string</span>
+<span class="sd">    else a list of strings is returned.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    rtns : sequence of ints</span>
+<span class="sd">        The return of the command (ie, 0 on success)</span>
+<span class="sd">    inps : sequence of strings</span>
+<span class="sd">        The command as typed by the user, including newlines</span>
+<span class="sd">    tss : sequence of two-tuples of floats</span>
+<span class="sd">        The timestamps of when the command started and finished, including</span>
+<span class="sd">        fractions</span>
+<span class="sd">    outs : sequence of strings</span>
+<span class="sd">        The output of the command, if xonsh is configured to save it</span>
+<span class="sd">    gc : A garbage collector or None</span>
+<span class="sd">        The garbage collector</span>
+
+<span class="sd">    In all of these sequences, index 0 is the oldest and -1 (the last item)</span>
+<span class="sd">    is the newest.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sessionid</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Represents a xonsh session&#39;s history.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        sessionid : int, uuid, str, optional</span>
+<span class="sd">            Current session identifier, will generate a new sessionid if not</span>
+<span class="sd">            set.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sessionid</span> <span class="o">=</span> <span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span> <span class="k">if</span> <span class="n">sessionid</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">sessionid</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gc</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">filename</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">inps</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rtns</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tss</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">outs</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">last_cmd_rtn</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">last_cmd_out</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="nf">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Return the number of items in current session.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="p">()))</span>
+
+    <span class="k">def</span> <span class="nf">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Retrieve history parts based on filtering rules,</span>
+<span class="sd">        see ``History`` docs for more info. Accepts one of</span>
+<span class="sd">        int, string, slice or tuple of length two.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
+            <span class="n">cmd_pat</span><span class="p">,</span> <span class="n">arg_pat</span> <span class="o">=</span> <span class="n">item</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">cmd_pat</span><span class="p">,</span> <span class="n">arg_pat</span> <span class="o">=</span> <span class="n">item</span><span class="p">,</span> <span class="kc">None</span>
+        <span class="n">cmds</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span><span class="p">[</span><span class="s1">&#39;inp&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="p">()]</span>
+        <span class="n">cmds</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cmd_filter</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">cmd_pat</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">arg_pat</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">cmds</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_args_filter</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">arg_pat</span><span class="p">)</span>
+        <span class="n">cmds</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">cmds</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">cmds</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">cmds</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">cmds</span>
+
+    <span class="k">def</span> <span class="nf">__setitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">PermissionError</span><span class="p">(</span><span class="s1">&#39;You cannot change history! &#39;</span>
+                              <span class="s1">&#39;you can create new though.&#39;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="History.append"><a class="viewcode-back" href="../../../api/history/base.html#xonsh.history.base.History.append">[docs]</a>    <span class="k">def</span> <span class="nf">append</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cmd</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Append a command item into history.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        cmd: dict</span>
+<span class="sd">            A dict contains informations of a command. It should contains</span>
+<span class="sd">            the following keys like ``inp``, ``rtn``, ``ts`` etc.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="History.flush"><a class="viewcode-back" href="../../../api/history/base.html#xonsh.history.base.History.flush">[docs]</a>    <span class="k">def</span> <span class="nf">flush</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Flush the history items to disk from a buffer.&quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+<div class="viewcode-block" id="History.items"><a class="viewcode-back" href="../../../api/history/base.html#xonsh.history.base.History.items">[docs]</a>    <span class="k">def</span> <span class="nf">items</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Get history items of current session.&quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span></div>
+
+<div class="viewcode-block" id="History.all_items"><a class="viewcode-back" href="../../../api/history/base.html#xonsh.history.base.History.all_items">[docs]</a>    <span class="k">def</span> <span class="nf">all_items</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Get all history items.&quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span></div>
+
+<div class="viewcode-block" id="History.info"><a class="viewcode-back" href="../../../api/history/base.html#xonsh.history.base.History.info">[docs]</a>    <span class="k">def</span> <span class="nf">info</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;A collection of information about the shell history.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        dict or collections.OrderedDict</span>
+<span class="sd">            Contains history information as str key pairs.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span></div>
+
+<div class="viewcode-block" id="History.run_gc"><a class="viewcode-back" href="../../../api/history/base.html#xonsh.history.base.History.run_gc">[docs]</a>    <span class="k">def</span> <span class="nf">run_gc</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Run the garbage collector.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        size: None or tuple of a int and a string</span>
+<span class="sd">            Detemines the size and units of what would be allowed to remain.</span>
+<span class="sd">        blocking: bool</span>
+<span class="sd">            If set blocking, then wait until gc action finished.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">pass</span></div>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_cmd_filter</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">pat</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">pat</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">slice</span><span class="p">)):</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="n">xt</span><span class="o">.</span><span class="n">ensure_slice</span><span class="p">(</span><span class="n">pat</span><span class="p">)</span>
+            <span class="k">yield from</span> <span class="n">xt</span><span class="o">.</span><span class="n">get_portions</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">xt</span><span class="o">.</span><span class="n">is_string</span><span class="p">(</span><span class="n">pat</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">command</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">cmds</span><span class="p">)):</span>
+                <span class="k">if</span> <span class="n">pat</span> <span class="ow">in</span> <span class="n">command</span><span class="p">:</span>
+                    <span class="k">yield</span> <span class="n">command</span>
+                    <span class="k">return</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s1">&#39;Command filter must be string, int or slice&#39;</span><span class="p">)</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_args_filter</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">pat</span><span class="p">):</span>
+        <span class="n">args</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">pat</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">slice</span><span class="p">)):</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="n">xt</span><span class="o">.</span><span class="n">ensure_slice</span><span class="p">(</span><span class="n">pat</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">command</span> <span class="ow">in</span> <span class="n">cmds</span><span class="p">:</span>
+                <span class="k">yield</span> <span class="s1">&#39; &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">command</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="n">s</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s1">&#39;Argument filter must be int or slice&#39;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">args</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+        <p class="logo"><a href="../../../index.html" title="index">
+          <img class="logo" src="../../../_static/ascii_conch_part_color_tight.png" alt="Logo"/>
+        </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+    
+    
+        <div class="sidebar-toggle-group no-js">
+            
+            <button class="sidebar-toggle" id="sidebar-hide" title="Hide the sidebar menu">
+                 «
+                <span class="show-for-small">hide menu</span>
+                
+            </button>
+            <button class="sidebar-toggle" id="sidebar-show" title="Show the sidebar menu">
+                
+                <span class="show-for-small">menu</span>
+                <span class="hide-for-small">sidebar</span>
+                 »
+            </button>
+        </div>
+    
+      <div class="clearer"></div>
+    </div>
+    <div class="relbar-bottom">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../index.html">xonsh 0.4.7.dev660 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2015, Anthony Scopatz.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.1.
+    </div>
+    <!-- cloud_sptheme 1.4 -->
+  </body>
+</html>
