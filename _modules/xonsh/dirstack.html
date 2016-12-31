@@ -1,0 +1,651 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>xonsh.dirstack &#8212; xonsh 0.5.1.dev25 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.5.1.dev25',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <script type="text/javascript" src="../../_static/jquery.cookie.js"></script>
+    <script type="text/javascript" src="../../_static/cloud.js"></script>
+    <link rel="shortcut icon" href="../../_static/magic_conch.ico"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+     
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="canonical" href="http://xon.sh/_modules/xonsh/dirstack.html"/>
+
+  </head>
+  <body role="document">
+    <div class="relbar-top">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../index.html">xonsh 0.5.1.dev25 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for xonsh.dirstack</h1><div class="highlight"><pre>
+<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;Directory stack and associated utilities for the xonsh shell.&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">glob</span>
+<span class="kn">import</span> <span class="nn">argparse</span>
+<span class="kn">import</span> <span class="nn">builtins</span>
+<span class="kn">import</span> <span class="nn">subprocess</span>
+
+<span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="k">import</span> <span class="n">lazyobject</span>
+<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="k">import</span> <span class="n">get_sep</span>
+<span class="kn">from</span> <span class="nn">xonsh.events</span> <span class="k">import</span> <span class="n">events</span>
+<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="k">import</span> <span class="n">ON_WINDOWS</span>
+
+<span class="n">DIRSTACK</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="sd">&quot;&quot;&quot;A list containing the currently remembered directories.&quot;&quot;&quot;</span>
+<span class="n">_unc_tempDrives</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="sd">&quot;&quot;&quot; drive: sharePath for temp drive letters we create for UNC mapping&quot;&quot;&quot;</span>
+
+
+<span class="k">def</span> <span class="nf">_unc_check_enabled</span><span class="p">()</span><span class="o">-&gt;</span><span class="nb">bool</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Check whether CMD.EXE is enforcing no-UNC-as-working-directory check.</span>
+
+<span class="sd">    Check can be disabled by setting {HKCU, HKLM}/SOFTWARE\Microsoft\Command Processor\DisableUNCCheck:REG_DWORD=1</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        True if `CMD.EXE` is enforcing the check (default Windows situation)</span>
+<span class="sd">        False if check is explicitly disabled.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
+        <span class="k">return</span>
+
+    <span class="kn">import</span> <span class="nn">winreg</span>
+
+    <span class="n">wval</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="n">winreg</span><span class="o">.</span><span class="n">OpenKey</span><span class="p">(</span><span class="n">winreg</span><span class="o">.</span><span class="n">HKEY_CURRENT_USER</span><span class="p">,</span> <span class="s1">r&#39;software\microsoft\command processor&#39;</span><span class="p">)</span>
+        <span class="n">wval</span><span class="p">,</span> <span class="n">wtype</span> <span class="o">=</span> <span class="n">winreg</span><span class="o">.</span><span class="n">QueryValueEx</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="s1">&#39;DisableUNCCheck&#39;</span><span class="p">)</span>
+        <span class="n">winreg</span><span class="o">.</span><span class="n">CloseKey</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="k">pass</span>
+
+    <span class="k">if</span> <span class="n">wval</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">key2</span> <span class="o">=</span> <span class="n">winreg</span><span class="o">.</span><span class="n">OpenKey</span><span class="p">(</span><span class="n">winreg</span><span class="o">.</span><span class="n">HKEY_LOCAL_MACHINE</span><span class="p">,</span> <span class="s1">r&#39;software\microsoft\command processor&#39;</span><span class="p">)</span>
+            <span class="n">wval</span><span class="p">,</span> <span class="n">wtype</span> <span class="o">=</span> <span class="n">winreg</span><span class="o">.</span><span class="n">QueryValueEx</span><span class="p">(</span><span class="n">key2</span><span class="p">,</span> <span class="s1">&#39;DisableUNCCheck&#39;</span><span class="p">)</span>
+            <span class="n">winreg</span><span class="o">.</span><span class="n">CloseKey</span><span class="p">(</span><span class="n">key2</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>  <span class="c1"># NOQA</span>
+            <span class="k">pass</span>
+
+    <span class="k">return</span> <span class="kc">False</span> <span class="k">if</span> <span class="n">wval</span> <span class="k">else</span> <span class="kc">True</span>
+
+
+<span class="k">def</span> <span class="nf">_is_unc_path</span><span class="p">(</span><span class="n">some_path</span><span class="p">)</span><span class="o">-&gt;</span><span class="nb">bool</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;True if path starts with 2 backward (or forward, due to python path hacking) slashes.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">some_path</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">some_path</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">some_path</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="ow">and</span> <span class="n">some_path</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">in</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">sep</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">altsep</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_unc_map_temp_drive</span><span class="p">(</span><span class="n">unc_path</span><span class="p">)</span><span class="o">-&gt;</span><span class="nb">str</span><span class="p">:</span>
+
+    <span class="sd">&quot;&quot;&quot;Map a new temporary drive letter for each distinct share,</span>
+<span class="sd">    unless `CMD.EXE` is not insisting on non-UNC working directory.</span>
+
+<span class="sd">    Emulating behavior of `CMD.EXE` `pushd`, create a new mapped drive (starting from Z: towards A:, skipping existing</span>
+<span class="sd">     drive letters) for each new UNC path user selects.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        unc_path: the path specified by user.  Assumed to be a UNC path of form \\&lt;server&gt;\share...</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        a replacement for `unc_path` to be used as the actual new working directory.</span>
+<span class="sd">        Note that the drive letter may be a the same as one already mapped if the server and share portion of `unc_path`</span>
+<span class="sd">         is the same as one still active on the stack.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">global</span> <span class="n">_unc_tempDrives</span>
+    <span class="k">assert</span> <span class="n">unc_path</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="ow">in</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">sep</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">altsep</span><span class="p">),</span> <span class="s2">&quot;unc_path is UNC form of path&quot;</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">_unc_check_enabled</span><span class="p">():</span>
+        <span class="k">return</span> <span class="n">unc_path</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">unc_share</span><span class="p">,</span> <span class="n">rem_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">splitdrive</span><span class="p">(</span><span class="n">unc_path</span><span class="p">)</span>
+        <span class="n">unc_share</span> <span class="o">=</span> <span class="n">unc_share</span><span class="o">.</span><span class="n">casefold</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">_unc_tempDrives</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">_unc_tempDrives</span><span class="p">[</span><span class="n">d</span><span class="p">]</span> <span class="o">==</span> <span class="n">unc_share</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">rem_path</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">dord</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">ord</span><span class="p">(</span><span class="s1">&#39;z&#39;</span><span class="p">),</span> <span class="nb">ord</span><span class="p">(</span><span class="s1">&#39;a&#39;</span><span class="p">),</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+            <span class="n">d</span> <span class="o">=</span> <span class="nb">chr</span><span class="p">(</span><span class="n">dord</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;:&#39;</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">d</span><span class="p">):</span>  <span class="c1"># find unused drive letter starting from z:</span>
+                <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">([</span><span class="s1">&#39;NET&#39;</span><span class="p">,</span> <span class="s1">&#39;USE&#39;</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">unc_share</span><span class="p">],</span> <span class="n">universal_newlines</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="n">_unc_tempDrives</span><span class="p">[</span><span class="n">d</span><span class="p">]</span> <span class="o">=</span> <span class="n">unc_share</span>
+                <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">rem_path</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_unc_unmap_temp_drive</span><span class="p">(</span><span class="n">left_drive</span><span class="p">,</span> <span class="n">cwd</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Unmap a temporary drive letter if it is no longer needed.</span>
+<span class="sd">    Called after popping `DIRSTACK` and changing to new working directory, so we need stack *and*</span>
+<span class="sd">    new current working directory to be sure drive letter no longer needed.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        left_drive: driveletter (and colon) of working directory we just left</span>
+<span class="sd">        cwd: full path of new current working directory</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+    <span class="k">global</span> <span class="n">_unc_tempDrives</span>
+
+    <span class="k">if</span> <span class="n">left_drive</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_unc_tempDrives</span><span class="p">:</span>   <span class="c1"># if not one we&#39;ve mapped, don&#39;t unmap it</span>
+        <span class="k">return</span>
+
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">DIRSTACK</span> <span class="o">+</span> <span class="p">[</span><span class="n">cwd</span><span class="p">]:</span>              <span class="c1"># if still in use , don&#39;t aunmap it.</span>
+        <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">casefold</span><span class="p">()</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">left_drive</span><span class="p">):</span>
+            <span class="k">return</span>
+
+    <span class="n">_unc_tempDrives</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">left_drive</span><span class="p">)</span>
+    <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">([</span><span class="s1">&#39;NET&#39;</span><span class="p">,</span> <span class="s1">&#39;USE&#39;</span><span class="p">,</span> <span class="n">left_drive</span><span class="p">,</span> <span class="s1">&#39;/delete&#39;</span><span class="p">],</span> <span class="n">universal_newlines</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+
+<span class="n">events</span><span class="o">.</span><span class="n">doc</span><span class="p">(</span><span class="s1">&#39;on_chdir&#39;</span><span class="p">,</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">on_chdir(olddir: str, newdir: str) -&gt; None</span>
+
+<span class="s2">Fires when the current directory is changed for any reason.</span>
+<span class="s2">&quot;&quot;&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_get_cwd</span><span class="p">():</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">()</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">OSError</span><span class="p">,</span> <span class="ne">FileNotFoundError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+
+<span class="k">def</span> <span class="nf">_change_working_directory</span><span class="p">(</span><span class="n">newdir</span><span class="p">):</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+    <span class="n">old</span> <span class="o">=</span> <span class="n">env</span><span class="p">[</span><span class="s1">&#39;PWD&#39;</span><span class="p">]</span>
+    <span class="n">new</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">old</span><span class="p">,</span> <span class="n">newdir</span><span class="p">)</span>
+    <span class="n">absnew</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">new</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">chdir</span><span class="p">(</span><span class="n">absnew</span><span class="p">)</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">OSError</span><span class="p">,</span> <span class="ne">FileNotFoundError</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">new</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">get_sep</span><span class="p">()):</span>
+            <span class="n">new</span> <span class="o">=</span> <span class="n">new</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">new</span><span class="p">)</span> <span class="o">==</span> <span class="s1">&#39;..&#39;</span><span class="p">:</span>
+            <span class="n">env</span><span class="p">[</span><span class="s1">&#39;PWD&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">new</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">old</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">env</span><span class="p">[</span><span class="s1">&#39;OLDPWD&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">old</span>
+        <span class="k">if</span> <span class="n">new</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">env</span><span class="p">[</span><span class="s1">&#39;PWD&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">absnew</span>
+
+    <span class="c1"># Fire event if the path actually changed</span>
+    <span class="k">if</span> <span class="n">old</span> <span class="o">!=</span> <span class="n">env</span><span class="p">[</span><span class="s1">&#39;PWD&#39;</span><span class="p">]:</span>
+        <span class="n">events</span><span class="o">.</span><span class="n">on_chdir</span><span class="o">.</span><span class="n">fire</span><span class="p">(</span><span class="n">old</span><span class="p">,</span> <span class="n">env</span><span class="p">[</span><span class="s1">&#39;PWD&#39;</span><span class="p">])</span>
+
+
+<span class="k">def</span> <span class="nf">_try_cdpath</span><span class="p">(</span><span class="n">apath</span><span class="p">):</span>
+    <span class="c1"># NOTE: this CDPATH implementation differs from the bash one.</span>
+    <span class="c1"># In bash if a CDPATH is set, an unqualified local folder</span>
+    <span class="c1"># is considered after all CDPATHs, example:</span>
+    <span class="c1"># CDPATH=$HOME/src (with src/xonsh/ inside)</span>
+    <span class="c1"># $ cd xonsh -&gt; src/xonsh (whith xonsh/xonsh)</span>
+    <span class="c1"># a second $ cd xonsh has no effects, to move in the nested xonsh</span>
+    <span class="c1"># in bash a full $ cd ./xonsh is needed.</span>
+    <span class="c1"># In xonsh a relative folder is allways preferred.</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+    <span class="n">cdpaths</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;CDPATH&#39;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">cdp</span> <span class="ow">in</span> <span class="n">cdpaths</span><span class="p">:</span>
+        <span class="n">globber</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_expand_path__</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">cdp</span><span class="p">,</span> <span class="n">apath</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">cdpath_prefixed_path</span> <span class="ow">in</span> <span class="n">glob</span><span class="o">.</span><span class="n">iglob</span><span class="p">(</span><span class="n">globber</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">cdpath_prefixed_path</span>
+    <span class="k">return</span> <span class="n">apath</span>
+
+
+<div class="viewcode-block" id="cd"><a class="viewcode-back" href="../../api/dirstack.html#xonsh.dirstack.cd">[docs]</a><span class="k">def</span> <span class="nf">cd</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Changes the directory.</span>
+
+<span class="sd">    If no directory is specified (i.e. if `args` is None) then this</span>
+<span class="sd">    changes to the current user&#39;s home directory.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+    <span class="n">oldpwd</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;OLDPWD&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">cwd</span> <span class="o">=</span> <span class="n">env</span><span class="p">[</span><span class="s1">&#39;PWD&#39;</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="s1">&#39;~&#39;</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">d</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">d</span> <span class="o">==</span> <span class="s1">&#39;-&#39;</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">oldpwd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">d</span> <span class="o">=</span> <span class="n">oldpwd</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="s1">&#39;cd: no previous directory stored</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">,</span> <span class="mi">1</span>
+            <span class="k">elif</span> <span class="n">d</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;-&#39;</span><span class="p">):</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">num</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">d</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+                <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="s1">&#39;cd: Invalid destination: </span><span class="si">{0}</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">d</span><span class="p">),</span> <span class="mi">1</span>
+                <span class="k">if</span> <span class="n">num</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="mi">0</span>
+                <span class="k">elif</span> <span class="n">num</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="s1">&#39;cd: Invalid destination: </span><span class="si">{0}</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">d</span><span class="p">),</span> <span class="mi">1</span>
+                <span class="k">elif</span> <span class="n">num</span> <span class="o">&gt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">DIRSTACK</span><span class="p">):</span>
+                    <span class="n">e</span> <span class="o">=</span> <span class="s1">&#39;cd: Too few elements in dirstack (</span><span class="si">{0}</span><span class="s1"> elements)</span><span class="se">\n</span><span class="s1">&#39;</span>
+                    <span class="k">return</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">e</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">DIRSTACK</span><span class="p">)),</span> <span class="mi">1</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">d</span> <span class="o">=</span> <span class="n">DIRSTACK</span><span class="p">[</span><span class="n">num</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">d</span> <span class="o">=</span> <span class="n">_try_cdpath</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="s1">&#39;cd takes 0 or 1 arguments, not </span><span class="si">{0}</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)),</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">d</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="s1">&#39;cd: no such file or directory: </span><span class="si">{0}</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">d</span><span class="p">),</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">d</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="s1">&#39;cd: </span><span class="si">{0}</span><span class="s1"> is not a directory</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">d</span><span class="p">),</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">access</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">X_OK</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="s1">&#39;cd: permission denied: </span><span class="si">{0}</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">d</span><span class="p">),</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="n">_is_unc_path</span><span class="p">(</span><span class="n">d</span><span class="p">)</span> <span class="ow">and</span> <span class="n">_unc_check_enabled</span><span class="p">()</span> <span class="ow">and</span> <span class="p">(</span><span class="ow">not</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;AUTO_PUSHD&#39;</span><span class="p">)):</span>
+        <span class="k">return</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="s2">&quot;cd: can&#39;t cd to UNC path on Windows, unless $AUTO_PUSHD set or reg entry &quot;</span> \
+               <span class="o">+</span> <span class="s1">r&#39;HKCU\SOFTWARE\MICROSOFT\Command Processor\DisableUNCCheck:DWORD = 1&#39;</span> <span class="o">+</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">,</span> <span class="mi">1</span>
+
+    <span class="c1"># now, push the directory onto the dirstack if AUTO_PUSHD is set</span>
+    <span class="k">if</span> <span class="n">cwd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;AUTO_PUSHD&#39;</span><span class="p">):</span>
+        <span class="n">pushd</span><span class="p">([</span><span class="s1">&#39;-n&#39;</span><span class="p">,</span> <span class="s1">&#39;-q&#39;</span><span class="p">,</span> <span class="n">cwd</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="n">_is_unc_path</span><span class="p">(</span><span class="n">d</span><span class="p">):</span>
+            <span class="n">d</span> <span class="o">=</span> <span class="n">_unc_map_temp_drive</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+    <span class="n">_change_working_directory</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+    <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="mi">0</span></div>
+
+
+<span class="nd">@lazyobject</span>
+<span class="k">def</span> <span class="nf">pushd_parser</span><span class="p">():</span>
+    <span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s2">&quot;pushd&quot;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;dir&#39;</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="s1">&#39;?&#39;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;-n&#39;</span><span class="p">,</span>
+                        <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;cd&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s1">&#39;Suppresses the normal change of directory when&#39;</span>
+                        <span class="s1">&#39; adding directories to the stack, so that only the&#39;</span>
+                        <span class="s1">&#39; stack is manipulated.&#39;</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store_false&#39;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;-q&#39;</span><span class="p">,</span>
+                        <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;quiet&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s1">&#39;Do not call dirs, regardless of $PUSHD_SILENT&#39;</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store_true&#39;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">parser</span>
+
+
+<div class="viewcode-block" id="pushd"><a class="viewcode-back" href="../../api/dirstack.html#xonsh.dirstack.pushd">[docs]</a><span class="k">def</span> <span class="nf">pushd</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;xonsh command: pushd</span>
+
+<span class="sd">    Adds a directory to the top of the directory stack, or rotates the stack,</span>
+<span class="sd">    making the new top of the stack the current working directory.</span>
+
+<span class="sd">    On Windows, if the path is a UNC path (begins with `\\&lt;server&gt;\&lt;share&gt;`) and if the `DisableUNCCheck` registry</span>
+<span class="sd">    value is not enabled, creates a temporary mapped drive letter and sets the working directory there, emulating</span>
+<span class="sd">    behavior of `PUSHD` in `CMD.EXE`</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">global</span> <span class="n">DIRSTACK</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">args</span> <span class="o">=</span> <span class="n">pushd_parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">SystemExit</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="mi">1</span>
+
+    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+
+    <span class="n">pwd</span> <span class="o">=</span> <span class="n">env</span><span class="p">[</span><span class="s1">&#39;PWD&#39;</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;PUSHD_MINUS&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+        <span class="n">BACKWARD</span> <span class="o">=</span> <span class="s1">&#39;-&#39;</span>
+        <span class="n">FORWARD</span> <span class="o">=</span> <span class="s1">&#39;+&#39;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">BACKWARD</span> <span class="o">=</span> <span class="s1">&#39;+&#39;</span>
+        <span class="n">FORWARD</span> <span class="o">=</span> <span class="s1">&#39;-&#39;</span>
+
+    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">dir</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">new_pwd</span> <span class="o">=</span> <span class="n">DIRSTACK</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+            <span class="n">e</span> <span class="o">=</span> <span class="s1">&#39;pushd: Directory stack is empty</span><span class="se">\n</span><span class="s1">&#39;</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="mi">1</span>
+    <span class="k">elif</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">dir</span><span class="p">):</span>
+        <span class="n">new_pwd</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">dir</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">num</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">dir</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="n">e</span> <span class="o">=</span> <span class="s1">&#39;Invalid argument to pushd: </span><span class="si">{0}</span><span class="se">\n</span><span class="s1">&#39;</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">e</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">dir</span><span class="p">),</span> <span class="mi">1</span>
+
+        <span class="k">if</span> <span class="n">num</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">e</span> <span class="o">=</span> <span class="s1">&#39;Invalid argument to pushd: </span><span class="si">{0}</span><span class="se">\n</span><span class="s1">&#39;</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">e</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">dir</span><span class="p">),</span> <span class="mi">1</span>
+
+        <span class="k">if</span> <span class="n">num</span> <span class="o">&gt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">DIRSTACK</span><span class="p">):</span>
+            <span class="n">e</span> <span class="o">=</span> <span class="s1">&#39;Too few elements in dirstack (</span><span class="si">{0}</span><span class="s1"> elements)</span><span class="se">\n</span><span class="s1">&#39;</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">e</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">DIRSTACK</span><span class="p">)),</span> <span class="mi">1</span>
+        <span class="k">elif</span> <span class="n">args</span><span class="o">.</span><span class="n">dir</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">FORWARD</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">num</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">DIRSTACK</span><span class="p">):</span>
+                <span class="n">new_pwd</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">new_pwd</span> <span class="o">=</span> <span class="n">DIRSTACK</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">DIRSTACK</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">num</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">args</span><span class="o">.</span><span class="n">dir</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">BACKWARD</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">num</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">new_pwd</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">new_pwd</span> <span class="o">=</span> <span class="n">DIRSTACK</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">num</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">e</span> <span class="o">=</span> <span class="s1">&#39;Invalid argument to pushd: </span><span class="si">{0}</span><span class="se">\n</span><span class="s1">&#39;</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">e</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">dir</span><span class="p">),</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="n">new_pwd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="n">_is_unc_path</span><span class="p">(</span><span class="n">new_pwd</span><span class="p">):</span>
+            <span class="n">new_pwd</span> <span class="o">=</span> <span class="n">_unc_map_temp_drive</span><span class="p">(</span><span class="n">new_pwd</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">cd</span><span class="p">:</span>
+            <span class="n">DIRSTACK</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="n">pwd</span><span class="p">))</span>
+            <span class="n">_change_working_directory</span><span class="p">(</span><span class="n">new_pwd</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">DIRSTACK</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="n">new_pwd</span><span class="p">))</span>
+
+    <span class="n">maxsize</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;DIRSTACK_SIZE&#39;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">DIRSTACK</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">maxsize</span><span class="p">:</span>
+        <span class="n">DIRSTACK</span> <span class="o">=</span> <span class="n">DIRSTACK</span><span class="p">[:</span><span class="n">maxsize</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">quiet</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;PUSHD_SILENT&#39;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">dirs</span><span class="p">([],</span> <span class="kc">None</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="mi">0</span></div>
+
+
+<span class="nd">@lazyobject</span>
+<span class="k">def</span> <span class="nf">popd_parser</span><span class="p">():</span>
+    <span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s2">&quot;popd&quot;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;dir&#39;</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="s1">&#39;?&#39;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;-n&#39;</span><span class="p">,</span>
+                        <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;cd&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s1">&#39;Suppresses the normal change of directory when&#39;</span>
+                        <span class="s1">&#39; adding directories to the stack, so that only the&#39;</span>
+                        <span class="s1">&#39; stack is manipulated.&#39;</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store_false&#39;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;-q&#39;</span><span class="p">,</span>
+                        <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;quiet&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s1">&#39;Do not call dirs, regardless of $PUSHD_SILENT&#39;</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store_true&#39;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">parser</span>
+
+
+<div class="viewcode-block" id="popd"><a class="viewcode-back" href="../../api/dirstack.html#xonsh.dirstack.popd">[docs]</a><span class="k">def</span> <span class="nf">popd</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    xonsh command: popd</span>
+
+<span class="sd">    Removes entries from the directory stack.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">global</span> <span class="n">DIRSTACK</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">args</span> <span class="o">=</span> <span class="n">pushd_parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">SystemExit</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="mi">1</span>
+
+    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+
+    <span class="k">if</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;PUSHD_MINUS&#39;</span><span class="p">):</span>
+        <span class="n">BACKWARD</span> <span class="o">=</span> <span class="s1">&#39;-&#39;</span>
+        <span class="n">FORWARD</span> <span class="o">=</span> <span class="s1">&#39;+&#39;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">BACKWARD</span> <span class="o">=</span> <span class="s1">&#39;-&#39;</span>
+        <span class="n">FORWARD</span> <span class="o">=</span> <span class="s1">&#39;+&#39;</span>
+
+    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">dir</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">new_pwd</span> <span class="o">=</span> <span class="n">DIRSTACK</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+            <span class="n">e</span> <span class="o">=</span> <span class="s1">&#39;popd: Directory stack is empty</span><span class="se">\n</span><span class="s1">&#39;</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="mi">1</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">num</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">dir</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="n">e</span> <span class="o">=</span> <span class="s1">&#39;Invalid argument to popd: </span><span class="si">{0}</span><span class="se">\n</span><span class="s1">&#39;</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">e</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">dir</span><span class="p">),</span> <span class="mi">1</span>
+
+        <span class="k">if</span> <span class="n">num</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">e</span> <span class="o">=</span> <span class="s1">&#39;Invalid argument to popd: </span><span class="si">{0}</span><span class="se">\n</span><span class="s1">&#39;</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">e</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">dir</span><span class="p">),</span> <span class="mi">1</span>
+
+        <span class="k">if</span> <span class="n">num</span> <span class="o">&gt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">DIRSTACK</span><span class="p">):</span>
+            <span class="n">e</span> <span class="o">=</span> <span class="s1">&#39;Too few elements in dirstack (</span><span class="si">{0}</span><span class="s1"> elements)</span><span class="se">\n</span><span class="s1">&#39;</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">e</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">DIRSTACK</span><span class="p">)),</span> <span class="mi">1</span>
+        <span class="k">elif</span> <span class="n">args</span><span class="o">.</span><span class="n">dir</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">FORWARD</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">num</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">DIRSTACK</span><span class="p">):</span>
+                <span class="n">new_pwd</span> <span class="o">=</span> <span class="n">DIRSTACK</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">new_pwd</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="n">DIRSTACK</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">DIRSTACK</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">num</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">args</span><span class="o">.</span><span class="n">dir</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">BACKWARD</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">num</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">new_pwd</span> <span class="o">=</span> <span class="n">DIRSTACK</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">new_pwd</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="n">DIRSTACK</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">num</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">e</span> <span class="o">=</span> <span class="s1">&#39;Invalid argument to popd: </span><span class="si">{0}</span><span class="se">\n</span><span class="s1">&#39;</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">e</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">dir</span><span class="p">),</span> <span class="mi">1</span>
+
+    <span class="k">if</span> <span class="n">new_pwd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">e</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">cd</span><span class="p">:</span>
+            <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+            <span class="n">pwd</span> <span class="o">=</span> <span class="n">env</span><span class="p">[</span><span class="s1">&#39;PWD&#39;</span><span class="p">]</span>
+
+            <span class="n">_change_working_directory</span><span class="p">(</span><span class="n">new_pwd</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
+                <span class="n">drive</span><span class="p">,</span> <span class="n">rem_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">splitdrive</span><span class="p">(</span><span class="n">pwd</span><span class="p">)</span>
+                <span class="n">_unc_unmap_temp_drive</span><span class="p">(</span><span class="n">drive</span><span class="o">.</span><span class="n">casefold</span><span class="p">(),</span> <span class="n">new_pwd</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">quiet</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;PUSHD_SILENT&#39;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">dirs</span><span class="p">([],</span> <span class="kc">None</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="mi">0</span></div>
+
+
+<span class="nd">@lazyobject</span>
+<span class="k">def</span> <span class="nf">dirs_parser</span><span class="p">():</span>
+    <span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s2">&quot;dirs&quot;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;N&#39;</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="s1">&#39;?&#39;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;-c&#39;</span><span class="p">,</span>
+                        <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;clear&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s1">&#39;Clears the directory stack by deleting all of&#39;</span>
+                        <span class="s1">&#39; the entries.&#39;</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store_true&#39;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;-p&#39;</span><span class="p">,</span>
+                        <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;print_long&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s1">&#39;Print the directory stack with one entry per&#39;</span>
+                        <span class="s1">&#39; line.&#39;</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store_true&#39;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;-v&#39;</span><span class="p">,</span>
+                        <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;verbose&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s1">&#39;Print the directory stack with one entry per&#39;</span>
+                        <span class="s1">&#39; line, prefixing each entry with its index in the&#39;</span>
+                        <span class="s1">&#39; stack.&#39;</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store_true&#39;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;-l&#39;</span><span class="p">,</span>
+                        <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;long&#39;</span><span class="p">,</span>
+                        <span class="n">help</span><span class="o">=</span><span class="s1">&#39;Produces a longer listing; the default listing&#39;</span>
+                        <span class="s1">&#39; format uses a tilde to denote the home directory.&#39;</span><span class="p">,</span>
+                        <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store_true&#39;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">parser</span>
+
+
+<div class="viewcode-block" id="dirs"><a class="viewcode-back" href="../../api/dirstack.html#xonsh.dirstack.dirs">[docs]</a><span class="k">def</span> <span class="nf">dirs</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;xonsh command: dirs</span>
+
+<span class="sd">    Displays the list of currently remembered directories.  Can also be used</span>
+<span class="sd">    to clear the directory stack.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">global</span> <span class="n">DIRSTACK</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">args</span> <span class="o">=</span> <span class="n">dirs_parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">SystemExit</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+
+    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+    <span class="n">dirstack</span> <span class="o">=</span> <span class="p">[</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="n">env</span><span class="p">[</span><span class="s1">&#39;PWD&#39;</span><span class="p">])]</span> <span class="o">+</span> <span class="n">DIRSTACK</span>
+
+    <span class="k">if</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;PUSHD_MINUS&#39;</span><span class="p">):</span>
+        <span class="n">BACKWARD</span> <span class="o">=</span> <span class="s1">&#39;-&#39;</span>
+        <span class="n">FORWARD</span> <span class="o">=</span> <span class="s1">&#39;+&#39;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">BACKWARD</span> <span class="o">=</span> <span class="s1">&#39;-&#39;</span>
+        <span class="n">FORWARD</span> <span class="o">=</span> <span class="s1">&#39;+&#39;</span>
+
+    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">clear</span><span class="p">:</span>
+        <span class="n">DIRSTACK</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="mi">0</span>
+
+    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">long</span><span class="p">:</span>
+        <span class="n">o</span> <span class="o">=</span> <span class="n">dirstack</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="s1">&#39;~&#39;</span><span class="p">)</span>
+        <span class="n">o</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s1">&#39;~&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">dirstack</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">verbose</span><span class="p">:</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+        <span class="n">pad</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">o</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+        <span class="k">for</span> <span class="p">(</span><span class="n">ix</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">o</span><span class="p">):</span>
+            <span class="n">blanks</span> <span class="o">=</span> <span class="s1">&#39; &#39;</span> <span class="o">*</span> <span class="p">(</span><span class="n">pad</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">ix</span><span class="p">)))</span>
+            <span class="n">out</span> <span class="o">+=</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="si">{0}{1}</span><span class="s1"> </span><span class="si">{2}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">blanks</span><span class="p">,</span> <span class="n">ix</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">out</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+    <span class="k">elif</span> <span class="n">args</span><span class="o">.</span><span class="n">print_long</span><span class="p">:</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">o</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="s1">&#39; &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">o</span><span class="p">)</span>
+
+    <span class="n">N</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">N</span>
+    <span class="k">if</span> <span class="n">N</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">num</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">N</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="n">e</span> <span class="o">=</span> <span class="s1">&#39;Invalid argument to dirs: </span><span class="si">{0}</span><span class="se">\n</span><span class="s1">&#39;</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">e</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">N</span><span class="p">),</span> <span class="mi">1</span>
+
+        <span class="k">if</span> <span class="n">num</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">e</span> <span class="o">=</span> <span class="s1">&#39;Invalid argument to dirs: </span><span class="si">{0}</span><span class="se">\n</span><span class="s1">&#39;</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">e</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">o</span><span class="p">)),</span> <span class="mi">1</span>
+
+        <span class="k">if</span> <span class="n">num</span> <span class="o">&gt;=</span> <span class="nb">len</span><span class="p">(</span><span class="n">o</span><span class="p">):</span>
+            <span class="n">e</span> <span class="o">=</span> <span class="s1">&#39;Too few elements in dirstack (</span><span class="si">{0}</span><span class="s1"> elements)</span><span class="se">\n</span><span class="s1">&#39;</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">e</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">o</span><span class="p">)),</span> <span class="mi">1</span>
+
+        <span class="k">if</span> <span class="n">N</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">BACKWARD</span><span class="p">):</span>
+            <span class="n">idx</span> <span class="o">=</span> <span class="n">num</span>
+        <span class="k">elif</span> <span class="n">N</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">FORWARD</span><span class="p">):</span>
+            <span class="n">idx</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">o</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">num</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">e</span> <span class="o">=</span> <span class="s1">&#39;Invalid argument to dirs: </span><span class="si">{0}</span><span class="se">\n</span><span class="s1">&#39;</span>
+            <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">e</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">N</span><span class="p">),</span> <span class="mi">1</span>
+
+        <span class="n">out</span> <span class="o">=</span> <span class="n">o</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">out</span> <span class="o">+</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="mi">0</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+        <p class="logo"><a href="../../index.html" title="index">
+          <img class="logo" src="../../_static/ascii_conch_part_color_tight.png" alt="Logo"/>
+        </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+    
+    
+        <div class="sidebar-toggle-group no-js">
+            
+            <button class="sidebar-toggle" id="sidebar-hide" title="Hide the sidebar menu">
+                 «
+                <span class="show-for-small">hide menu</span>
+                
+            </button>
+            <button class="sidebar-toggle" id="sidebar-show" title="Show the sidebar menu">
+                
+                <span class="show-for-small">menu</span>
+                <span class="hide-for-small">sidebar</span>
+                 »
+            </button>
+        </div>
+    
+      <div class="clearer"></div>
+    </div>
+    <div class="relbar-bottom">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../index.html">xonsh 0.5.1.dev25 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2015, Anthony Scopatz.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.1.
+    </div>
+    <!-- cloud_sptheme 1.4 -->
+  </body>
+</html>

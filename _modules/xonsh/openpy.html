@@ -1,0 +1,264 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>xonsh.openpy &#8212; xonsh 0.5.1.dev25 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.5.1.dev25',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <script type="text/javascript" src="../../_static/jquery.cookie.js"></script>
+    <script type="text/javascript" src="../../_static/cloud.js"></script>
+    <link rel="shortcut icon" href="../../_static/magic_conch.ico"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+     
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="canonical" href="http://xon.sh/_modules/xonsh/openpy.html"/>
+
+  </head>
+  <body role="document">
+    <div class="relbar-top">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../index.html">xonsh 0.5.1.dev25 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for xonsh.openpy</h1><div class="highlight"><pre>
+<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;Tools to open ``*.py`` files as Unicode.</span>
+
+<span class="sd">Uses the encoding specified within the file, as per PEP 263.</span>
+
+<span class="sd">Much of the code is taken from the tokenize module in Python 3.2.</span>
+
+<span class="sd">This file was forked from the IPython project:</span>
+
+<span class="sd">* Copyright (c) 2008-2014, IPython Development Team</span>
+<span class="sd">* Copyright (C) 2001-2007 Fernando Perez &lt;fperez@colorado.edu&gt;</span>
+<span class="sd">* Copyright (c) 2001, Janko Hauser &lt;jhauser@zscout.de&gt;</span>
+<span class="sd">* Copyright (c) 2001, Nathaniel Gray &lt;n8gray@caltech.edu&gt;</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">io</span>
+<span class="kn">import</span> <span class="nn">re</span>
+
+<span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="k">import</span> <span class="n">LazyObject</span>
+<span class="kn">from</span> <span class="nn">xonsh.tokenize</span> <span class="k">import</span> <span class="n">detect_encoding</span><span class="p">,</span> <span class="n">tokopen</span>
+
+
+<span class="n">cookie_comment_re</span> <span class="o">=</span> <span class="n">LazyObject</span><span class="p">(</span>
+    <span class="k">lambda</span><span class="p">:</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s2">r&quot;^\s*#.*coding[:=]\s*([-\w.]+)&quot;</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">UNICODE</span><span class="p">),</span>
+    <span class="nb">globals</span><span class="p">(),</span> <span class="s1">&#39;cookie_comment_re&#39;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="source_to_unicode"><a class="viewcode-back" href="../../api/openpy.html#xonsh.openpy.source_to_unicode">[docs]</a><span class="k">def</span> <span class="nf">source_to_unicode</span><span class="p">(</span><span class="n">txt</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="s1">&#39;replace&#39;</span><span class="p">,</span> <span class="n">skip_encoding_cookie</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Converts a bytes string with python source code to unicode.</span>
+
+<span class="sd">    Unicode strings are passed through unchanged. Byte strings are checked</span>
+<span class="sd">    for the python source file encoding cookie to determine encoding.</span>
+<span class="sd">    txt can be either a bytes buffer or a string containing the source</span>
+<span class="sd">    code.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">txt</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">txt</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">txt</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">):</span>
+        <span class="n">buf</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">(</span><span class="n">txt</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">buf</span> <span class="o">=</span> <span class="n">txt</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">encoding</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">detect_encoding</span><span class="p">(</span><span class="n">buf</span><span class="o">.</span><span class="n">readline</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">SyntaxError</span><span class="p">:</span>
+        <span class="n">encoding</span> <span class="o">=</span> <span class="s2">&quot;ascii&quot;</span>
+    <span class="n">buf</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">TextIOWrapper</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span> <span class="n">encoding</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">errors</span><span class="p">,</span> <span class="n">line_buffering</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">text</span><span class="o">.</span><span class="n">mode</span> <span class="o">=</span> <span class="s1">&#39;r&#39;</span>
+    <span class="k">if</span> <span class="n">skip_encoding_cookie</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">u&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">strip_encoding_cookie</span><span class="p">(</span><span class="n">text</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">text</span><span class="o">.</span><span class="n">read</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="strip_encoding_cookie"><a class="viewcode-back" href="../../api/openpy.html#xonsh.openpy.strip_encoding_cookie">[docs]</a><span class="k">def</span> <span class="nf">strip_encoding_cookie</span><span class="p">(</span><span class="n">filelike</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Generator to pull lines from a text-mode file, skipping the encoding</span>
+<span class="sd">    cookie if it is found in the first two lines.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">it</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">(</span><span class="n">filelike</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">first</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">it</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cookie_comment_re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">first</span><span class="p">):</span>
+            <span class="k">yield</span> <span class="n">first</span>
+        <span class="n">second</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">it</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cookie_comment_re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">second</span><span class="p">):</span>
+            <span class="k">yield</span> <span class="n">second</span>
+    <span class="k">except</span> <span class="ne">StopIteration</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">it</span><span class="p">:</span>
+        <span class="k">yield</span> <span class="n">line</span></div>
+
+
+<div class="viewcode-block" id="read_py_file"><a class="viewcode-back" href="../../api/openpy.html#xonsh.openpy.read_py_file">[docs]</a><span class="k">def</span> <span class="nf">read_py_file</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">skip_encoding_cookie</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Read a Python file, using the encoding declared inside the file.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    filename : str</span>
+<span class="sd">      The path to the file to read.</span>
+<span class="sd">    skip_encoding_cookie : bool</span>
+<span class="sd">      If True (the default), and the encoding declaration is found in the first</span>
+<span class="sd">      two lines, that line will be excluded from the output - compiling a</span>
+<span class="sd">      unicode string with an encoding declaration is a SyntaxError in Python 2.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    A unicode string containing the contents of the file.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">with</span> <span class="n">tokopen</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>  <span class="c1"># the open function defined in this module.</span>
+        <span class="k">if</span> <span class="n">skip_encoding_cookie</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">strip_encoding_cookie</span><span class="p">(</span><span class="n">f</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="read_py_url"><a class="viewcode-back" href="../../api/openpy.html#xonsh.openpy.read_py_url">[docs]</a><span class="k">def</span> <span class="nf">read_py_url</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="s1">&#39;replace&#39;</span><span class="p">,</span> <span class="n">skip_encoding_cookie</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Read a Python file from a URL, using the encoding declared inside the file.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    url : str</span>
+<span class="sd">      The URL from which to fetch the file.</span>
+<span class="sd">    errors : str</span>
+<span class="sd">      How to handle decoding errors in the file. Options are the same as for</span>
+<span class="sd">      bytes.decode(), but here &#39;replace&#39; is the default.</span>
+<span class="sd">    skip_encoding_cookie : bool</span>
+<span class="sd">      If True (the default), and the encoding declaration is found in the first</span>
+<span class="sd">      two lines, that line will be excluded from the output - compiling a</span>
+<span class="sd">      unicode string with an encoding declaration is a SyntaxError in Python 2.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    A unicode string containing the contents of the file.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Deferred import for faster start</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span> <span class="nn">urllib.request</span> <span class="k">import</span> <span class="n">urlopen</span>  <span class="c1"># Py 3</span>
+    <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+        <span class="kn">from</span> <span class="nn">urllib</span> <span class="k">import</span> <span class="n">urlopen</span>
+    <span class="n">response</span> <span class="o">=</span> <span class="n">urlopen</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
+    <span class="n">buf</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+    <span class="k">return</span> <span class="n">source_to_unicode</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span> <span class="n">errors</span><span class="p">,</span> <span class="n">skip_encoding_cookie</span><span class="p">)</span></div>
+
+
+<span class="k">def</span> <span class="nf">_list_readline</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Given a list, returns a readline() function that returns the next element</span>
+<span class="sd">    with each call.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">readline</span><span class="p">():</span>
+        <span class="k">return</span> <span class="nb">next</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">readline</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+        <p class="logo"><a href="../../index.html" title="index">
+          <img class="logo" src="../../_static/ascii_conch_part_color_tight.png" alt="Logo"/>
+        </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+    
+    
+        <div class="sidebar-toggle-group no-js">
+            
+            <button class="sidebar-toggle" id="sidebar-hide" title="Hide the sidebar menu">
+                 «
+                <span class="show-for-small">hide menu</span>
+                
+            </button>
+            <button class="sidebar-toggle" id="sidebar-show" title="Show the sidebar menu">
+                
+                <span class="show-for-small">menu</span>
+                <span class="hide-for-small">sidebar</span>
+                 »
+            </button>
+        </div>
+    
+      <div class="clearer"></div>
+    </div>
+    <div class="relbar-bottom">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../index.html">xonsh 0.5.1.dev25 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2015, Anthony Scopatz.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.1.
+    </div>
+    <!-- cloud_sptheme 1.4 -->
+  </body>
+</html>

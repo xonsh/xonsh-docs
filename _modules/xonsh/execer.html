@@ -1,0 +1,365 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>xonsh.execer &#8212; xonsh 0.5.1.dev25 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.5.1.dev25',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <script type="text/javascript" src="../../_static/jquery.cookie.js"></script>
+    <script type="text/javascript" src="../../_static/cloud.js"></script>
+    <link rel="shortcut icon" href="../../_static/magic_conch.ico"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+     
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="canonical" href="http://xon.sh/_modules/xonsh/execer.html"/>
+
+  </head>
+  <body role="document">
+    <div class="relbar-top">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../index.html">xonsh 0.5.1.dev25 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for xonsh.execer</h1><div class="highlight"><pre>
+<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;Implements the xonsh executer.&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">types</span>
+<span class="kn">import</span> <span class="nn">inspect</span>
+<span class="kn">import</span> <span class="nn">builtins</span>
+<span class="kn">import</span> <span class="nn">warnings</span>
+<span class="kn">import</span> <span class="nn">collections.abc</span> <span class="k">as</span> <span class="nn">cabc</span>
+
+<span class="kn">from</span> <span class="nn">xonsh.ast</span> <span class="k">import</span> <span class="n">CtxAwareTransformer</span>
+<span class="kn">from</span> <span class="nn">xonsh.parser</span> <span class="k">import</span> <span class="n">Parser</span>
+<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="k">import</span> <span class="n">subproc_toks</span><span class="p">,</span> <span class="n">find_next_break</span>
+<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="k">import</span> <span class="n">load_builtins</span><span class="p">,</span> <span class="n">unload_builtins</span>
+
+
+<div class="viewcode-block" id="Execer"><a class="viewcode-back" href="../../api/execer.html#xonsh.execer.Execer">[docs]</a><span class="k">class</span> <span class="nc">Execer</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Executes xonsh code in a context.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="s1">&#39;&lt;xonsh-code&gt;&#39;</span><span class="p">,</span> <span class="n">debug_level</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">parser_args</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                 <span class="n">unload</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">login</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">xonsh_ctx</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        filename : str, optional</span>
+<span class="sd">            File we are to execute.</span>
+<span class="sd">        debug_level : int, optional</span>
+<span class="sd">            Debugging level to use in lexing and parsing.</span>
+<span class="sd">        parser_args : dict, optional</span>
+<span class="sd">            Arguments to pass down to the parser.</span>
+<span class="sd">        unload : bool, optional</span>
+<span class="sd">            Whether or not to unload xonsh builtins upon deletion.</span>
+<span class="sd">        config : str, optional</span>
+<span class="sd">            Path to configuration file.</span>
+<span class="sd">        xonsh_ctx : dict or None, optional</span>
+<span class="sd">            Xonsh xontext to load as builtins.__xonsh_ctx__</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">parser_args</span> <span class="o">=</span> <span class="n">parser_args</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">parser</span> <span class="o">=</span> <span class="n">Parser</span><span class="p">(</span><span class="o">**</span><span class="n">parser_args</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">filename</span> <span class="o">=</span> <span class="n">filename</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">debug_level</span> <span class="o">=</span> <span class="n">debug_level</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">unload</span> <span class="o">=</span> <span class="n">unload</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ctxtransformer</span> <span class="o">=</span> <span class="n">CtxAwareTransformer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">parser</span><span class="p">)</span>
+        <span class="n">load_builtins</span><span class="p">(</span><span class="n">execer</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="n">config</span><span class="p">,</span> <span class="n">login</span><span class="o">=</span><span class="n">login</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="n">xonsh_ctx</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__del__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">unload</span><span class="p">:</span>
+            <span class="n">unload_builtins</span><span class="p">()</span>
+
+<div class="viewcode-block" id="Execer.parse"><a class="viewcode-back" href="../../api/execer.html#xonsh.execer.Execer.parse">[docs]</a>    <span class="k">def</span> <span class="nf">parse</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">input</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;exec&#39;</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Parses xonsh code in a context-aware fashion. For context-free</span>
+<span class="sd">        parsing, please use the Parser class directly or pass in</span>
+<span class="sd">        transform=False.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">filename</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">filename</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">filename</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">transform</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">parser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="nb">input</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="n">mode</span><span class="p">,</span>
+                                     <span class="n">debug_level</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">debug_level</span> <span class="o">&gt;</span> <span class="mi">2</span><span class="p">))</span>
+
+        <span class="c1"># Parsing actually happens in a couple of phases. The first is a</span>
+        <span class="c1"># shortcut for a context-free parser. Normally, all subprocess</span>
+        <span class="c1"># lines should be wrapped in $(), to indicate that they are a</span>
+        <span class="c1"># subproc. But that would be super annoying. Unfortnately, Python</span>
+        <span class="c1"># mode - after indentation - is whitespace agnostic while, using</span>
+        <span class="c1"># the Python token, subproc mode is whitespace aware. That is to say,</span>
+        <span class="c1"># in Python mode &quot;ls -l&quot;, &quot;ls-l&quot;, and &quot;ls - l&quot; all parse to the</span>
+        <span class="c1"># same AST because whitespace doesn&#39;t matter to the minus binary op.</span>
+        <span class="c1"># However, these phases all have very different meaning in subproc</span>
+        <span class="c1"># mode. The &#39;right&#39; way to deal with this is to make the entire</span>
+        <span class="c1"># grammar whitespace aware, and then ignore all of the whitespace</span>
+        <span class="c1"># tokens for all of the Python rules. The lazy way implemented here</span>
+        <span class="c1"># is to parse a line a second time with a $() wrapper if it fails</span>
+        <span class="c1"># the first time. This is a context-free phase.</span>
+        <span class="n">tree</span><span class="p">,</span> <span class="nb">input</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_ctx_free</span><span class="p">(</span><span class="nb">input</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="n">mode</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">tree</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="c1"># Now we need to perform context-aware AST transformation. This is</span>
+        <span class="c1"># because the &quot;ls -l&quot; is valid Python. The only way that we know</span>
+        <span class="c1"># it is not actually Python is by checking to see if the first token</span>
+        <span class="c1"># (ls) is part of the execution context. If it isn&#39;t, then we will</span>
+        <span class="c1"># assume that this line is supposed to be a subprocess line, assuming</span>
+        <span class="c1"># it also is valid as a subprocess line.</span>
+        <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">ctx</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Mapping</span><span class="p">):</span>
+            <span class="n">ctx</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+        <span class="n">tree</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ctxtransformer</span><span class="o">.</span><span class="n">ctxvisit</span><span class="p">(</span><span class="n">tree</span><span class="p">,</span> <span class="nb">input</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="n">mode</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">tree</span></div>
+
+<div class="viewcode-block" id="Execer.compile"><a class="viewcode-back" href="../../api/execer.html#xonsh.execer.Execer.compile">[docs]</a>    <span class="k">def</span> <span class="nf">compile</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">input</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;exec&#39;</span><span class="p">,</span> <span class="n">glbs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">locs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+                <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Compiles xonsh code into a Python code object, which may then</span>
+<span class="sd">        be execed or evaled.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">filename</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">filename</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">filename</span>
+        <span class="k">if</span> <span class="n">glbs</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">locs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">frame</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">stack</span><span class="p">()[</span><span class="n">stacklevel</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">glbs</span> <span class="o">=</span> <span class="n">frame</span><span class="o">.</span><span class="n">f_globals</span> <span class="k">if</span> <span class="n">glbs</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">glbs</span>
+            <span class="n">locs</span> <span class="o">=</span> <span class="n">frame</span><span class="o">.</span><span class="n">f_locals</span> <span class="k">if</span> <span class="n">locs</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">locs</span>
+        <span class="n">ctx</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="nb">dir</span><span class="p">(</span><span class="n">builtins</span><span class="p">))</span> <span class="o">|</span> <span class="nb">set</span><span class="p">(</span><span class="n">glbs</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span> <span class="o">|</span> <span class="nb">set</span><span class="p">(</span><span class="n">locs</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+        <span class="n">tree</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="nb">input</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="n">mode</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">,</span>
+                          <span class="n">transform</span><span class="o">=</span><span class="n">transform</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">tree</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>  <span class="c1"># handles comment only input</span>
+        <span class="k">if</span> <span class="n">transform</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">warnings</span><span class="o">.</span><span class="n">catch_warnings</span><span class="p">():</span>
+                <span class="c1"># we do some funky things with blocks that cause warnings</span>
+                <span class="n">warnings</span><span class="o">.</span><span class="n">simplefilter</span><span class="p">(</span><span class="s1">&#39;ignore&#39;</span><span class="p">,</span> <span class="ne">SyntaxWarning</span><span class="p">)</span>
+                <span class="n">code</span> <span class="o">=</span> <span class="nb">compile</span><span class="p">(</span><span class="n">tree</span><span class="p">,</span> <span class="n">filename</span><span class="p">,</span> <span class="n">mode</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">code</span> <span class="o">=</span> <span class="nb">compile</span><span class="p">(</span><span class="n">tree</span><span class="p">,</span> <span class="n">filename</span><span class="p">,</span> <span class="n">mode</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">code</span></div>
+
+<div class="viewcode-block" id="Execer.eval"><a class="viewcode-back" href="../../api/execer.html#xonsh.execer.Execer.eval">[docs]</a>    <span class="k">def</span> <span class="nf">eval</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">input</span><span class="p">,</span> <span class="n">glbs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">locs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+             <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Evaluates (and returns) xonsh code.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="nb">input</span><span class="p">,</span> <span class="n">types</span><span class="o">.</span><span class="n">CodeType</span><span class="p">):</span>
+            <span class="n">code</span> <span class="o">=</span> <span class="nb">input</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">filename</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">filename</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">filename</span>
+            <span class="n">code</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="nb">input</span><span class="o">=</span><span class="nb">input</span><span class="p">,</span>
+                                <span class="n">glbs</span><span class="o">=</span><span class="n">glbs</span><span class="p">,</span>
+                                <span class="n">locs</span><span class="o">=</span><span class="n">locs</span><span class="p">,</span>
+                                <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;eval&#39;</span><span class="p">,</span>
+                                <span class="n">stacklevel</span><span class="o">=</span><span class="n">stacklevel</span><span class="p">,</span>
+                                <span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">,</span>
+                                <span class="n">transform</span><span class="o">=</span><span class="n">transform</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">code</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>  <span class="c1"># handles comment only input</span>
+        <span class="k">return</span> <span class="nb">eval</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">glbs</span><span class="p">,</span> <span class="n">locs</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Execer.exec"><a class="viewcode-back" href="../../api/execer.html#xonsh.execer.Execer.exec">[docs]</a>    <span class="k">def</span> <span class="nf">exec</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">input</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;exec&#39;</span><span class="p">,</span> <span class="n">glbs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">locs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+             <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Execute xonsh code.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="nb">input</span><span class="p">,</span> <span class="n">types</span><span class="o">.</span><span class="n">CodeType</span><span class="p">):</span>
+            <span class="n">code</span> <span class="o">=</span> <span class="nb">input</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">filename</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">filename</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">filename</span>
+            <span class="n">code</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="nb">input</span><span class="o">=</span><span class="nb">input</span><span class="p">,</span>
+                                <span class="n">glbs</span><span class="o">=</span><span class="n">glbs</span><span class="p">,</span>
+                                <span class="n">locs</span><span class="o">=</span><span class="n">locs</span><span class="p">,</span>
+                                <span class="n">mode</span><span class="o">=</span><span class="n">mode</span><span class="p">,</span>
+                                <span class="n">stacklevel</span><span class="o">=</span><span class="n">stacklevel</span><span class="p">,</span>
+                                <span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">,</span>
+                                <span class="n">transform</span><span class="o">=</span><span class="n">transform</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">code</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>  <span class="c1"># handles comment only input</span>
+        <span class="k">return</span> <span class="n">exec</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">glbs</span><span class="p">,</span> <span class="n">locs</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">_parse_ctx_free</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">input</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;exec&#39;</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">last_error_line</span> <span class="o">=</span> <span class="n">last_error_col</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+        <span class="n">parsed</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">original_error</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">filename</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">filename</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">filename</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="n">parsed</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">tree</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="nb">input</span><span class="p">,</span>
+                                         <span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">,</span>
+                                         <span class="n">mode</span><span class="o">=</span><span class="n">mode</span><span class="p">,</span>
+                                         <span class="n">debug_level</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">debug_level</span> <span class="o">&gt;</span> <span class="mi">2</span><span class="p">))</span>
+                <span class="n">parsed</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">except</span> <span class="ne">IndentationError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">original_error</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">e</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">original_error</span>
+            <span class="k">except</span> <span class="ne">SyntaxError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">original_error</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">original_error</span> <span class="o">=</span> <span class="n">e</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">loc</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">last_error_line</span> <span class="o">==</span> <span class="n">e</span><span class="o">.</span><span class="n">loc</span><span class="o">.</span><span class="n">lineno</span> <span class="ow">and</span>
+                                       <span class="n">last_error_col</span> <span class="ow">in</span> <span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">loc</span><span class="o">.</span><span class="n">column</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span>
+                                                          <span class="n">e</span><span class="o">.</span><span class="n">loc</span><span class="o">.</span><span class="n">column</span><span class="p">)):</span>
+                    <span class="k">raise</span> <span class="n">original_error</span> <span class="kn">from</span> <span class="nn">None</span>
+                <span class="n">last_error_col</span> <span class="o">=</span> <span class="n">e</span><span class="o">.</span><span class="n">loc</span><span class="o">.</span><span class="n">column</span>
+                <span class="n">last_error_line</span> <span class="o">=</span> <span class="n">e</span><span class="o">.</span><span class="n">loc</span><span class="o">.</span><span class="n">lineno</span>
+                <span class="n">idx</span> <span class="o">=</span> <span class="n">last_error_line</span> <span class="o">-</span> <span class="mi">1</span>
+                <span class="n">lines</span> <span class="o">=</span> <span class="nb">input</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+                <span class="n">line</span> <span class="o">=</span> <span class="n">lines</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+                <span class="k">if</span> <span class="nb">input</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">):</span>
+                    <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="c1"># whitespace only lines are not valid syntax in Python&#39;s</span>
+                    <span class="c1"># interactive mode=&#39;single&#39;, who knew?! Just ignore them.</span>
+                    <span class="c1"># this might cause actual sytax errors to have bad line</span>
+                    <span class="c1"># numbers reported, but should only effect interactive mode</span>
+                    <span class="k">del</span> <span class="n">lines</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+                    <span class="n">last_error_line</span> <span class="o">=</span> <span class="n">last_error_col</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+                    <span class="nb">input</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span>
+                    <span class="k">continue</span>
+
+                <span class="k">if</span> <span class="n">last_error_line</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">lines</span><span class="p">[</span><span class="n">idx</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()[</span><span class="o">-</span><span class="mi">1</span><span class="p">:]</span> <span class="o">==</span> <span class="s1">&#39;:&#39;</span><span class="p">:</span>
+                    <span class="c1"># catch non-indented blocks and raise error.</span>
+                    <span class="n">prev_indent</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">[</span><span class="n">idx</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">[</span><span class="n">idx</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">lstrip</span><span class="p">())</span>
+                    <span class="n">curr_indent</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">[</span><span class="n">idx</span><span class="p">])</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span><span class="o">.</span><span class="n">lstrip</span><span class="p">())</span>
+                    <span class="k">if</span> <span class="n">prev_indent</span> <span class="o">==</span> <span class="n">curr_indent</span><span class="p">:</span>
+                        <span class="k">raise</span> <span class="n">original_error</span>
+                <span class="n">lexer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parser</span><span class="o">.</span><span class="n">lexer</span>
+                <span class="n">maxcol</span> <span class="o">=</span> <span class="n">find_next_break</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">mincol</span><span class="o">=</span><span class="n">last_error_col</span><span class="p">,</span>
+                                         <span class="n">lexer</span><span class="o">=</span><span class="n">lexer</span><span class="p">)</span>
+                <span class="n">sbpline</span> <span class="o">=</span> <span class="n">subproc_toks</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">returnline</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                                       <span class="n">maxcol</span><span class="o">=</span><span class="n">maxcol</span><span class="p">,</span> <span class="n">lexer</span><span class="o">=</span><span class="n">lexer</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">sbpline</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="c1"># subprocess line had no valid tokens,</span>
+                    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s1">&#39;#&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                        <span class="c1"># likely because it only contained a comment.</span>
+                        <span class="k">del</span> <span class="n">lines</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+                        <span class="n">last_error_line</span> <span class="o">=</span> <span class="n">last_error_col</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+                        <span class="nb">input</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span>
+                        <span class="k">continue</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="c1"># or for some other syntax error</span>
+                        <span class="k">raise</span> <span class="n">original_error</span>
+                <span class="k">elif</span> <span class="n">sbpline</span><span class="p">[</span><span class="n">last_error_col</span><span class="p">:]</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;![![&#39;</span><span class="p">)</span> <span class="ow">or</span> \
+                        <span class="n">sbpline</span><span class="o">.</span><span class="n">lstrip</span><span class="p">()</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;![![&#39;</span><span class="p">):</span>
+                    <span class="c1"># if we have already wrapped this in subproc tokens</span>
+                    <span class="c1"># and it still doesn&#39;t work, adding more won&#39;t help</span>
+                    <span class="c1"># anything</span>
+                    <span class="k">raise</span> <span class="n">original_error</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">debug_level</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                        <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;</span><span class="si">{0}</span><span class="s1">:</span><span class="si">{1}</span><span class="s1">:</span><span class="si">{2}{3}</span><span class="s1"> - </span><span class="si">{4}</span><span class="se">\n</span><span class="s1">&#39;</span>
+                               <span class="s1">&#39;</span><span class="si">{0}</span><span class="s1">:</span><span class="si">{1}</span><span class="s1">:</span><span class="si">{2}{3}</span><span class="s1"> + </span><span class="si">{5}</span><span class="s1">&#39;</span><span class="p">)</span>
+                        <span class="n">mstr</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span> <span class="k">if</span> <span class="n">maxcol</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="s1">&#39;:&#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">maxcol</span><span class="p">)</span>
+                        <span class="n">msg</span> <span class="o">=</span> <span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">,</span> <span class="n">last_error_line</span><span class="p">,</span>
+                                         <span class="n">last_error_col</span><span class="p">,</span> <span class="n">mstr</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">sbpline</span><span class="p">)</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+                    <span class="n">lines</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">sbpline</span>
+                <span class="n">last_error_col</span> <span class="o">+=</span> <span class="mi">3</span>
+                <span class="nb">input</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">tree</span><span class="p">,</span> <span class="nb">input</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+        <p class="logo"><a href="../../index.html" title="index">
+          <img class="logo" src="../../_static/ascii_conch_part_color_tight.png" alt="Logo"/>
+        </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+    
+    
+        <div class="sidebar-toggle-group no-js">
+            
+            <button class="sidebar-toggle" id="sidebar-hide" title="Hide the sidebar menu">
+                 «
+                <span class="show-for-small">hide menu</span>
+                
+            </button>
+            <button class="sidebar-toggle" id="sidebar-show" title="Show the sidebar menu">
+                
+                <span class="show-for-small">menu</span>
+                <span class="hide-for-small">sidebar</span>
+                 »
+            </button>
+        </div>
+    
+      <div class="clearer"></div>
+    </div>
+    <div class="relbar-bottom">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../index.html">xonsh 0.5.1.dev25 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
+      </ul>
+    </div>
+    </div>
+
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2015, Anthony Scopatz.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.1.
+    </div>
+    <!-- cloud_sptheme 1.4 -->
+  </body>
+</html>
