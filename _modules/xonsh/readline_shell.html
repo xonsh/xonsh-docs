@@ -8,7 +8,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>xonsh.readline_shell &#8212; xonsh 0.5.2.dev61 documentation</title>
+    <title>xonsh.readline_shell &#8212; xonsh 0.5.2.dev69 documentation</title>
     
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
@@ -17,7 +17,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../',
-        VERSION:     '0.5.2.dev61',
+        VERSION:     '0.5.2.dev69',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -49,7 +49,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.5.2.dev61 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.5.2.dev69 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -79,21 +79,25 @@
 <span class="kn">import</span> <span class="nn">sys</span>
 <span class="kn">import</span> <span class="nn">cmd</span>
 <span class="kn">import</span> <span class="nn">select</span>
+<span class="kn">import</span> <span class="nn">shutil</span>
 <span class="kn">import</span> <span class="nn">builtins</span>
 <span class="kn">import</span> <span class="nn">importlib</span>
 <span class="kn">import</span> <span class="nn">threading</span>
 <span class="kn">import</span> <span class="nn">collections</span>
 
-<span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="k">import</span> <span class="n">LazyObject</span>
+<span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="k">import</span> <span class="n">LazyObject</span><span class="p">,</span> <span class="n">lazyobject</span>
 <span class="kn">from</span> <span class="nn">xonsh.base_shell</span> <span class="k">import</span> <span class="n">BaseShell</span>
-<span class="kn">from</span> <span class="nn">xonsh.ansi_colors</span> <span class="k">import</span> <span class="n">ansi_partial_color_format</span><span class="p">,</span> <span class="n">ansi_color_style_names</span><span class="p">,</span> <span class="n">ansi_color_style</span>
+<span class="kn">from</span> <span class="nn">xonsh.ansi_colors</span> <span class="k">import</span> <span class="p">(</span><span class="n">ansi_partial_color_format</span><span class="p">,</span> <span class="n">ansi_color_style_names</span><span class="p">,</span>
+                               <span class="n">ansi_color_style</span><span class="p">)</span>
 <span class="kn">from</span> <span class="nn">xonsh.prompt.base</span> <span class="k">import</span> <span class="n">multiline_prompt</span>
-<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="k">import</span> <span class="n">print_exception</span><span class="p">,</span> <span class="n">check_for_partial_string</span>
+<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="k">import</span> <span class="p">(</span><span class="n">print_exception</span><span class="p">,</span> <span class="n">check_for_partial_string</span><span class="p">,</span> <span class="n">to_bool</span><span class="p">,</span>
+                         <span class="n">columnize</span><span class="p">)</span>
 <span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="k">import</span> <span class="n">ON_WINDOWS</span><span class="p">,</span> <span class="n">ON_CYGWIN</span><span class="p">,</span> <span class="n">ON_DARWIN</span>
 <span class="kn">from</span> <span class="nn">xonsh.lazyimps</span> <span class="k">import</span> <span class="n">pygments</span><span class="p">,</span> <span class="n">pyghooks</span>
 
 <span class="n">readline</span> <span class="o">=</span> <span class="kc">None</span>
 <span class="n">RL_COMPLETION_SUPPRESS_APPEND</span> <span class="o">=</span> <span class="n">RL_LIB</span> <span class="o">=</span> <span class="n">RL_STATE</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="n">RL_COMPLETION_QUERY_ITEMS</span> <span class="o">=</span> <span class="kc">None</span>
 <span class="n">RL_CAN_RESIZE</span> <span class="o">=</span> <span class="kc">False</span>
 <span class="n">RL_DONE</span> <span class="o">=</span> <span class="kc">None</span>
 <span class="n">RL_VARIABLE_VALUE</span> <span class="o">=</span> <span class="kc">None</span>
@@ -105,7 +109,8 @@
 
 <div class="viewcode-block" id="setup_readline"><a class="viewcode-back" href="../../api/readline_shell.html#xonsh.readline_shell.setup_readline">[docs]</a><span class="k">def</span> <span class="nf">setup_readline</span><span class="p">():</span>
     <span class="sd">&quot;&quot;&quot;Sets up the readline module and completion suppression, if available.&quot;&quot;&quot;</span>
-    <span class="k">global</span> <span class="n">RL_COMPLETION_SUPPRESS_APPEND</span><span class="p">,</span> <span class="n">RL_LIB</span><span class="p">,</span> <span class="n">RL_CAN_RESIZE</span><span class="p">,</span> <span class="n">RL_STATE</span><span class="p">,</span> <span class="n">readline</span>
+    <span class="k">global</span> <span class="n">RL_COMPLETION_SUPPRESS_APPEND</span><span class="p">,</span> <span class="n">RL_LIB</span><span class="p">,</span> <span class="n">RL_CAN_RESIZE</span><span class="p">,</span> <span class="n">RL_STATE</span><span class="p">,</span> \
+        <span class="n">readline</span><span class="p">,</span> <span class="n">RL_COMPLETION_QUERY_ITEMS</span>
     <span class="k">if</span> <span class="n">RL_COMPLETION_SUPPRESS_APPEND</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">return</span>
     <span class="k">for</span> <span class="n">_rlmod_name</span> <span class="ow">in</span> <span class="p">(</span><span class="s1">&#39;gnureadline&#39;</span><span class="p">,</span> <span class="s1">&#39;readline&#39;</span><span class="p">):</span>
@@ -137,6 +142,12 @@
         <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
             <span class="c1"># not all versions of readline have this symbol, ie Macs sometimes</span>
             <span class="n">RL_COMPLETION_SUPPRESS_APPEND</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">RL_COMPLETION_QUERY_ITEMS</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">c_int</span><span class="o">.</span><span class="n">in_dll</span><span class="p">(</span>
+                <span class="n">lib</span><span class="p">,</span> <span class="s1">&#39;rl_completion_query_items&#39;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="c1"># not all versions of readline have this symbol, ie Macs sometimes</span>
+            <span class="n">RL_COMPLETION_QUERY_ITEMS</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">RL_STATE</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">c_int</span><span class="o">.</span><span class="n">in_dll</span><span class="p">(</span><span class="n">lib</span><span class="p">,</span> <span class="s1">&#39;rl_readline_state&#39;</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
@@ -240,6 +251,18 @@
     <span class="n">RL_COMPLETION_SUPPRESS_APPEND</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">val</span></div>
 
 
+<div class="viewcode-block" id="rl_completion_query_items"><a class="viewcode-back" href="../../api/readline_shell.html#xonsh.readline_shell.rl_completion_query_items">[docs]</a><span class="k">def</span> <span class="nf">rl_completion_query_items</span><span class="p">(</span><span class="n">val</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Sets the rl_completion_query_items varaiable, if possible.</span>
+<span class="sd">    A None value will set this to $COMPLETION_QUERY_LIMIT, otherwise any integer</span>
+<span class="sd">    is accepted.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">RL_COMPLETION_QUERY_ITEMS</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="k">if</span> <span class="n">val</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">val</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;COMPLETION_QUERY_LIMIT&#39;</span><span class="p">)</span>
+    <span class="n">RL_COMPLETION_QUERY_ITEMS</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">val</span></div>
+
+
 <div class="viewcode-block" id="rl_variable_dumper"><a class="viewcode-back" href="../../api/readline_shell.html#xonsh.readline_shell.rl_variable_dumper">[docs]</a><span class="k">def</span> <span class="nf">rl_variable_dumper</span><span class="p">(</span><span class="n">readable</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Dumps the currently set readline variables. If readable is True, then this</span>
 <span class="sd">    output may be used in an inputrc file.</span>
@@ -260,6 +283,17 @@
         <span class="n">variable</span> <span class="o">=</span> <span class="n">variable</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">errors</span><span class="p">)</span>
     <span class="n">rtn</span> <span class="o">=</span> <span class="n">RL_VARIABLE_VALUE</span><span class="p">(</span><span class="n">variable</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">rtn</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">errors</span><span class="p">)</span></div>
+
+
+<span class="nd">@lazyobject</span>
+<span class="k">def</span> <span class="nf">rl_on_new_line</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Grabs one of a few possible redisplay functions in readline.&quot;&quot;&quot;</span>
+    <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;rl_on_new_line&#39;</span><span class="p">,</span> <span class="s1">&#39;rl_forced_update_display&#39;</span><span class="p">,</span> <span class="s1">&#39;rl_redisplay&#39;</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">:</span>
+        <span class="n">func</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">RL_LIB</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">func</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">break</span>
+    <span class="k">return</span> <span class="n">func</span>
 
 
 <span class="k">def</span> <span class="nf">_insert_text_func</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">readline</span><span class="p">):</span>
@@ -314,12 +348,48 @@
         <span class="sd">&quot;&quot;&quot;Overridden to no-op.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">line</span></div>
 
+    <span class="k">def</span> <span class="nf">_querycompletions</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">completions</span><span class="p">,</span> <span class="n">loc</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns whether or not we should show completions&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">commonprefix</span><span class="p">([</span><span class="n">c</span><span class="p">[</span><span class="n">loc</span><span class="p">:]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">completions</span><span class="p">]):</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">completions</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;COMPLETION_QUERY_LIMIT&#39;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">Display all </span><span class="si">{}</span><span class="s1"> possibilities? &#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">completions</span><span class="p">))</span>
+        <span class="n">msg</span> <span class="o">+=</span> <span class="s1">&#39;(</span><span class="si">{GREEN}</span><span class="s1">y</span><span class="si">{NO_COLOR}</span><span class="s1"> or </span><span class="si">{RED}</span><span class="s1">n</span><span class="si">{NO_COLOR}</span><span class="s1">)&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">print_color</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+        <span class="n">yn</span> <span class="o">=</span> <span class="s1">&#39;x&#39;</span>
+        <span class="k">while</span> <span class="n">yn</span> <span class="ow">not</span> <span class="ow">in</span> <span class="s1">&#39;yn&#39;</span><span class="p">:</span>
+            <span class="n">yn</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdin</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">show_completions</span> <span class="o">=</span> <span class="n">to_bool</span><span class="p">(</span><span class="n">yn</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">show_completions</span><span class="p">:</span>
+            <span class="n">rl_on_new_line</span><span class="p">()</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="n">w</span><span class="p">,</span> <span class="n">h</span> <span class="o">=</span> <span class="n">shutil</span><span class="o">.</span><span class="n">get_terminal_size</span><span class="p">()</span>
+        <span class="n">lines</span> <span class="o">=</span> <span class="n">columnize</span><span class="p">(</span><span class="n">completions</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="n">w</span><span class="p">)</span>
+        <span class="n">more_msg</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">format_color</span><span class="p">(</span><span class="s1">&#39;</span><span class="si">{YELLOW}</span><span class="s1">===</span><span class="si">{NO_COLOR}</span><span class="s1"> more or &#39;</span>
+                                     <span class="s1">&#39;</span><span class="si">{PURPLE}</span><span class="s1">(</span><span class="si">{NO_COLOR}</span><span class="s1">q</span><span class="si">{PURPLE}</span><span class="s1">)</span><span class="si">{NO_COLOR}</span><span class="s1">uit &#39;</span>
+                                     <span class="s1">&#39;</span><span class="si">{YELLOW}</span><span class="s1">===</span><span class="si">{NO_COLOR}</span><span class="s1">&#39;</span><span class="p">)</span>
+        <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">h</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">[:</span><span class="n">h</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+            <span class="n">lines</span> <span class="o">=</span> <span class="n">lines</span><span class="p">[</span><span class="n">h</span><span class="o">-</span><span class="mi">1</span><span class="p">:]</span>
+            <span class="nb">print</span><span class="p">(</span><span class="n">more_msg</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+            <span class="n">q</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdin</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+            <span class="nb">print</span><span class="p">(</span><span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">q</span> <span class="o">==</span> <span class="s1">&#39;q&#39;</span><span class="p">:</span>
+                <span class="n">rl_on_new_line</span><span class="p">()</span>
+                <span class="k">return</span> <span class="kc">False</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">),</span> <span class="n">end</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+        <span class="n">rl_on_new_line</span><span class="p">()</span>
+        <span class="k">return</span> <span class="kc">False</span>
+
 <div class="viewcode-block" id="ReadlineShell.completedefault"><a class="viewcode-back" href="../../api/readline_shell.html#xonsh.readline_shell.ReadlineShell.completedefault">[docs]</a>    <span class="k">def</span> <span class="nf">completedefault</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prefix</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">begidx</span><span class="p">,</span> <span class="n">endidx</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Implements tab-completion for text.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">completer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="p">[]</span>
         <span class="n">rl_completion_suppress_append</span><span class="p">()</span>  <span class="c1"># this needs to be called each time</span>
         <span class="n">_rebind_case_sensitive_completions</span><span class="p">()</span>
+        <span class="n">rl_completion_query_items</span><span class="p">(</span><span class="n">val</span><span class="o">=</span><span class="mi">999999999</span><span class="p">)</span>
         <span class="n">_s</span><span class="p">,</span> <span class="n">_e</span><span class="p">,</span> <span class="n">_q</span> <span class="o">=</span> <span class="n">check_for_partial_string</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">_s</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">_e</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="s1">&#39; &#39;</span> <span class="ow">in</span> <span class="n">line</span><span class="p">[</span><span class="n">_e</span><span class="p">:]:</span>
@@ -329,9 +399,12 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="n">mline</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">rpartition</span><span class="p">(</span><span class="s1">&#39; &#39;</span><span class="p">)[</span><span class="mi">2</span><span class="p">]</span>
         <span class="n">offs</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">mline</span><span class="p">)</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
-        <span class="k">return</span> <span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="n">offs</span><span class="p">:]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">completer</span><span class="o">.</span><span class="n">complete</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span>
-                                                          <span class="n">begidx</span><span class="p">,</span> <span class="n">endidx</span><span class="p">,</span>
-                                                          <span class="n">ctx</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ctx</span><span class="p">)[</span><span class="mi">0</span><span class="p">]]</span></div>
+        <span class="n">completions</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">completer</span><span class="o">.</span><span class="n">complete</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span>
+                                              <span class="n">begidx</span><span class="p">,</span> <span class="n">endidx</span><span class="p">,</span>
+                                              <span class="n">ctx</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ctx</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">rtn_completions</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span><span class="p">[</span><span class="n">offs</span><span class="p">:]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">completions</span><span class="p">]</span>
+        <span class="n">show_completions</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_querycompletions</span><span class="p">(</span><span class="n">completions</span><span class="p">,</span> <span class="n">endidx</span> <span class="o">-</span> <span class="n">begidx</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">rtn_completions</span> <span class="k">if</span> <span class="n">show_completions</span> <span class="k">else</span> <span class="p">[]</span></div>
 
     <span class="c1"># tab complete on first index too</span>
     <span class="n">completenames</span> <span class="o">=</span> <span class="n">completedefault</span>
@@ -601,7 +674,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.5.2.dev61 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.5.2.dev69 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
       </ul>
