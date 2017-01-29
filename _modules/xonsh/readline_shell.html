@@ -8,7 +8,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>xonsh.readline_shell &#8212; xonsh 0.5.2.dev118 documentation</title>
+    <title>xonsh.readline_shell &#8212; xonsh 0.5.2.dev125 documentation</title>
     
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
@@ -17,7 +17,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../',
-        VERSION:     '0.5.2.dev118',
+        VERSION:     '0.5.2.dev125',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -49,7 +49,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.5.2.dev118 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.5.2.dev125 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -83,6 +83,7 @@
 <span class="kn">import</span> <span class="nn">builtins</span>
 <span class="kn">import</span> <span class="nn">importlib</span>
 <span class="kn">import</span> <span class="nn">threading</span>
+<span class="kn">import</span> <span class="nn">subprocess</span>
 <span class="kn">import</span> <span class="nn">collections</span>
 
 <span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="k">import</span> <span class="n">LazyObject</span><span class="p">,</span> <span class="n">lazyobject</span>
@@ -92,7 +93,7 @@
 <span class="kn">from</span> <span class="nn">xonsh.prompt.base</span> <span class="k">import</span> <span class="n">multiline_prompt</span>
 <span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="k">import</span> <span class="p">(</span><span class="n">print_exception</span><span class="p">,</span> <span class="n">check_for_partial_string</span><span class="p">,</span> <span class="n">to_bool</span><span class="p">,</span>
                          <span class="n">columnize</span><span class="p">)</span>
-<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="k">import</span> <span class="n">ON_WINDOWS</span><span class="p">,</span> <span class="n">ON_CYGWIN</span><span class="p">,</span> <span class="n">ON_DARWIN</span>
+<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="k">import</span> <span class="n">ON_WINDOWS</span><span class="p">,</span> <span class="n">ON_CYGWIN</span><span class="p">,</span> <span class="n">ON_DARWIN</span><span class="p">,</span> <span class="n">ON_POSIX</span>
 <span class="kn">from</span> <span class="nn">xonsh.lazyimps</span> <span class="k">import</span> <span class="n">pygments</span><span class="p">,</span> <span class="n">pyghooks</span>
 
 <span class="n">readline</span> <span class="o">=</span> <span class="kc">None</span>
@@ -591,7 +592,27 @@
 <div class="viewcode-block" id="ReadlineShell.color_style"><a class="viewcode-back" href="../../api/readline_shell.html#xonsh.readline_shell.ReadlineShell.color_style">[docs]</a>    <span class="k">def</span> <span class="nf">color_style</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Returns the current color map.&quot;&quot;&quot;</span>
         <span class="n">style</span> <span class="o">=</span> <span class="n">style</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;XONSH_COLOR_STYLE&#39;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">ansi_color_style</span><span class="p">(</span><span class="n">style</span><span class="o">=</span><span class="n">style</span><span class="p">)</span></div></div>
+        <span class="k">return</span> <span class="n">ansi_color_style</span><span class="p">(</span><span class="n">style</span><span class="o">=</span><span class="n">style</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ReadlineShell.restore_tty_sanity"><a class="viewcode-back" href="../../api/readline_shell.html#xonsh.readline_shell.ReadlineShell.restore_tty_sanity">[docs]</a>    <span class="k">def</span> <span class="nf">restore_tty_sanity</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;An interface for resetting the TTY stdin mode. This is highly</span>
+<span class="sd">        dependent on the shell backend. Also it is mostly optional since</span>
+<span class="sd">        it only affects ^Z backgrounding behaviour.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">ON_POSIX</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">stty</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_commands_cache__</span><span class="o">.</span><span class="n">lazyget</span><span class="p">(</span><span class="s1">&#39;stty&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">stty</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="c1"># If available, we should just call the stty utility. This call should</span>
+        <span class="c1"># not throw even if stty fails. It should also be noted that subprocess</span>
+        <span class="c1"># calls, like the following, seem to be ineffective:</span>
+        <span class="c1">#       subprocess.call([stty, &#39;sane&#39;], shell=True)</span>
+        <span class="c1"># My guess is that this is because Popen does some crazy redirecting</span>
+        <span class="c1"># under the covers. This effectively hides the true TTY stdin handle</span>
+        <span class="c1"># from stty. To get around this we have to use the lower level</span>
+        <span class="c1"># os.system() function.</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">system</span><span class="p">(</span><span class="n">stty</span> <span class="o">+</span> <span class="s1">&#39; sane&#39;</span><span class="p">)</span></div></div>
 
 
 <div class="viewcode-block" id="ReadlineHistoryAdder"><a class="viewcode-back" href="../../api/readline_shell.html#xonsh.readline_shell.ReadlineHistoryAdder">[docs]</a><span class="k">class</span> <span class="nc">ReadlineHistoryAdder</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">):</span>
@@ -674,7 +695,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.5.2.dev118 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.5.2.dev125 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
       </ul>
