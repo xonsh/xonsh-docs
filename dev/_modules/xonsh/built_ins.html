@@ -8,7 +8,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>xonsh.built_ins &#8212; xonsh 0.5.2.dev149 documentation</title>
+    <title>xonsh.built_ins &#8212; xonsh 0.5.2.dev152 documentation</title>
     
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
@@ -17,7 +17,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../',
-        VERSION:     '0.5.2.dev149',
+        VERSION:     '0.5.2.dev152',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -49,7 +49,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.5.2.dev149 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.5.2.dev152 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -102,7 +102,7 @@
     <span class="n">suggest_commands</span><span class="p">,</span> <span class="n">expand_path</span><span class="p">,</span> <span class="n">globpath</span><span class="p">,</span> <span class="n">XonshError</span><span class="p">,</span>
     <span class="n">XonshCalledProcessError</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">xonsh.lazyimps</span> <span class="k">import</span> <span class="n">pty</span>
+<span class="kn">from</span> <span class="nn">xonsh.lazyimps</span> <span class="k">import</span> <span class="n">pty</span><span class="p">,</span> <span class="n">termios</span>
 <span class="kn">from</span> <span class="nn">xonsh.commands_cache</span> <span class="k">import</span> <span class="n">CommandsCache</span>
 <span class="kn">from</span> <span class="nn">xonsh.events</span> <span class="k">import</span> <span class="n">events</span>
 
@@ -716,6 +716,20 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">captured</span> <span class="o">=</span> <span class="n">cpable</span></div></div>
 
 
+<span class="k">def</span> <span class="nf">_safe_pipe_properties</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">use_tty</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Makes sure that a pipe file descriptor properties are sane.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">use_tty</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="c1"># due to some weird, long standing issue in Python, PTYs come out</span>
+    <span class="c1"># replacing newline \n with \r\n. This causes issues for raw unix</span>
+    <span class="c1"># protocols, like git and ssh, which expect unix line endings.</span>
+    <span class="c1"># see https://mail.python.org/pipermail/python-list/2013-June/650460.html</span>
+    <span class="c1"># for more details and the following solution.</span>
+    <span class="n">props</span> <span class="o">=</span> <span class="n">termios</span><span class="o">.</span><span class="n">tcgetattr</span><span class="p">(</span><span class="n">fd</span><span class="p">)</span>
+    <span class="n">props</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">props</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&amp;</span> <span class="p">(</span><span class="o">~</span><span class="n">termios</span><span class="o">.</span><span class="n">ONLCR</span><span class="p">)</span> <span class="o">|</span> <span class="n">termios</span><span class="o">.</span><span class="n">ONLRET</span>
+    <span class="n">termios</span><span class="o">.</span><span class="n">tcsetattr</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">termios</span><span class="o">.</span><span class="n">TCSANOW</span><span class="p">,</span> <span class="n">props</span><span class="p">)</span>
+
+
 <span class="k">def</span> <span class="nf">_update_last_spec</span><span class="p">(</span><span class="n">last</span><span class="p">):</span>
     <span class="n">captured</span> <span class="o">=</span> <span class="n">last</span><span class="o">.</span><span class="n">captured</span>
     <span class="n">last</span><span class="o">.</span><span class="n">last_in_pipeline</span> <span class="o">=</span> <span class="kc">True</span>
@@ -755,7 +769,9 @@
     <span class="k">else</span><span class="p">:</span>
         <span class="n">last</span><span class="o">.</span><span class="n">universal_newlines</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="n">r</span><span class="p">,</span> <span class="n">w</span> <span class="o">=</span> <span class="n">pty</span><span class="o">.</span><span class="n">openpty</span><span class="p">()</span> <span class="k">if</span> <span class="n">use_tty</span> <span class="k">else</span> <span class="n">os</span><span class="o">.</span><span class="n">pipe</span><span class="p">()</span>
+        <span class="n">_safe_pipe_properties</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="n">use_tty</span><span class="o">=</span><span class="n">use_tty</span><span class="p">)</span>
         <span class="n">last</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">safe_open</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="s1">&#39;w&#39;</span><span class="p">)</span>
+        <span class="n">_safe_pipe_properties</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">use_tty</span><span class="o">=</span><span class="n">use_tty</span><span class="p">)</span>
         <span class="n">last</span><span class="o">.</span><span class="n">captured_stdout</span> <span class="o">=</span> <span class="n">safe_open</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span>
     <span class="c1"># set standard error</span>
     <span class="k">if</span> <span class="n">last</span><span class="o">.</span><span class="n">stderr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -772,7 +788,9 @@
         <span class="n">last</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># must truly stream on windows</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">r</span><span class="p">,</span> <span class="n">w</span> <span class="o">=</span> <span class="n">pty</span><span class="o">.</span><span class="n">openpty</span><span class="p">()</span> <span class="k">if</span> <span class="n">use_tty</span> <span class="k">else</span> <span class="n">os</span><span class="o">.</span><span class="n">pipe</span><span class="p">()</span>
+        <span class="n">_safe_pipe_properties</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="n">use_tty</span><span class="o">=</span><span class="n">use_tty</span><span class="p">)</span>
         <span class="n">last</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="n">safe_open</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="s1">&#39;w&#39;</span><span class="p">)</span>
+        <span class="n">_safe_pipe_properties</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">use_tty</span><span class="o">=</span><span class="n">use_tty</span><span class="p">)</span>
         <span class="n">last</span><span class="o">.</span><span class="n">captured_stderr</span> <span class="o">=</span> <span class="n">safe_open</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span>
     <span class="c1"># redirect stdout to stderr, if we should</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">last</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">and</span> <span class="n">last</span><span class="o">.</span><span class="n">stdout</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
@@ -1349,7 +1367,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.5.2.dev149 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.5.2.dev152 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
       </ul>
