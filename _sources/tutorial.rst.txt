@@ -351,7 +351,7 @@ For example,
     'total 0\n-rw-rw-r-- 1 snail snail 0 Mar  8 15:46 xonsh\n'
 
 The ``!()`` syntax captured more information about the command, as an instance
-of a class called ``CompletedCommand``.  This object contains more information
+of a class called ``CommandPipeline``.  This object contains more information
 about the result of the given command, including the return code, the process
 id, the standard output and standard error streams, and information about how
 input and output were redirected.  For example:
@@ -359,7 +359,7 @@ input and output were redirected.  For example:
 .. code-block:: xonshcon
 
     >>> !(ls nonexistent_directory)
-    CompletedCommand(stdin=None, stdout='', stderr='/bin/ls: cannot access nonexistent_directory: No such file or directory\n', pid=1862, returncode=2, args=['ls', 'nonexistent_directory'], alias=['ls', '--color=auto'], stdin_redirect=None, stdout_redirect=None, stderr_redirect=None)
+    CommandPipeline(stdin=<_io.BytesIO object at 0x7f1948182bf8>, stdout=<_io.BytesIO object at 0x7f1948182af0>, stderr=<_io.BytesIO object at 0x7f19483a6200>, pid=26968, returncode=2, args=['ls', 'nonexistent_directory'], alias=['ls', '--color=auto', '-v'], stdin_redirect=['<stdin>', 'r'], stdout_redirect=[9, 'wb'], stderr_redirect=[11, 'w'], timestamps=[1485235484.5016758, None], executed_cmd=['ls', '--color=auto', '-v', 'nonexistent_directory'], input=None, output=, errors=None)
 
 This object will be "truthy" if its return code was 0, and it is equal (via
 ``==``) to its return code.  It also hashes to its return code.  This allows
@@ -382,7 +382,7 @@ example:
             sleep 1
 
 
-If you iterate over the ``CompletedCommand`` object, it will yield lines of its
+If you iterate over the ``CommandPipeline`` object, it will yield lines of its
 output.  Using this, you can quickly and cleanly process output from commands.
 Additionally, these objects expose a method ``itercheck``, which behaves the same
 as the built-in iterator but raises ``XonshCalledProcessError`` if the process
@@ -504,7 +504,7 @@ result is automatically converted to a string. For example,
     4
     >>> echo @([42, 'yo'])
     42 yo
-    >>> echo "hello" | @(lambda a, s=None: s.strip() + " world\n")
+    >>> echo "hello" | @(lambda a, s=None: s.read().strip() + " world\n")
     hello world
 
 This syntax can be used inside of a captured or uncaptured subprocess, and can
@@ -725,7 +725,7 @@ with the following syntax:
     >>> COMMAND err>o
     >>> COMMAND e>out
     >>> COMMAND e>o
-    >>> COMMAND 2>&1 # included for Bash compatibility
+    >>> COMMAND 2>&1  # included for Bash compatibility
 
 This merge can be combined with other redirections, including pipes (see the
 section on `Pipes`_ above):
@@ -736,6 +736,16 @@ section on `Pipes`_ above):
     >>> COMMAND e>o > combined.txt
 
 It is worth noting that this last example is equivalent to: ``COMMAND a> combined.txt``
+
+Similarly, you can also send stdout to stderr with the following syntax:
+
+.. code-block:: xonshcon
+
+    >>> COMMAND out>err
+    >>> COMMAND out>e
+    >>> COMMAND o>err
+    >>> COMMAND o>e
+    >>> COMMAND 1>&2  # included for Bash compatibility
 
 Redirecting ``stdin``
 ---------------------
@@ -1037,8 +1047,8 @@ regex globbing:
     def regexsearch(s):
         s = expand_path(s)
         return reglob(s)
-    
-    
+
+
     <function xonsh.built_ins.regexsearch>
 
 Note that both help and superhelp return the object that they are inspecting.
@@ -1256,7 +1266,7 @@ as aliases, by wrapping them in ``@()``.  For example:
 
     >>> @(_banana)
     'My spoon is tooo big!'
-    >>> echo "hello" | @(lambda args, stdin=None: stdin.strip() + args[0]) world
+    >>> echo "hello" | @(lambda args, stdin=None: stdin.read().strip() + ' ' + args[0] + '\n') world
     hello world
 
 
@@ -1327,6 +1337,8 @@ completion for the commands themselves.
 
 xonsh also provides a means of modifying the behavior of the tab completer.  More
 detail is available on the `Tab Completion page <tutorial_completers.html>`_.
+
+.. _customprompt:
 
 Customizing the Prompt
 ======================
