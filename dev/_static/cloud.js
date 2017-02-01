@@ -329,8 +329,6 @@
             smallState = false,
             largeState = false;
         function setState(visible){
-            console.debug("set menu state: visible=%o smallSreen=%o",
-                          visible, smallScreen);
             $doc.toggleClass("sidebar-hidden", !smallScreen && !visible)
                 .toggleClass("document-hidden", smallScreen && visible);
             $hide.toggleVis(visible);
@@ -494,7 +492,6 @@
             if(highlight) { $div.addClass("highlight-pages"); }
         });
 
-        
         var $toc = $("#table-of-contents div.toctree-wrapper.highlight-pages");
         if($toc.length){
             $('<label id="hide-page-sections"><input type="checkbox" /> Hide page sections</label>')
