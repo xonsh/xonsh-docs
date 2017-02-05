@@ -8,7 +8,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>xonsh.platform &#8212; xonsh 0.5.3.dev40 documentation</title>
+    <title>xonsh.platform &#8212; xonsh 0.5.3.dev51 documentation</title>
     
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
@@ -17,7 +17,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../',
-        VERSION:     '0.5.3.dev40',
+        VERSION:     '0.5.3.dev51',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -49,7 +49,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.5.3.dev40 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.5.3.dev51 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -69,6 +69,7 @@
 <span class="sd">&quot;&quot;&quot;</span>
 <span class="kn">import</span> <span class="nn">os</span>
 <span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">ctypes</span>
 <span class="kn">import</span> <span class="nn">signal</span>
 <span class="kn">import</span> <span class="nn">pathlib</span>
 <span class="kn">import</span> <span class="nn">builtins</span>
@@ -116,9 +117,18 @@
 <span class="n">ON_NETBSD</span> <span class="o">=</span> <span class="n">LazyBool</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">platform</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;netbsd&#39;</span><span class="p">)),</span>
                      <span class="nb">globals</span><span class="p">(),</span> <span class="s1">&#39;ON_NETBSD&#39;</span><span class="p">)</span>
 <span class="sd">&quot;&quot;&quot;``True`` if on a NetBSD operating system, else ``False``.&quot;&quot;&quot;</span>
-<span class="n">ON_BSD</span> <span class="o">=</span> <span class="n">LazyBool</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="n">ON_FREEBSD</span> <span class="ow">or</span> <span class="n">ON_NETBSD</span><span class="p">,</span>
-                  <span class="nb">globals</span><span class="p">(),</span> <span class="s1">&#39;ON_BSD&#39;</span><span class="p">)</span>
-<span class="sd">&quot;&quot;&quot;``True`` if on a BSD operating system, else ``False``.&quot;&quot;&quot;</span>
+
+
+<span class="nd">@lazybool</span>
+<span class="k">def</span> <span class="nf">ON_BSD</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;``True`` if on a BSD operating system, else ``False``.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">ON_FREEBSD</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">bool</span><span class="p">(</span><span class="n">ON_NETBSD</span><span class="p">)</span>
+
+
+<span class="nd">@lazybool</span>
+<span class="k">def</span> <span class="nf">ON_BEOS</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;True if we are on BeOS or Haiku.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">sys</span><span class="o">.</span><span class="n">platform</span> <span class="o">==</span> <span class="s1">&#39;beos5&#39;</span> <span class="ow">or</span> <span class="n">sys</span><span class="o">.</span><span class="n">platform</span> <span class="o">==</span> <span class="s1">&#39;haiku1&#39;</span>
 
 
 <span class="c1">#</span>
@@ -426,6 +436,63 @@
     <span class="k">else</span><span class="p">:</span>
         <span class="n">pd</span> <span class="o">=</span> <span class="p">()</span>
     <span class="k">return</span> <span class="n">pd</span>
+
+
+<span class="c1">#</span>
+<span class="c1"># libc</span>
+<span class="c1">#</span>
+<span class="nd">@lazyobject</span>
+<span class="k">def</span> <span class="nf">LIBC</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;The platform dependent libc implementation.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">ON_DARWIN</span><span class="p">:</span>
+        <span class="n">libc</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">CDLL</span><span class="p">(</span><span class="n">ctypes</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_library</span><span class="p">(</span><span class="s2">&quot;c&quot;</span><span class="p">))</span>
+    <span class="k">elif</span> <span class="n">ON_CYGWIN</span><span class="p">:</span>
+        <span class="n">libc</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">CDLL</span><span class="p">(</span><span class="s1">&#39;cygwin1.dll&#39;</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">ON_BSD</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">libc</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">CDLL</span><span class="p">(</span><span class="s1">&#39;libc.so&#39;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="n">libc</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+            <span class="c1"># OS X; can&#39;t use ctypes.util.find_library because that creates</span>
+            <span class="c1"># a new process on Linux, which is undesirable.</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">libc</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">CDLL</span><span class="p">(</span><span class="s1">&#39;libc.dylib&#39;</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+                <span class="n">libc</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">elif</span> <span class="n">ON_POSIX</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">libc</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">CDLL</span><span class="p">(</span><span class="s1">&#39;libc.so&#39;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="n">libc</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+            <span class="c1"># Debian and derivatives do the wrong thing because /usr/lib/libc.so</span>
+            <span class="c1"># is a GNU ld script rather than an ELF object. To get around this, we</span>
+            <span class="c1"># have to be more specific.</span>
+            <span class="c1"># We don&#39;t want to use ctypes.util.find_library because that creates a</span>
+            <span class="c1"># new process on Linux. We also don&#39;t want to try too hard because at</span>
+            <span class="c1"># this point we&#39;re already pretty sure this isn&#39;t Linux.</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">libc</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">CDLL</span><span class="p">(</span><span class="s1">&#39;libc.so.6&#39;</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+                <span class="n">libc</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">libc</span><span class="p">,</span> <span class="s1">&#39;sysinfo&#39;</span><span class="p">):</span>
+            <span class="c1"># Not Linux.</span>
+            <span class="n">libc</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">elif</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">ctypes</span><span class="p">,</span> <span class="s1">&#39;windll&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">ctypes</span><span class="o">.</span><span class="n">windll</span><span class="p">,</span> <span class="s1">&#39;kernel32&#39;</span><span class="p">):</span>
+            <span class="n">libc</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">windll</span><span class="o">.</span><span class="n">kernel32</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="c1"># Windows CE uses the cdecl calling convention.</span>
+                <span class="n">libc</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">CDLL</span><span class="p">(</span><span class="s1">&#39;coredll.lib&#39;</span><span class="p">)</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">OSError</span><span class="p">):</span>
+                <span class="n">libc</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">elif</span> <span class="n">ON_BEOS</span><span class="p">:</span>
+        <span class="n">libc</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">CDLL</span><span class="p">(</span><span class="s1">&#39;libroot.so&#39;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">libc</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">libc</span>
 </pre></div>
 
           </div>
@@ -478,7 +545,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.5.3.dev40 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.5.3.dev51 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
       </ul>
