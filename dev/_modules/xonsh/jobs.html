@@ -8,7 +8,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>xonsh.jobs &#8212; xonsh 0.5.4.dev71 documentation</title>
+    <title>xonsh.jobs &#8212; xonsh 0.5.4.dev86 documentation</title>
     
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
@@ -17,7 +17,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../',
-        VERSION:     '0.5.4.dev71',
+        VERSION:     '0.5.4.dev86',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -49,7 +49,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.5.4.dev71 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.5.4.dev86 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -71,12 +71,12 @@
 <span class="kn">import</span> <span class="nn">ctypes</span>
 <span class="kn">import</span> <span class="nn">signal</span>
 <span class="kn">import</span> <span class="nn">builtins</span>
-<span class="kn">import</span> <span class="nn">functools</span>
 <span class="kn">import</span> <span class="nn">subprocess</span>
 <span class="kn">import</span> <span class="nn">collections</span>
 
 <span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="k">import</span> <span class="n">LazyObject</span>
 <span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="k">import</span> <span class="n">ON_DARWIN</span><span class="p">,</span> <span class="n">ON_WINDOWS</span><span class="p">,</span> <span class="n">ON_CYGWIN</span><span class="p">,</span> <span class="n">LIBC</span>
+<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="k">import</span> <span class="n">unthreadable</span>
 
 
 <span class="n">tasks</span> <span class="o">=</span> <span class="n">LazyObject</span><span class="p">(</span><span class="n">collections</span><span class="o">.</span><span class="n">deque</span><span class="p">,</span> <span class="nb">globals</span><span class="p">(),</span> <span class="s1">&#39;tasks&#39;</span><span class="p">)</span>
@@ -93,7 +93,10 @@
         <span class="k">for</span> <span class="n">pid</span> <span class="ow">in</span> <span class="n">job</span><span class="p">[</span><span class="s1">&#39;pids&#39;</span><span class="p">]:</span>
             <span class="k">if</span> <span class="n">pid</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># the pid of an aliased proc is None</span>
                 <span class="k">continue</span>
-            <span class="n">os</span><span class="o">.</span><span class="n">kill</span><span class="p">(</span><span class="n">pid</span><span class="p">,</span> <span class="n">signal</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">kill</span><span class="p">(</span><span class="n">pid</span><span class="p">,</span> <span class="n">signal</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">ProcessLookupError</span><span class="p">:</span>
+                <span class="k">pass</span>
 <span class="k">elif</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
     <span class="k">pass</span>
 <span class="k">elif</span> <span class="n">ON_CYGWIN</span><span class="p">:</span>
@@ -132,7 +135,7 @@
     <span class="k">def</span> <span class="nf">ignore_sigtstp</span><span class="p">():</span>
         <span class="k">pass</span>
 
-    <span class="k">def</span> <span class="nf">_set_pgrp</span><span class="p">(</span><span class="n">info</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">give_terminal_to</span><span class="p">(</span><span class="n">pgid</span><span class="p">):</span>
         <span class="k">pass</span>
 
     <span class="k">def</span> <span class="nf">wait_for_active_job</span><span class="p">(</span><span class="n">last_task</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">backgrounded</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
@@ -166,65 +169,41 @@
 <div class="viewcode-block" id="ignore_sigtstp"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.ignore_sigtstp">[docs]</a>    <span class="k">def</span> <span class="nf">ignore_sigtstp</span><span class="p">():</span>
         <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGTSTP</span><span class="p">,</span> <span class="n">signal</span><span class="o">.</span><span class="n">SIG_IGN</span><span class="p">)</span></div>
 
-    <span class="k">def</span> <span class="nf">_set_pgrp</span><span class="p">(</span><span class="n">info</span><span class="p">):</span>
-        <span class="n">pid</span> <span class="o">=</span> <span class="n">info</span><span class="p">[</span><span class="s1">&#39;pids&#39;</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
-        <span class="k">if</span> <span class="n">pid</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="c1"># occurs if first process is an alias</span>
-            <span class="n">info</span><span class="p">[</span><span class="s1">&#39;pgrp&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
-            <span class="k">return</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">info</span><span class="p">[</span><span class="s1">&#39;pgrp&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getpgid</span><span class="p">(</span><span class="n">pid</span><span class="p">)</span>
-        <span class="k">except</span> <span class="ne">ProcessLookupError</span><span class="p">:</span>
-            <span class="n">info</span><span class="p">[</span><span class="s1">&#39;pgrp&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
-
     <span class="n">_shell_pgrp</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getpgrp</span><span class="p">()</span>
 
     <span class="n">_block_when_giving</span> <span class="o">=</span> <span class="n">LazyObject</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGTTOU</span><span class="p">,</span> <span class="n">signal</span><span class="o">.</span><span class="n">SIGTTIN</span><span class="p">,</span>
                                              <span class="n">signal</span><span class="o">.</span><span class="n">SIGTSTP</span><span class="p">,</span> <span class="n">signal</span><span class="o">.</span><span class="n">SIGCHLD</span><span class="p">),</span>
                                     <span class="nb">globals</span><span class="p">(),</span> <span class="s1">&#39;_block_when_giving&#39;</span><span class="p">)</span>
 
-    <span class="c1"># check for shell tty</span>
-    <span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-    <span class="k">def</span> <span class="nf">_shell_tty</span><span class="p">():</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">_st</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="o">.</span><span class="n">fileno</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">tcgetpgrp</span><span class="p">(</span><span class="n">_st</span><span class="p">)</span> <span class="o">!=</span> <span class="n">os</span><span class="o">.</span><span class="n">getpgid</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getpid</span><span class="p">()):</span>
-                <span class="c1"># we don&#39;t own it</span>
-                <span class="n">_st</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
-            <span class="n">_st</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">return</span> <span class="n">_st</span>
-
-    <span class="c1"># _give_terminal_to is a simplified version of:</span>
+    <span class="c1"># give_terminal_to is a simplified version of:</span>
     <span class="c1">#    give_terminal_to from bash 4.3 source, jobs.c, line 4030</span>
     <span class="c1"># this will give the terminal to the process group pgid</span>
     <span class="k">if</span> <span class="n">ON_CYGWIN</span><span class="p">:</span>
         <span class="c1"># on cygwin, signal.pthread_sigmask does not exist in Python, even</span>
         <span class="c1"># though pthread_sigmask is defined in the kernel.  thus, we use</span>
         <span class="c1"># ctypes to mimic the calls in the &quot;normal&quot; version below.</span>
-        <span class="k">def</span> <span class="nf">_give_terminal_to</span><span class="p">(</span><span class="n">pgid</span><span class="p">):</span>
-            <span class="n">st</span> <span class="o">=</span> <span class="n">_shell_tty</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">st</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">isatty</span><span class="p">(</span><span class="n">st</span><span class="p">):</span>
-                <span class="n">omask</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">c_ulong</span><span class="p">()</span>
-                <span class="n">mask</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">c_ulong</span><span class="p">()</span>
-                <span class="n">LIBC</span><span class="o">.</span><span class="n">sigemptyset</span><span class="p">(</span><span class="n">ctypes</span><span class="o">.</span><span class="n">byref</span><span class="p">(</span><span class="n">mask</span><span class="p">))</span>
-                <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">_block_when_giving</span><span class="p">:</span>
-                    <span class="n">LIBC</span><span class="o">.</span><span class="n">sigaddset</span><span class="p">(</span><span class="n">ctypes</span><span class="o">.</span><span class="n">byref</span><span class="p">(</span><span class="n">mask</span><span class="p">),</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">c_int</span><span class="p">(</span><span class="n">i</span><span class="p">))</span>
-                <span class="n">LIBC</span><span class="o">.</span><span class="n">sigemptyset</span><span class="p">(</span><span class="n">ctypes</span><span class="o">.</span><span class="n">byref</span><span class="p">(</span><span class="n">omask</span><span class="p">))</span>
-                <span class="n">LIBC</span><span class="o">.</span><span class="n">sigprocmask</span><span class="p">(</span><span class="n">ctypes</span><span class="o">.</span><span class="n">c_int</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIG_BLOCK</span><span class="p">),</span>
-                                 <span class="n">ctypes</span><span class="o">.</span><span class="n">byref</span><span class="p">(</span><span class="n">mask</span><span class="p">),</span>
-                                 <span class="n">ctypes</span><span class="o">.</span><span class="n">byref</span><span class="p">(</span><span class="n">omask</span><span class="p">))</span>
-                <span class="n">LIBC</span><span class="o">.</span><span class="n">tcsetpgrp</span><span class="p">(</span><span class="n">ctypes</span><span class="o">.</span><span class="n">c_int</span><span class="p">(</span><span class="n">st</span><span class="p">),</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">c_int</span><span class="p">(</span><span class="n">pgid</span><span class="p">))</span>
-                <span class="n">LIBC</span><span class="o">.</span><span class="n">sigprocmask</span><span class="p">(</span><span class="n">ctypes</span><span class="o">.</span><span class="n">c_int</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIG_SETMASK</span><span class="p">),</span>
-                                 <span class="n">ctypes</span><span class="o">.</span><span class="n">byref</span><span class="p">(</span><span class="n">omask</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">def</span> <span class="nf">give_terminal_to</span><span class="p">(</span><span class="n">pgid</span><span class="p">):</span>
+            <span class="n">omask</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">c_ulong</span><span class="p">()</span>
+            <span class="n">mask</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">c_ulong</span><span class="p">()</span>
+            <span class="n">LIBC</span><span class="o">.</span><span class="n">sigemptyset</span><span class="p">(</span><span class="n">ctypes</span><span class="o">.</span><span class="n">byref</span><span class="p">(</span><span class="n">mask</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">_block_when_giving</span><span class="p">:</span>
+                <span class="n">LIBC</span><span class="o">.</span><span class="n">sigaddset</span><span class="p">(</span><span class="n">ctypes</span><span class="o">.</span><span class="n">byref</span><span class="p">(</span><span class="n">mask</span><span class="p">),</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">c_int</span><span class="p">(</span><span class="n">i</span><span class="p">))</span>
+            <span class="n">LIBC</span><span class="o">.</span><span class="n">sigemptyset</span><span class="p">(</span><span class="n">ctypes</span><span class="o">.</span><span class="n">byref</span><span class="p">(</span><span class="n">omask</span><span class="p">))</span>
+            <span class="n">LIBC</span><span class="o">.</span><span class="n">sigprocmask</span><span class="p">(</span><span class="n">ctypes</span><span class="o">.</span><span class="n">c_int</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIG_BLOCK</span><span class="p">),</span>
+                             <span class="n">ctypes</span><span class="o">.</span><span class="n">byref</span><span class="p">(</span><span class="n">mask</span><span class="p">),</span>
+                             <span class="n">ctypes</span><span class="o">.</span><span class="n">byref</span><span class="p">(</span><span class="n">omask</span><span class="p">))</span>
+            <span class="n">st</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="o">.</span><span class="n">fileno</span><span class="p">()</span>
+            <span class="n">LIBC</span><span class="o">.</span><span class="n">tcsetpgrp</span><span class="p">(</span><span class="n">ctypes</span><span class="o">.</span><span class="n">c_int</span><span class="p">(</span><span class="n">st</span><span class="p">),</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">c_int</span><span class="p">(</span><span class="n">pgid</span><span class="p">))</span>
+            <span class="n">LIBC</span><span class="o">.</span><span class="n">sigprocmask</span><span class="p">(</span><span class="n">ctypes</span><span class="o">.</span><span class="n">c_int</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIG_SETMASK</span><span class="p">),</span>
+                             <span class="n">ctypes</span><span class="o">.</span><span class="n">byref</span><span class="p">(</span><span class="n">omask</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="k">def</span> <span class="nf">_give_terminal_to</span><span class="p">(</span><span class="n">pgid</span><span class="p">):</span>
-            <span class="n">st</span> <span class="o">=</span> <span class="n">_shell_tty</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">st</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">isatty</span><span class="p">(</span><span class="n">st</span><span class="p">):</span>
-                <span class="n">oldmask</span> <span class="o">=</span> <span class="n">signal</span><span class="o">.</span><span class="n">pthread_sigmask</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIG_BLOCK</span><span class="p">,</span>
-                                                 <span class="n">_block_when_giving</span><span class="p">)</span>
-                <span class="n">os</span><span class="o">.</span><span class="n">tcsetpgrp</span><span class="p">(</span><span class="n">st</span><span class="p">,</span> <span class="n">pgid</span><span class="p">)</span>
-                <span class="n">signal</span><span class="o">.</span><span class="n">pthread_sigmask</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIG_SETMASK</span><span class="p">,</span> <span class="n">oldmask</span><span class="p">)</span>
+<div class="viewcode-block" id="give_terminal_to"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.give_terminal_to">[docs]</a>        <span class="k">def</span> <span class="nf">give_terminal_to</span><span class="p">(</span><span class="n">pgid</span><span class="p">):</span>
+            <span class="n">oldmask</span> <span class="o">=</span> <span class="n">signal</span><span class="o">.</span><span class="n">pthread_sigmask</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIG_BLOCK</span><span class="p">,</span>
+                                             <span class="n">_block_when_giving</span><span class="p">)</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">tcsetpgrp</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="o">.</span><span class="n">fileno</span><span class="p">(),</span> <span class="n">pgid</span><span class="p">)</span>
+            <span class="n">signal</span><span class="o">.</span><span class="n">pthread_sigmask</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIG_SETMASK</span><span class="p">,</span> <span class="n">oldmask</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span></div>
 
 <div class="viewcode-block" id="wait_for_active_job"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.wait_for_active_job">[docs]</a>    <span class="k">def</span> <span class="nf">wait_for_active_job</span><span class="p">(</span><span class="n">last_task</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">backgrounded</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;</span>
@@ -235,22 +214,14 @@
         <span class="n">active_task</span> <span class="o">=</span> <span class="n">get_next_task</span><span class="p">()</span>
         <span class="c1"># Return when there are no foreground active task</span>
         <span class="k">if</span> <span class="n">active_task</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">_give_terminal_to</span><span class="p">(</span><span class="n">_shell_pgrp</span><span class="p">)</span>  <span class="c1"># give terminal back to the shell</span>
-            <span class="k">if</span> <span class="n">backgrounded</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s1">&#39;__xonsh_shell__&#39;</span><span class="p">):</span>
-                <span class="c1"># restoring sanity could probably be called whenever we return</span>
-                <span class="c1"># control to the shell. But it only seems to matter after a</span>
-                <span class="c1"># ^Z event. This *has* to be called after we give the terminal</span>
-                <span class="c1"># back to the shell.</span>
-                <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_shell__</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">restore_tty_sanity</span><span class="p">()</span>
             <span class="k">return</span> <span class="n">last_task</span>
-        <span class="n">pgrp</span> <span class="o">=</span> <span class="n">active_task</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;pgrp&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
         <span class="n">obj</span> <span class="o">=</span> <span class="n">active_task</span><span class="p">[</span><span class="s1">&#39;obj&#39;</span><span class="p">]</span>
         <span class="n">backgrounded</span> <span class="o">=</span> <span class="kc">False</span>
-        <span class="c1"># give the terminal over to the fg process</span>
-        <span class="k">if</span> <span class="n">pgrp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">_give_terminal_to</span><span class="p">(</span><span class="n">pgrp</span><span class="p">)</span>
-        <span class="n">_continue</span><span class="p">(</span><span class="n">active_task</span><span class="p">)</span>
-        <span class="n">_</span><span class="p">,</span> <span class="n">wcode</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">waitpid</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">pid</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">WUNTRACED</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">_</span><span class="p">,</span> <span class="n">wcode</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">waitpid</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">pid</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">WUNTRACED</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ChildProcessError</span><span class="p">:</span>  <span class="c1"># No child processes</span>
+            <span class="k">return</span> <span class="n">wait_for_active_job</span><span class="p">(</span><span class="n">last_task</span><span class="o">=</span><span class="n">active_task</span><span class="p">,</span>
+                                       <span class="n">backgrounded</span><span class="o">=</span><span class="n">backgrounded</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">WIFSTOPPED</span><span class="p">(</span><span class="n">wcode</span><span class="p">):</span>
             <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;^Z&#39;</span><span class="p">)</span>
             <span class="n">active_task</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;stopped&quot;</span>
@@ -327,7 +298,6 @@
     <span class="n">num</span> <span class="o">=</span> <span class="n">get_next_job_number</span><span class="p">()</span>
     <span class="n">info</span><span class="p">[</span><span class="s1">&#39;started&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
     <span class="n">info</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;running&quot;</span>
-    <span class="n">_set_pgrp</span><span class="p">(</span><span class="n">info</span><span class="p">)</span>
     <span class="n">tasks</span><span class="o">.</span><span class="n">appendleft</span><span class="p">(</span><span class="n">num</span><span class="p">)</span>
     <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_all_jobs__</span><span class="p">[</span><span class="n">num</span><span class="p">]</span> <span class="o">=</span> <span class="n">info</span>
     <span class="k">if</span> <span class="n">info</span><span class="p">[</span><span class="s1">&#39;bg&#39;</span><span class="p">]:</span>
@@ -372,9 +342,9 @@
                     <span class="c1"># newline</span>
                     <span class="nb">print</span><span class="p">()</span>
                 <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;xonsh: </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">msg</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
-                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;-&#39;</span><span class="o">*</span><span class="mi">5</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;-&#39;</span> <span class="o">*</span> <span class="mi">5</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
                 <span class="n">jobs</span><span class="p">([],</span> <span class="n">stdout</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
-                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;-&#39;</span><span class="o">*</span><span class="mi">5</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;-&#39;</span> <span class="o">*</span> <span class="mi">5</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
                 <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Type &quot;exit&quot; or press &quot;ctrl-d&quot; again to force quit.&#39;</span><span class="p">,</span>
                       <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
                 <span class="n">jobs_clean</span> <span class="o">=</span> <span class="kc">False</span>
@@ -406,6 +376,7 @@
     <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span></div>
 
 
+<span class="nd">@unthreadable</span>
 <div class="viewcode-block" id="fg"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.fg">[docs]</a><span class="k">def</span> <span class="nf">fg</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    xonsh command: fg</span>
@@ -419,32 +390,33 @@
         <span class="k">return</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="s1">&#39;Cannot bring nonexistent job to foreground.</span><span class="se">\n</span><span class="s1">&#39;</span>
 
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="n">act</span> <span class="o">=</span> <span class="n">tasks</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>  <span class="c1"># take the last manipulated task by default</span>
+        <span class="n">tid</span> <span class="o">=</span> <span class="n">tasks</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>  <span class="c1"># take the last manipulated task by default</span>
     <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;+&#39;</span><span class="p">:</span>  <span class="c1"># take the last manipulated task</span>
-                <span class="n">act</span> <span class="o">=</span> <span class="n">tasks</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="n">tid</span> <span class="o">=</span> <span class="n">tasks</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
             <span class="k">elif</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;-&#39;</span><span class="p">:</span>  <span class="c1"># take the second to last manipulated task</span>
-                <span class="n">act</span> <span class="o">=</span> <span class="n">tasks</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                <span class="n">tid</span> <span class="o">=</span> <span class="n">tasks</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">act</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="n">tid</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
         <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">IndexError</span><span class="p">):</span>
             <span class="k">return</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="s1">&#39;Invalid job: </span><span class="si">{}</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
 
-        <span class="k">if</span> <span class="n">act</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_all_jobs__</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">tid</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_all_jobs__</span><span class="p">:</span>
             <span class="k">return</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="s1">&#39;Invalid job: </span><span class="si">{}</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="k">return</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="s1">&#39;fg expects 0 or 1 arguments, not </span><span class="si">{}</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">))</span>
 
     <span class="c1"># Put this one on top of the queue</span>
-    <span class="n">tasks</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">act</span><span class="p">)</span>
-    <span class="n">tasks</span><span class="o">.</span><span class="n">appendleft</span><span class="p">(</span><span class="n">act</span><span class="p">)</span>
+    <span class="n">tasks</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
+    <span class="n">tasks</span><span class="o">.</span><span class="n">appendleft</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
 
-    <span class="n">job</span> <span class="o">=</span> <span class="n">get_task</span><span class="p">(</span><span class="n">act</span><span class="p">)</span>
+    <span class="n">job</span> <span class="o">=</span> <span class="n">get_task</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
     <span class="n">job</span><span class="p">[</span><span class="s1">&#39;bg&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">job</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;running&quot;</span>
-    <span class="n">print_one_job</span><span class="p">(</span><span class="n">act</span><span class="p">)</span>
-    <span class="n">wait_for_active_job</span><span class="p">()</span></div>
+    <span class="n">print_one_job</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
+    <span class="n">pipeline</span> <span class="o">=</span> <span class="n">job</span><span class="p">[</span><span class="s1">&#39;pipeline&#39;</span><span class="p">]</span>
+    <span class="n">pipeline</span><span class="o">.</span><span class="n">resume</span><span class="p">(</span><span class="n">job</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="bg"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.bg">[docs]</a><span class="k">def</span> <span class="nf">bg</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
@@ -512,7 +484,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.5.4.dev71 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.5.4.dev86 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
       </ul>
