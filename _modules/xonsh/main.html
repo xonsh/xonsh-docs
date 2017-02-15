@@ -8,7 +8,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>xonsh.main &#8212; xonsh 0.5.4.dev60 documentation</title>
+    <title>xonsh.main &#8212; xonsh 0.5.4.dev71 documentation</title>
     
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
@@ -17,7 +17,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../',
-        VERSION:     '0.5.4.dev60',
+        VERSION:     '0.5.4.dev71',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -49,7 +49,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.5.4.dev60 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.5.4.dev71 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -78,15 +78,17 @@
 <span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="k">import</span> <span class="n">lazyobject</span>
 <span class="kn">from</span> <span class="nn">xonsh.shell</span> <span class="k">import</span> <span class="n">Shell</span>
 <span class="kn">from</span> <span class="nn">xonsh.pretty</span> <span class="k">import</span> <span class="n">pretty</span>
+<span class="kn">from</span> <span class="nn">xonsh.execer</span> <span class="k">import</span> <span class="n">Execer</span>
 <span class="kn">from</span> <span class="nn">xonsh.proc</span> <span class="k">import</span> <span class="n">HiddenCommandPipeline</span>
 <span class="kn">from</span> <span class="nn">xonsh.jobs</span> <span class="k">import</span> <span class="n">ignore_sigtstp</span>
-<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="k">import</span> <span class="n">setup_win_unicode_console</span><span class="p">,</span> <span class="n">print_color</span>
+<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="k">import</span> <span class="n">setup_win_unicode_console</span><span class="p">,</span> <span class="n">print_color</span><span class="p">,</span> <span class="n">to_bool_or_int</span>
 <span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="k">import</span> <span class="n">HAS_PYGMENTS</span><span class="p">,</span> <span class="n">ON_WINDOWS</span>
 <span class="kn">from</span> <span class="nn">xonsh.codecache</span> <span class="k">import</span> <span class="n">run_script_with_cache</span><span class="p">,</span> <span class="n">run_code_with_cache</span>
 <span class="kn">from</span> <span class="nn">xonsh.xonfig</span> <span class="k">import</span> <span class="n">xonfig_main</span>
 <span class="kn">from</span> <span class="nn">xonsh.lazyimps</span> <span class="k">import</span> <span class="n">pygments</span><span class="p">,</span> <span class="n">pyghooks</span>
 <span class="kn">from</span> <span class="nn">xonsh.imphooks</span> <span class="k">import</span> <span class="n">install_hook</span>
 <span class="kn">from</span> <span class="nn">xonsh.events</span> <span class="k">import</span> <span class="n">events</span>
+<span class="kn">from</span> <span class="nn">xonsh.environ</span> <span class="k">import</span> <span class="n">xonshrc_context</span>
 
 
 <span class="n">events</span><span class="o">.</span><span class="n">transmogrify</span><span class="p">(</span><span class="s1">&#39;on_post_init&#39;</span><span class="p">,</span> <span class="s1">&#39;LoadEvent&#39;</span><span class="p">)</span>
@@ -190,10 +192,18 @@
                    <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store_true&#39;</span><span class="p">,</span>
                    <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
     <span class="n">p</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;--config-path&#39;</span><span class="p">,</span>
-                   <span class="n">help</span><span class="o">=</span><span class="s1">&#39;specify a custom static configuration file&#39;</span><span class="p">,</span>
+                   <span class="n">help</span><span class="o">=</span><span class="s1">&#39;DEPRECATED: static configuration files may now be used &#39;</span>
+                        <span class="s1">&#39;in the XONSHRC file list, see the --rc option.&#39;</span><span class="p">,</span>
                    <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;config_path&#39;</span><span class="p">,</span>
                    <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                    <span class="nb">type</span><span class="o">=</span><span class="n">path_argument</span><span class="p">)</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;--rc&#39;</span><span class="p">,</span>
+                   <span class="n">help</span><span class="o">=</span><span class="s2">&quot;The xonshrc files to load, these may be either xonsh &quot;</span>
+                        <span class="s2">&quot;files or JSON-based static configuration files.&quot;</span><span class="p">,</span>
+                   <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;rc&#39;</span><span class="p">,</span>
+                   <span class="n">nargs</span><span class="o">=</span><span class="s1">&#39;+&#39;</span><span class="p">,</span>
+                   <span class="nb">type</span><span class="o">=</span><span class="n">path_argument</span><span class="p">,</span>
+                   <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
     <span class="n">p</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;--no-rc&#39;</span><span class="p">,</span>
                    <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Do not load the .xonshrc files&quot;</span><span class="p">,</span>
                    <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;norc&#39;</span><span class="p">,</span>
@@ -272,6 +282,33 @@
     <span class="n">interactive</span> <span class="o">=</span> <span class="mi">3</span></div>
 
 
+<div class="viewcode-block" id="start_services"><a class="viewcode-back" href="../../api/main.html#xonsh.main.start_services">[docs]</a><span class="k">def</span> <span class="nf">start_services</span><span class="p">(</span><span class="n">shell_kwargs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Starts up the essential services in the proper order.</span>
+<span class="sd">    This returns the envrionment instance as a convenience.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">install_hook</span><span class="p">()</span>
+    <span class="c1"># create execer, which loads builtins</span>
+    <span class="n">ctx</span> <span class="o">=</span> <span class="n">shell_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;ctx&#39;</span><span class="p">,</span> <span class="p">{})</span>
+    <span class="n">debug</span> <span class="o">=</span> <span class="n">to_bool_or_int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s1">&#39;XONSH_DEBUG&#39;</span><span class="p">,</span> <span class="s1">&#39;0&#39;</span><span class="p">))</span>
+    <span class="n">events</span><span class="o">.</span><span class="n">on_timingprobe</span><span class="o">.</span><span class="n">fire</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s1">&#39;pre_execer_init&#39;</span><span class="p">)</span>
+    <span class="n">execer</span> <span class="o">=</span> <span class="n">Execer</span><span class="p">(</span><span class="n">xonsh_ctx</span><span class="o">=</span><span class="n">ctx</span><span class="p">,</span> <span class="n">debug_level</span><span class="o">=</span><span class="n">debug</span><span class="p">,</span>
+                    <span class="n">scriptcache</span><span class="o">=</span><span class="n">shell_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;scriptcache&#39;</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
+                    <span class="n">cacheall</span><span class="o">=</span><span class="n">shell_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;cacheall&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span>
+    <span class="n">events</span><span class="o">.</span><span class="n">on_timingprobe</span><span class="o">.</span><span class="n">fire</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s1">&#39;post_execer_init&#39;</span><span class="p">)</span>
+    <span class="c1"># load rc files</span>
+    <span class="n">login</span> <span class="o">=</span> <span class="n">shell_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;login&#39;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+    <span class="n">rc</span> <span class="o">=</span> <span class="n">shell_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;rc&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">rc</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;XONSHRC&#39;</span><span class="p">)</span> <span class="k">if</span> <span class="n">rc</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">rc</span>
+    <span class="n">events</span><span class="o">.</span><span class="n">on_pre_rc</span><span class="o">.</span><span class="n">fire</span><span class="p">()</span>
+    <span class="n">xonshrc_context</span><span class="p">(</span><span class="n">rcfiles</span><span class="o">=</span><span class="n">rc</span><span class="p">,</span> <span class="n">execer</span><span class="o">=</span><span class="n">execer</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="n">ctx</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">env</span><span class="p">,</span> <span class="n">login</span><span class="o">=</span><span class="n">login</span><span class="p">)</span>
+    <span class="n">events</span><span class="o">.</span><span class="n">on_post_rc</span><span class="o">.</span><span class="n">fire</span><span class="p">()</span>
+    <span class="c1"># create shell</span>
+    <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_shell__</span> <span class="o">=</span> <span class="n">Shell</span><span class="p">(</span><span class="n">execer</span><span class="o">=</span><span class="n">execer</span><span class="p">,</span> <span class="o">**</span><span class="n">shell_kwargs</span><span class="p">)</span>
+    <span class="n">ctx</span><span class="p">[</span><span class="s1">&#39;__name__&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;__main__&#39;</span>
+    <span class="k">return</span> <span class="n">env</span></div>
+
+
 <div class="viewcode-block" id="premain"><a class="viewcode-back" href="../../api/main.html#xonsh.main.premain">[docs]</a><span class="k">def</span> <span class="nf">premain</span><span class="p">(</span><span class="n">argv</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Setup for main xonsh entry point, returns parsed arguments.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">argv</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -297,8 +334,6 @@
                     <span class="s1">&#39;ctx&#39;</span><span class="p">:</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_ctx__</span><span class="p">}</span>
     <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">login</span><span class="p">:</span>
         <span class="n">shell_kwargs</span><span class="p">[</span><span class="s1">&#39;login&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
-    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">config_path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">shell_kwargs</span><span class="p">[</span><span class="s1">&#39;config&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">config_path</span>
     <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">norc</span><span class="p">:</span>
         <span class="n">shell_kwargs</span><span class="p">[</span><span class="s1">&#39;rc&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
     <span class="nb">setattr</span><span class="p">(</span><span class="n">sys</span><span class="p">,</span> <span class="s1">&#39;displayhook&#39;</span><span class="p">,</span> <span class="n">_pprint_displayhook</span><span class="p">)</span>
@@ -315,9 +350,7 @@
         <span class="n">args</span><span class="o">.</span><span class="n">mode</span> <span class="o">=</span> <span class="n">XonshMode</span><span class="o">.</span><span class="n">interactive</span>
         <span class="n">shell_kwargs</span><span class="p">[</span><span class="s1">&#39;completer&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="n">shell_kwargs</span><span class="p">[</span><span class="s1">&#39;login&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
-    <span class="n">install_hook</span><span class="p">()</span>
-    <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_shell__</span> <span class="o">=</span> <span class="n">Shell</span><span class="p">(</span><span class="o">**</span><span class="n">shell_kwargs</span><span class="p">)</span>
-    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">start_services</span><span class="p">(</span><span class="n">shell_kwargs</span><span class="p">)</span>
     <span class="n">env</span><span class="p">[</span><span class="s1">&#39;XONSH_LOGIN&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">shell_kwargs</span><span class="p">[</span><span class="s1">&#39;login&#39;</span><span class="p">]</span>
     <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">defines</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">env</span><span class="o">.</span><span class="n">update</span><span class="p">([</span><span class="n">x</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;=&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">args</span><span class="o">.</span><span class="n">defines</span><span class="p">])</span>
@@ -485,7 +518,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.5.4.dev60 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.5.4.dev71 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
       </ul>
