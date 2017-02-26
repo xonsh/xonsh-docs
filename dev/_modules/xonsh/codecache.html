@@ -8,7 +8,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>xonsh.codecache &#8212; xonsh 0.5.6.dev72 documentation</title>
+    <title>xonsh.codecache &#8212; xonsh 0.5.6.dev75 documentation</title>
     
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
@@ -17,7 +17,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../',
-        VERSION:     '0.5.6.dev72',
+        VERSION:     '0.5.6.dev75',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -49,7 +49,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.5.6.dev72 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.5.6.dev75 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -63,13 +63,16 @@
           <div class="body" role="main">
             
   <h1>Source code for xonsh.codecache</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">os</span>
+<span></span><span class="sd">&quot;&quot;&quot;Tools for caching xonsh code.&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">os</span>
 <span class="kn">import</span> <span class="nn">sys</span>
 <span class="kn">import</span> <span class="nn">hashlib</span>
 <span class="kn">import</span> <span class="nn">marshal</span>
 <span class="kn">import</span> <span class="nn">builtins</span>
 
+<span class="kn">from</span> <span class="nn">xonsh</span> <span class="k">import</span> <span class="n">__version__</span> <span class="k">as</span> <span class="n">XONSH_VERSION</span>
 <span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="k">import</span> <span class="n">lazyobject</span>
+<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="k">import</span> <span class="n">PYTHON_VERSION_INFO_BYTES</span>
 
 
 <span class="k">def</span> <span class="nf">_splitpath</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">sofar</span><span class="o">=</span><span class="p">[]):</span>
@@ -154,7 +157,18 @@
     <span class="k">if</span> <span class="n">cache_file_name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">_make_if_not_exists</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">cache_file_name</span><span class="p">))</span>
         <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">cache_file_name</span><span class="p">,</span> <span class="s1">&#39;wb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">cfile</span><span class="p">:</span>
+            <span class="n">cfile</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">XONSH_VERSION</span><span class="o">.</span><span class="n">encode</span><span class="p">()</span> <span class="o">+</span> <span class="sa">b</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">)</span>
+            <span class="n">cfile</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="nb">bytes</span><span class="p">(</span><span class="n">PYTHON_VERSION_INFO_BYTES</span><span class="p">)</span> <span class="o">+</span> <span class="sa">b</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">)</span>
             <span class="n">marshal</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">ccode</span><span class="p">,</span> <span class="n">cfile</span><span class="p">)</span></div>
+
+
+<span class="k">def</span> <span class="nf">_check_cache_versions</span><span class="p">(</span><span class="n">cfile</span><span class="p">):</span>
+    <span class="c1"># version data should be &lt; 1 kb</span>
+    <span class="n">ver</span> <span class="o">=</span> <span class="n">cfile</span><span class="o">.</span><span class="n">readline</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">ver</span> <span class="o">!=</span> <span class="n">XONSH_VERSION</span><span class="o">.</span><span class="n">encode</span><span class="p">():</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="n">ver</span> <span class="o">=</span> <span class="n">cfile</span><span class="o">.</span><span class="n">readline</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">ver</span> <span class="o">==</span> <span class="n">PYTHON_VERSION_INFO_BYTES</span>
 
 
 <div class="viewcode-block" id="compile_code"><a class="viewcode-back" href="../../api/codecache.html#xonsh.codecache.compile_code">[docs]</a><span class="k">def</span> <span class="nf">compile_code</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">code</span><span class="p">,</span> <span class="n">execer</span><span class="p">,</span> <span class="n">glb</span><span class="p">,</span> <span class="n">loc</span><span class="p">,</span> <span class="n">mode</span><span class="p">):</span>
@@ -188,6 +202,8 @@
     <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">cachefname</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">stat</span><span class="p">(</span><span class="n">cachefname</span><span class="p">)</span><span class="o">.</span><span class="n">st_mtime</span> <span class="o">&gt;=</span> <span class="n">os</span><span class="o">.</span><span class="n">stat</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span><span class="o">.</span><span class="n">st_mtime</span><span class="p">:</span>
             <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">cachefname</span><span class="p">,</span> <span class="s1">&#39;rb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">cfile</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">_check_cache_versions</span><span class="p">(</span><span class="n">cfile</span><span class="p">):</span>
+                    <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span>
                 <span class="n">ccode</span> <span class="o">=</span> <span class="n">marshal</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">cfile</span><span class="p">)</span>
                 <span class="n">run_cached</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="k">return</span> <span class="n">run_cached</span><span class="p">,</span> <span class="n">ccode</span></div>
@@ -234,6 +250,8 @@
     <span class="n">run_cached</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">cachefname</span><span class="p">):</span>
         <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">cachefname</span><span class="p">,</span> <span class="s1">&#39;rb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">cfile</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">_check_cache_versions</span><span class="p">(</span><span class="n">cfile</span><span class="p">):</span>
+                <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span>
             <span class="n">ccode</span> <span class="o">=</span> <span class="n">marshal</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">cfile</span><span class="p">)</span>
             <span class="n">run_cached</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="k">return</span> <span class="n">run_cached</span><span class="p">,</span> <span class="n">ccode</span></div>
@@ -306,7 +324,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../index.html">xonsh 0.5.6.dev72 documentation</a> &#187;</li>
+    <li><a href="../../index.html">xonsh 0.5.6.dev75 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
       </ul>
@@ -315,7 +333,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.2.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.3.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>
