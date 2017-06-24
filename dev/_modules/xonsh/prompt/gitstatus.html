@@ -8,7 +8,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>xonsh.prompt.gitstatus &#8212; xonsh 0.5.12 documentation</title>
+    <title>xonsh.prompt.gitstatus &#8212; xonsh 0.5.12.dev32 documentation</title>
     
     <link rel="stylesheet" href="../../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
@@ -17,7 +17,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../../',
-        VERSION:     '0.5.12',
+        VERSION:     '0.5.12.dev32',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -50,7 +50,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../index.html">xonsh 0.5.12 documentation</a> &#187;</li>
+    <li><a href="../../../index.html">xonsh 0.5.12.dev32 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -83,11 +83,33 @@
 
 <span class="k">def</span> <span class="nf">_check_output</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
     <span class="n">kwargs</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">dict</span><span class="p">(</span><span class="n">env</span><span class="o">=</span><span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">detype</span><span class="p">(),</span>
+                       <span class="n">stdout</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span>
                        <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">,</span>
-                       <span class="n">timeout</span><span class="o">=</span><span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="p">[</span><span class="s1">&#39;VC_BRANCH_TIMEOUT&#39;</span><span class="p">],</span>
                        <span class="n">universal_newlines</span><span class="o">=</span><span class="kc">True</span>
                        <span class="p">))</span>
-    <span class="k">return</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+    <span class="n">timeout</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="p">[</span><span class="s1">&#39;VC_BRANCH_TIMEOUT&#39;</span><span class="p">]</span>
+    <span class="c1"># See https://docs.python.org/3/library/subprocess.html#subprocess.Popen.communicate</span>
+    <span class="k">with</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="k">as</span> <span class="n">proc</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">out</span><span class="p">,</span> <span class="n">err</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">communicate</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">proc</span><span class="o">.</span><span class="n">returncode</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">(</span><span class="n">proc</span><span class="o">.</span><span class="n">returncode</span><span class="p">,</span> <span class="n">proc</span><span class="o">.</span><span class="n">args</span><span class="p">,</span> <span class="n">output</span><span class="o">=</span><span class="n">out</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">err</span><span class="p">)</span>  <span class="c1"># note err will always be empty as we redirect stderr to DEVNULL abvoe</span>
+            <span class="k">return</span> <span class="n">out</span>
+        <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">TimeoutExpired</span><span class="p">:</span>
+            <span class="c1"># We use `.terminate()` (SIGTERM) instead of `.kill()` (SIGKILL) here</span>
+            <span class="c1"># because otherwise we guarantee that a `.git/index.lock` file will be</span>
+            <span class="c1"># left over, and subsequent git operations will fail.</span>
+            <span class="c1"># We don&#39;t want that.</span>
+            <span class="c1"># As a result, we must rely on git to exit properly on SIGTERM.</span>
+            <span class="n">proc</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span>
+            <span class="c1"># We wait() to ensure that git has finished before the next</span>
+            <span class="c1"># `gitstatus` prompt is rendered (otherwise `index.lock` still exists,</span>
+            <span class="c1"># and it will fail).</span>
+            <span class="c1"># We don&#39;t technically have to call `wait()` here as the</span>
+            <span class="c1"># `with subprocess.Popen()` context manager above would do that</span>
+            <span class="c1"># for us, but we do it to be explicit that waiting is being done.</span>
+            <span class="n">proc</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>  <span class="c1"># we ignore what git says after we sent it SIGTERM</span>
+            <span class="k">raise</span>
 
 
 <span class="nd">@xl</span><span class="o">.</span><span class="n">lazyobject</span>
@@ -114,11 +136,10 @@
 
 
 <span class="k">def</span> <span class="nf">_get_tag_or_hash</span><span class="p">():</span>
-    <span class="n">tag</span> <span class="o">=</span> <span class="n">_check_output</span><span class="p">([</span><span class="s1">&#39;git&#39;</span><span class="p">,</span> <span class="s1">&#39;describe&#39;</span><span class="p">,</span> <span class="s1">&#39;--exact-match&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
-    <span class="k">if</span> <span class="n">tag</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">tag</span>
+    <span class="n">tag_or_hash</span> <span class="o">=</span> <span class="n">_check_output</span><span class="p">([</span><span class="s1">&#39;git&#39;</span><span class="p">,</span> <span class="s1">&#39;describe&#39;</span><span class="p">,</span> <span class="s1">&#39;--always&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
     <span class="n">hash_</span> <span class="o">=</span> <span class="n">_check_output</span><span class="p">([</span><span class="s1">&#39;git&#39;</span><span class="p">,</span> <span class="s1">&#39;rev-parse&#39;</span><span class="p">,</span> <span class="s1">&#39;--short&#39;</span><span class="p">,</span> <span class="s1">&#39;HEAD&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
-    <span class="k">return</span> <span class="n">_get_def</span><span class="p">(</span><span class="s1">&#39;HASH&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="n">hash_</span>
+    <span class="n">have_tag_name</span> <span class="o">=</span> <span class="n">tag_or_hash</span> <span class="o">!=</span> <span class="n">hash_</span>
+    <span class="k">return</span> <span class="n">tag_or_hash</span> <span class="k">if</span> <span class="n">have_tag_name</span> <span class="k">else</span> <span class="n">_get_def</span><span class="p">(</span><span class="s1">&#39;HASH&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="n">hash_</span>
 
 
 <span class="k">def</span> <span class="nf">_get_stash</span><span class="p">(</span><span class="n">gitdir</span><span class="p">):</span>
@@ -272,7 +293,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../index.html">xonsh 0.5.12 documentation</a> &#187;</li>
+    <li><a href="../../../index.html">xonsh 0.5.12.dev32 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li> 
       </ul>
