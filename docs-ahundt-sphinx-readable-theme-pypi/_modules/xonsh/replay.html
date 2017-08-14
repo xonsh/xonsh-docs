@@ -1,0 +1,222 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>xonsh.replay &#8212; xonsh 0.5.12.dev93 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/readable.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.5.12.dev93',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="shortcut icon" href="../../_static/magic_conch.ico"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
+
+  </head>
+  <body role="document">
+  
+  
+
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../sidebar.html">xonsh 0.5.12.dev93 documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for xonsh.replay</h1><div class="highlight"><pre>
+<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;Tools to replay xonsh history files.&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">builtins</span>
+<span class="kn">import</span> <span class="nn">collections.abc</span> <span class="k">as</span> <span class="nn">cabc</span>
+
+<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="k">import</span> <span class="n">swap</span>
+<span class="kn">from</span> <span class="nn">xonsh.lazyjson</span> <span class="k">import</span> <span class="n">LazyJSON</span>
+<span class="kn">from</span> <span class="nn">xonsh.environ</span> <span class="k">import</span> <span class="n">Env</span>
+<span class="kn">import</span> <span class="nn">xonsh.history.main</span> <span class="k">as</span> <span class="nn">xhm</span>
+
+
+<span class="n">DEFAULT_MERGE_ENVS</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;replay&#39;</span><span class="p">,</span> <span class="s1">&#39;native&#39;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="Replayer"><a class="viewcode-back" href="../../api/replay.html#xonsh.replay.Replayer">[docs]</a><span class="k">class</span> <span class="nc">Replayer</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Replays a xonsh history file.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">reopen</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        f : file handle or str</span>
+<span class="sd">            Path to xonsh history file.</span>
+<span class="sd">        reopen : bool, optional</span>
+<span class="sd">            Whether new file handle should be opened for each load, passed directly into</span>
+<span class="sd">            LazyJSON class.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_lj</span> <span class="o">=</span> <span class="n">LazyJSON</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">reopen</span><span class="o">=</span><span class="n">reopen</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__del__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_lj</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+<div class="viewcode-block" id="Replayer.replay"><a class="viewcode-back" href="../../api/replay.html#xonsh.replay.Replayer.replay">[docs]</a>    <span class="k">def</span> <span class="nf">replay</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">merge_envs</span><span class="o">=</span><span class="n">DEFAULT_MERGE_ENVS</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Replays the history specified, returns the history object where the code</span>
+<span class="sd">        was executed.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        merge_env : tuple of str or Mappings, optional</span>
+<span class="sd">            Describes how to merge the environments, in order of increasing precedence.</span>
+<span class="sd">            Available strings are &#39;replay&#39; and &#39;native&#39;. The &#39;replay&#39; env comes from the</span>
+<span class="sd">            history file that we are replaying. The &#39;native&#39; env comes from what this</span>
+<span class="sd">            instance of xonsh was started up with. Instead of a string, a dict or other</span>
+<span class="sd">            mapping may be passed in as well. Defaults to (&#39;replay&#39;, &#39;native&#39;).</span>
+<span class="sd">        target : str, optional</span>
+<span class="sd">            Path to new history file.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">shell</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_shell__</span>
+        <span class="n">re_env</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lj</span><span class="p">[</span><span class="s1">&#39;env&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">load</span><span class="p">()</span>
+        <span class="n">new_env</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_merge_envs</span><span class="p">(</span><span class="n">merge_envs</span><span class="p">,</span> <span class="n">re_env</span><span class="p">)</span>
+        <span class="n">new_hist</span> <span class="o">=</span> <span class="n">xhm</span><span class="o">.</span><span class="n">construct_history</span><span class="p">(</span>
+            <span class="n">env</span><span class="o">=</span><span class="n">new_env</span><span class="o">.</span><span class="n">detype</span><span class="p">(),</span> <span class="n">locked</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">ts</span><span class="o">=</span><span class="p">[</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">(),</span> <span class="kc">None</span><span class="p">],</span>
+            <span class="n">gc</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="n">target</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">swap</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s1">&#39;__xonsh_env__&#39;</span><span class="p">,</span> <span class="n">new_env</span><span class="p">),</span> <span class="n">swap</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s1">&#39;__xonsh_history__&#39;</span><span class="p">,</span> <span class="n">new_hist</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lj</span><span class="p">[</span><span class="s1">&#39;cmds&#39;</span><span class="p">]:</span>
+                <span class="n">inp</span> <span class="o">=</span> <span class="n">cmd</span><span class="p">[</span><span class="s1">&#39;inp&#39;</span><span class="p">]</span>
+                <span class="n">shell</span><span class="o">.</span><span class="n">default</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_exit__</span><span class="p">:</span>  <span class="c1"># prevent premature exit</span>
+                    <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_exit__</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">new_hist</span><span class="o">.</span><span class="n">flush</span><span class="p">(</span><span class="n">at_exit</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">new_hist</span></div>
+
+    <span class="k">def</span> <span class="nf">_merge_envs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">merge_envs</span><span class="p">,</span> <span class="n">re_env</span><span class="p">):</span>
+        <span class="n">new_env</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">merge_envs</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">e</span> <span class="o">==</span> <span class="s1">&#39;replay&#39;</span><span class="p">:</span>
+                <span class="n">new_env</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">re_env</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">e</span> <span class="o">==</span> <span class="s1">&#39;native&#39;</span><span class="p">:</span>
+                <span class="n">new_env</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Mapping</span><span class="p">):</span>
+                <span class="n">new_env</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s1">&#39;Type of env not understood: </span><span class="si">{0!r}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+        <span class="n">new_env</span> <span class="o">=</span> <span class="n">Env</span><span class="p">(</span><span class="o">**</span><span class="n">new_env</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">new_env</span></div>
+
+
+<span class="n">_REPLAY_PARSER</span> <span class="o">=</span> <span class="kc">None</span>
+
+
+<div class="viewcode-block" id="replay_create_parser"><a class="viewcode-back" href="../../api/replay.html#xonsh.replay.replay_create_parser">[docs]</a><span class="k">def</span> <span class="nf">replay_create_parser</span><span class="p">(</span><span class="n">p</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">global</span> <span class="n">_REPLAY_PARSER</span>
+    <span class="n">p_was_none</span> <span class="o">=</span> <span class="p">(</span><span class="n">p</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">_REPLAY_PARSER</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">p_was_none</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_REPLAY_PARSER</span>
+    <span class="k">if</span> <span class="n">p_was_none</span><span class="p">:</span>
+        <span class="kn">from</span> <span class="nn">argparse</span> <span class="k">import</span> <span class="n">ArgumentParser</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">ArgumentParser</span><span class="p">(</span><span class="s1">&#39;replay&#39;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s1">&#39;replays a xonsh history file&#39;</span><span class="p">)</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;--merge-envs&#39;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;merge_envs&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">DEFAULT_MERGE_ENVS</span><span class="p">,</span>
+                   <span class="n">nargs</span><span class="o">=</span><span class="s1">&#39;+&#39;</span><span class="p">,</span>
+                   <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Describes how to merge the environments, in order of &quot;</span>
+                        <span class="s2">&quot;increasing precedence. Available strings are &#39;replay&#39; and &quot;</span>
+                        <span class="s2">&quot;&#39;native&#39;. The &#39;replay&#39; env comes from the history file that we &quot;</span>
+                        <span class="s2">&quot;are replaying. The &#39;native&#39; env comes from what this instance &quot;</span>
+                        <span class="s2">&quot;of xonsh was started up with. One or more of these options may &quot;</span>
+                        <span class="s2">&quot;be passed in. Defaults to &#39;--merge-envs replay native&#39;.&quot;</span><span class="p">)</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;--json&#39;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;json&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s1">&#39;store_true&#39;</span><span class="p">,</span>
+                   <span class="n">help</span><span class="o">=</span><span class="s1">&#39;print history info in JSON format&#39;</span><span class="p">)</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;-o&#39;</span><span class="p">,</span> <span class="s1">&#39;--target&#39;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s1">&#39;target&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                   <span class="n">help</span><span class="o">=</span><span class="s1">&#39;path to new history file&#39;</span><span class="p">)</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s1">&#39;path&#39;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">&#39;path to replay history file&#39;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">p_was_none</span><span class="p">:</span>
+        <span class="n">_REPLAY_PARSER</span> <span class="o">=</span> <span class="n">p</span>
+    <span class="k">return</span> <span class="n">p</span></div>
+
+
+<div class="viewcode-block" id="replay_main_action"><a class="viewcode-back" href="../../api/replay.html#xonsh.replay.replay_main_action">[docs]</a><span class="k">def</span> <span class="nf">replay_main_action</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">ns</span><span class="p">,</span> <span class="n">stdout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="n">replayer</span> <span class="o">=</span> <span class="n">Replayer</span><span class="p">(</span><span class="n">ns</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
+    <span class="n">hist</span> <span class="o">=</span> <span class="n">replayer</span><span class="o">.</span><span class="n">replay</span><span class="p">(</span><span class="n">merge_envs</span><span class="o">=</span><span class="n">ns</span><span class="o">.</span><span class="n">merge_envs</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="n">ns</span><span class="o">.</span><span class="n">target</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;----------------------------------------------------------------&#39;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Just replayed history, new history has the following information&#39;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;----------------------------------------------------------------&#39;</span><span class="p">)</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">hist</span><span class="o">.</span><span class="n">info</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">ns</span><span class="o">.</span><span class="n">json</span><span class="p">:</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;</span><span class="si">{0}</span><span class="s1">: </span><span class="si">{1}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">items</span><span class="p">()]</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="replay_main"><a class="viewcode-back" href="../../api/replay.html#xonsh.replay.replay_main">[docs]</a><span class="k">def</span> <span class="nf">replay_main</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Acts as main function for replaying a xonsh history file.&quot;&quot;&quot;</span>
+    <span class="n">parser</span> <span class="o">=</span> <span class="n">replay_create_parser</span><span class="p">()</span>
+    <span class="n">ns</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+    <span class="n">replay_main_action</span><span class="p">(</span><span class="n">ns</span><span class="p">)</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../../sidebar.html">
+              <img class="logo" src="../../_static/ascii_conch_part_color_tight.png" alt="Logo"/>
+            </a></p><h3>Related Topics</h3>
+<ul>
+  <li><a href="../../sidebar.html">Documentation index</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+  <div class="footer">
+    &copy; Copyright 2015, Anthony Scopatz.
+    Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.6.
+  </div>
+  
+  </body>
+</html>

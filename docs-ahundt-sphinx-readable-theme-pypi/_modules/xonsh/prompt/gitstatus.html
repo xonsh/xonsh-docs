@@ -1,0 +1,271 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>xonsh.prompt.gitstatus &#8212; xonsh 0.5.12.dev93 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/readable.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.5.12.dev93',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true,
+        SOURCELINK_SUFFIX: '.txt'
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <link rel="shortcut icon" href="../../../_static/magic_conch.ico"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9">
+
+  </head>
+  <body role="document">
+  
+  
+
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="nav-item nav-item-0"><a href="../../../sidebar.html">xonsh 0.5.12.dev93 documentation</a> &#187;</li>
+          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for xonsh.prompt.gitstatus</h1><div class="highlight"><pre>
+<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
+<span class="sd">&quot;&quot;&quot;Informative git status prompt formatter&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">builtins</span>
+<span class="kn">import</span> <span class="nn">collections</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">subprocess</span>
+
+<span class="kn">import</span> <span class="nn">xonsh.lazyasd</span> <span class="k">as</span> <span class="nn">xl</span>
+
+
+<span class="n">GitStatus</span> <span class="o">=</span> <span class="n">collections</span><span class="o">.</span><span class="n">namedtuple</span><span class="p">(</span><span class="s1">&#39;GitStatus&#39;</span><span class="p">,</span>
+                                   <span class="p">[</span><span class="s1">&#39;branch&#39;</span><span class="p">,</span> <span class="s1">&#39;num_ahead&#39;</span><span class="p">,</span> <span class="s1">&#39;num_behind&#39;</span><span class="p">,</span>
+                                    <span class="s1">&#39;untracked&#39;</span><span class="p">,</span> <span class="s1">&#39;changed&#39;</span><span class="p">,</span> <span class="s1">&#39;conflicts&#39;</span><span class="p">,</span>
+                                    <span class="s1">&#39;staged&#39;</span><span class="p">,</span> <span class="s1">&#39;stashed&#39;</span><span class="p">,</span> <span class="s1">&#39;operations&#39;</span><span class="p">])</span>
+
+
+<span class="k">def</span> <span class="nf">_check_output</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="n">kwargs</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">dict</span><span class="p">(</span><span class="n">env</span><span class="o">=</span><span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">detype</span><span class="p">(),</span>
+                       <span class="n">stdout</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span>
+                       <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">,</span>
+                       <span class="n">universal_newlines</span><span class="o">=</span><span class="kc">True</span>
+                       <span class="p">))</span>
+    <span class="n">timeout</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="p">[</span><span class="s1">&#39;VC_BRANCH_TIMEOUT&#39;</span><span class="p">]</span>
+    <span class="c1"># See https://docs.python.org/3/library/subprocess.html#subprocess.Popen.communicate</span>
+    <span class="k">with</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="k">as</span> <span class="n">proc</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">out</span><span class="p">,</span> <span class="n">err</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">communicate</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">proc</span><span class="o">.</span><span class="n">returncode</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">(</span><span class="n">proc</span><span class="o">.</span><span class="n">returncode</span><span class="p">,</span> <span class="n">proc</span><span class="o">.</span><span class="n">args</span><span class="p">,</span> <span class="n">output</span><span class="o">=</span><span class="n">out</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">err</span><span class="p">)</span>  <span class="c1"># note err will always be empty as we redirect stderr to DEVNULL abvoe</span>
+            <span class="k">return</span> <span class="n">out</span>
+        <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">TimeoutExpired</span><span class="p">:</span>
+            <span class="c1"># We use `.terminate()` (SIGTERM) instead of `.kill()` (SIGKILL) here</span>
+            <span class="c1"># because otherwise we guarantee that a `.git/index.lock` file will be</span>
+            <span class="c1"># left over, and subsequent git operations will fail.</span>
+            <span class="c1"># We don&#39;t want that.</span>
+            <span class="c1"># As a result, we must rely on git to exit properly on SIGTERM.</span>
+            <span class="n">proc</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span>
+            <span class="c1"># We wait() to ensure that git has finished before the next</span>
+            <span class="c1"># `gitstatus` prompt is rendered (otherwise `index.lock` still exists,</span>
+            <span class="c1"># and it will fail).</span>
+            <span class="c1"># We don&#39;t technically have to call `wait()` here as the</span>
+            <span class="c1"># `with subprocess.Popen()` context manager above would do that</span>
+            <span class="c1"># for us, but we do it to be explicit that waiting is being done.</span>
+            <span class="n">proc</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>  <span class="c1"># we ignore what git says after we sent it SIGTERM</span>
+            <span class="k">raise</span>
+
+
+<span class="nd">@xl</span><span class="o">.</span><span class="n">lazyobject</span>
+<span class="k">def</span> <span class="nf">_DEFS</span><span class="p">():</span>
+    <span class="n">DEFS</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;HASH&#39;</span><span class="p">:</span> <span class="s1">&#39;:&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;BRANCH&#39;</span><span class="p">:</span> <span class="s1">&#39;</span><span class="si">{CYAN}</span><span class="s1">&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;OPERATION&#39;</span><span class="p">:</span> <span class="s1">&#39;</span><span class="si">{CYAN}</span><span class="s1">&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;STAGED&#39;</span><span class="p">:</span> <span class="s1">&#39;</span><span class="si">{RED}</span><span class="s1">●&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;CONFLICTS&#39;</span><span class="p">:</span> <span class="s1">&#39;</span><span class="si">{RED}</span><span class="s1">×&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;CHANGED&#39;</span><span class="p">:</span> <span class="s1">&#39;</span><span class="si">{BLUE}</span><span class="s1">+&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;UNTRACKED&#39;</span><span class="p">:</span> <span class="s1">&#39;…&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;STASHED&#39;</span><span class="p">:</span> <span class="s1">&#39;⚑&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;CLEAN&#39;</span><span class="p">:</span> <span class="s1">&#39;</span><span class="si">{BOLD_GREEN}</span><span class="s1">✓&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;AHEAD&#39;</span><span class="p">:</span> <span class="s1">&#39;↑·&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;BEHIND&#39;</span><span class="p">:</span> <span class="s1">&#39;↓·&#39;</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="n">DEFS</span>
+
+
+<span class="k">def</span> <span class="nf">_get_def</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
+    <span class="n">def_</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;XONSH_GITSTATUS_&#39;</span> <span class="o">+</span> <span class="n">key</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">def_</span> <span class="k">if</span> <span class="n">def_</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">_DEFS</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+
+
+<span class="k">def</span> <span class="nf">_get_tag_or_hash</span><span class="p">():</span>
+    <span class="n">tag_or_hash</span> <span class="o">=</span> <span class="n">_check_output</span><span class="p">([</span><span class="s1">&#39;git&#39;</span><span class="p">,</span> <span class="s1">&#39;describe&#39;</span><span class="p">,</span> <span class="s1">&#39;--always&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="n">hash_</span> <span class="o">=</span> <span class="n">_check_output</span><span class="p">([</span><span class="s1">&#39;git&#39;</span><span class="p">,</span> <span class="s1">&#39;rev-parse&#39;</span><span class="p">,</span> <span class="s1">&#39;--short&#39;</span><span class="p">,</span> <span class="s1">&#39;HEAD&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="n">have_tag_name</span> <span class="o">=</span> <span class="n">tag_or_hash</span> <span class="o">!=</span> <span class="n">hash_</span>
+    <span class="k">return</span> <span class="n">tag_or_hash</span> <span class="k">if</span> <span class="n">have_tag_name</span> <span class="k">else</span> <span class="n">_get_def</span><span class="p">(</span><span class="s1">&#39;HASH&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="n">hash_</span>
+
+
+<span class="k">def</span> <span class="nf">_get_stash</span><span class="p">(</span><span class="n">gitdir</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">gitdir</span><span class="p">,</span> <span class="s1">&#39;logs/refs/stash&#39;</span><span class="p">))</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">f</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">IOError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">0</span>
+
+
+<span class="k">def</span> <span class="nf">_gitoperation</span><span class="p">(</span><span class="n">gitdir</span><span class="p">):</span>
+    <span class="n">files</span> <span class="o">=</span> <span class="p">(</span>
+             <span class="p">(</span><span class="s1">&#39;rebase-merge&#39;</span><span class="p">,</span> <span class="s1">&#39;REBASE&#39;</span><span class="p">),</span>
+             <span class="p">(</span><span class="s1">&#39;rebase-apply&#39;</span><span class="p">,</span> <span class="s1">&#39;AM/REBASE&#39;</span><span class="p">),</span>
+             <span class="p">(</span><span class="s1">&#39;MERGE_HEAD&#39;</span><span class="p">,</span> <span class="s1">&#39;MERGING&#39;</span><span class="p">),</span>
+             <span class="p">(</span><span class="s1">&#39;CHERRY_PICK_HEAD&#39;</span><span class="p">,</span> <span class="s1">&#39;CHERRY-PICKING&#39;</span><span class="p">),</span>
+             <span class="p">(</span><span class="s1">&#39;REVERT_HEAD&#39;</span><span class="p">,</span> <span class="s1">&#39;REVERTING&#39;</span><span class="p">),</span>
+             <span class="p">(</span><span class="s1">&#39;BISECT_LOG&#39;</span><span class="p">,</span> <span class="s1">&#39;BISECTING&#39;</span><span class="p">),</span>
+             <span class="p">)</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">f</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">files</span>
+            <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">gitdir</span><span class="p">,</span> <span class="n">f</span><span class="p">[</span><span class="mi">0</span><span class="p">]))]</span>
+
+
+<div class="viewcode-block" id="gitstatus"><a class="viewcode-back" href="../../../api/prompt/gitstatus.html#xonsh.prompt.gitstatus.gitstatus">[docs]</a><span class="k">def</span> <span class="nf">gitstatus</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Return namedtuple with fields:</span>
+<span class="sd">    branch name, number of ahead commit, number of behind commit,</span>
+<span class="sd">    untracked number, changed number, conflicts number,</span>
+<span class="sd">    staged number, stashed number, operation.&quot;&quot;&quot;</span>
+    <span class="n">status</span> <span class="o">=</span> <span class="n">_check_output</span><span class="p">([</span><span class="s1">&#39;git&#39;</span><span class="p">,</span> <span class="s1">&#39;status&#39;</span><span class="p">,</span> <span class="s1">&#39;--porcelain&#39;</span><span class="p">,</span> <span class="s1">&#39;--branch&#39;</span><span class="p">])</span>
+    <span class="n">branch</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+    <span class="n">num_ahead</span><span class="p">,</span> <span class="n">num_behind</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span>
+    <span class="n">untracked</span><span class="p">,</span> <span class="n">changed</span><span class="p">,</span> <span class="n">conflicts</span><span class="p">,</span> <span class="n">staged</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">status</span><span class="o">.</span><span class="n">splitlines</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;##&#39;</span><span class="p">):</span>
+            <span class="n">line</span> <span class="o">=</span> <span class="n">line</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="k">if</span> <span class="s1">&#39;Initial commit on&#39;</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
+                <span class="n">branch</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="k">elif</span> <span class="s1">&#39;no branch&#39;</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
+                <span class="n">branch</span> <span class="o">=</span> <span class="n">_get_tag_or_hash</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="s1">&#39;...&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
+                <span class="n">branch</span> <span class="o">=</span> <span class="n">line</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">branch</span><span class="p">,</span> <span class="n">rest</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;...&#39;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="s1">&#39; &#39;</span> <span class="ow">in</span> <span class="n">rest</span><span class="p">:</span>
+                    <span class="n">divergence</span> <span class="o">=</span> <span class="n">rest</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39; &#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+                    <span class="n">divergence</span> <span class="o">=</span> <span class="n">divergence</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s1">&#39;[]&#39;</span><span class="p">)</span>
+                    <span class="k">for</span> <span class="n">div</span> <span class="ow">in</span> <span class="n">divergence</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;, &#39;</span><span class="p">):</span>
+                        <span class="k">if</span> <span class="s1">&#39;ahead&#39;</span> <span class="ow">in</span> <span class="n">div</span><span class="p">:</span>
+                            <span class="n">num_ahead</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">div</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="s1">&#39;ahead &#39;</span><span class="p">):]</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+                        <span class="k">elif</span> <span class="s1">&#39;behind&#39;</span> <span class="ow">in</span> <span class="n">div</span><span class="p">:</span>
+                            <span class="n">num_behind</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">div</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="s1">&#39;behind &#39;</span><span class="p">):]</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+        <span class="k">elif</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;??&#39;</span><span class="p">):</span>
+            <span class="n">untracked</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">line</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;M&#39;</span><span class="p">:</span>
+                <span class="n">changed</span> <span class="o">+=</span> <span class="mi">1</span>
+
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">line</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;U&#39;</span><span class="p">:</span>
+                <span class="n">conflicts</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">line</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="s1">&#39; &#39;</span><span class="p">:</span>
+                <span class="n">staged</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="n">gitdir</span> <span class="o">=</span> <span class="n">_check_output</span><span class="p">([</span><span class="s1">&#39;git&#39;</span><span class="p">,</span> <span class="s1">&#39;rev-parse&#39;</span><span class="p">,</span> <span class="s1">&#39;--git-dir&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="n">stashed</span> <span class="o">=</span> <span class="n">_get_stash</span><span class="p">(</span><span class="n">gitdir</span><span class="p">)</span>
+    <span class="n">operations</span> <span class="o">=</span> <span class="n">_gitoperation</span><span class="p">(</span><span class="n">gitdir</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">GitStatus</span><span class="p">(</span><span class="n">branch</span><span class="p">,</span> <span class="n">num_ahead</span><span class="p">,</span> <span class="n">num_behind</span><span class="p">,</span>
+                     <span class="n">untracked</span><span class="p">,</span> <span class="n">changed</span><span class="p">,</span> <span class="n">conflicts</span><span class="p">,</span> <span class="n">staged</span><span class="p">,</span> <span class="n">stashed</span><span class="p">,</span>
+                     <span class="n">operations</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="gitstatus_prompt"><a class="viewcode-back" href="../../../api/prompt/gitstatus.html#xonsh.prompt.gitstatus.gitstatus_prompt">[docs]</a><span class="k">def</span> <span class="nf">gitstatus_prompt</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Return str `BRANCH|OPERATOR|numbers`&quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">gitstatus</span><span class="p">()</span>
+    <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">SubprocessError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="n">ret</span> <span class="o">=</span> <span class="n">_get_def</span><span class="p">(</span><span class="s1">&#39;BRANCH&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="n">s</span><span class="o">.</span><span class="n">branch</span>
+    <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">num_ahead</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">_get_def</span><span class="p">(</span><span class="s1">&#39;AHEAD&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">num_ahead</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">num_behind</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">_get_def</span><span class="p">(</span><span class="s1">&#39;BEHIND&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">num_behind</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">_get_def</span><span class="p">(</span><span class="s1">&#39;OPERATION&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;|&#39;</span> <span class="o">+</span> <span class="s1">&#39;|&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">operations</span><span class="p">)</span>
+    <span class="n">ret</span> <span class="o">+=</span> <span class="s1">&#39;|&#39;</span>
+    <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">staged</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">_get_def</span><span class="p">(</span><span class="s1">&#39;STAGED&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">staged</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;</span><span class="si">{NO_COLOR}</span><span class="s1">&#39;</span>
+    <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">conflicts</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">_get_def</span><span class="p">(</span><span class="s1">&#39;CONFLICTS&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">conflicts</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;</span><span class="si">{NO_COLOR}</span><span class="s1">&#39;</span>
+    <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">changed</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">_get_def</span><span class="p">(</span><span class="s1">&#39;CHANGED&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">changed</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;</span><span class="si">{NO_COLOR}</span><span class="s1">&#39;</span>
+    <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">untracked</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">_get_def</span><span class="p">(</span><span class="s1">&#39;UNTRACKED&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">untracked</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;</span><span class="si">{NO_COLOR}</span><span class="s1">&#39;</span>
+    <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">stashed</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">_get_def</span><span class="p">(</span><span class="s1">&#39;STASHED&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">stashed</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;</span><span class="si">{NO_COLOR}</span><span class="s1">&#39;</span>
+    <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">staged</span> <span class="o">+</span> <span class="n">s</span><span class="o">.</span><span class="n">conflicts</span> <span class="o">+</span> <span class="n">s</span><span class="o">.</span><span class="n">changed</span> <span class="o">+</span> <span class="n">s</span><span class="o">.</span><span class="n">untracked</span> <span class="o">+</span> <span class="n">s</span><span class="o">.</span><span class="n">stashed</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">_get_def</span><span class="p">(</span><span class="s1">&#39;CLEAN&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;</span><span class="si">{NO_COLOR}</span><span class="s1">&#39;</span>
+    <span class="n">ret</span> <span class="o">+=</span> <span class="s1">&#39;</span><span class="si">{NO_COLOR}</span><span class="s1">&#39;</span>
+
+    <span class="k">return</span> <span class="n">ret</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+            <p class="logo"><a href="../../../sidebar.html">
+              <img class="logo" src="../../../_static/ascii_conch_part_color_tight.png" alt="Logo"/>
+            </a></p><h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../sidebar.html">Documentation index</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <div><input type="text" name="q" /></div>
+      <div><input type="submit" value="Go" /></div>
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+  <div class="footer">
+    &copy; Copyright 2015, Anthony Scopatz.
+    Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.5.6.
+  </div>
+  
+  </body>
+</html>
