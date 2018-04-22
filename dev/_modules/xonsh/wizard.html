@@ -8,7 +8,7 @@
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     
-    <title>xonsh.wizard &#8212; xonsh 0.6.1.dev7 documentation</title>
+    <title>xonsh.wizard &#8212; xonsh 0.6.1.dev30 documentation</title>
     
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
@@ -17,7 +17,7 @@
     <script type="text/javascript">
       var DOCUMENTATION_OPTIONS = {
         URL_ROOT:    '../../',
-        VERSION:     '0.6.1.dev7',
+        VERSION:     '0.6.1.dev30',
         COLLAPSE_INDEX: false,
         FILE_SUFFIX: '.html',
         HAS_SOURCE:  true,
@@ -50,7 +50,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../sidebar.html">xonsh 0.6.1.dev7 documentation</a> &#187;</li>
+    <li><a href="../../sidebar.html">xonsh 0.6.1.dev30 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -67,11 +67,14 @@
 <span></span><span class="sd">&quot;&quot;&quot;Tools for creating command-line and web-based wizards from a tree of nodes.</span>
 <span class="sd">&quot;&quot;&quot;</span>
 <span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
 <span class="kn">import</span> <span class="nn">ast</span>
 <span class="kn">import</span> <span class="nn">json</span>
 <span class="kn">import</span> <span class="nn">pprint</span>
+<span class="kn">import</span> <span class="nn">fnmatch</span>
 <span class="kn">import</span> <span class="nn">builtins</span>
 <span class="kn">import</span> <span class="nn">textwrap</span>
+<span class="kn">import</span> <span class="nn">collections.abc</span> <span class="k">as</span> <span class="nn">cabc</span>
 
 <span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="k">import</span> <span class="n">to_bool</span><span class="p">,</span> <span class="n">to_bool_or_break</span><span class="p">,</span> <span class="n">backup_file</span><span class="p">,</span> <span class="n">print_color</span>
 <span class="kn">from</span> <span class="nn">xonsh.jsonutils</span> <span class="k">import</span> <span class="n">serialize_xonsh_json</span>
@@ -279,7 +282,7 @@
 
 
 <div class="viewcode-block" id="StateFile"><a class="viewcode-back" href="../../api/wizard.html#xonsh.wizard.StateFile">[docs]</a><span class="k">class</span> <span class="nc">StateFile</span><span class="p">(</span><span class="n">Input</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;Node for representing the state as a JSON file under a default or user</span>
+    <span class="sd">&quot;&quot;&quot;Node for representing the state as a file under a default or user</span>
 <span class="sd">    given file name. This node type is likely not useful on its own.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
@@ -319,16 +322,103 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">prompt</span> <span class="o">=</span> <span class="s1">&#39;filename [default=</span><span class="si">{0!r}</span><span class="s1">]: &#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">val</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="Save"><a class="viewcode-back" href="../../api/wizard.html#xonsh.wizard.Save">[docs]</a><span class="k">class</span> <span class="nc">Save</span><span class="p">(</span><span class="n">StateFile</span><span class="p">):</span>
+<div class="viewcode-block" id="SaveJSON"><a class="viewcode-back" href="../../api/wizard.html#xonsh.wizard.SaveJSON">[docs]</a><span class="k">class</span> <span class="nc">SaveJSON</span><span class="p">(</span><span class="n">StateFile</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Node for saving the state as a JSON file under a default or user</span>
 <span class="sd">    given file name.</span>
 <span class="sd">    &quot;&quot;&quot;</span></div>
 
 
-<div class="viewcode-block" id="Load"><a class="viewcode-back" href="../../api/wizard.html#xonsh.wizard.Load">[docs]</a><span class="k">class</span> <span class="nc">Load</span><span class="p">(</span><span class="n">StateFile</span><span class="p">):</span>
+<div class="viewcode-block" id="LoadJSON"><a class="viewcode-back" href="../../api/wizard.html#xonsh.wizard.LoadJSON">[docs]</a><span class="k">class</span> <span class="nc">LoadJSON</span><span class="p">(</span><span class="n">StateFile</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Node for loading the state as a JSON file under a default or user</span>
 <span class="sd">    given file name.</span>
 <span class="sd">    &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="FileInserter"><a class="viewcode-back" href="../../api/wizard.html#xonsh.wizard.FileInserter">[docs]</a><span class="k">class</span> <span class="nc">FileInserter</span><span class="p">(</span><span class="n">StateFile</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Node for inserting the state into a file in between a prefix and suffix.</span>
+<span class="sd">    The state is converted according to some dumper rules.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">attrs</span> <span class="o">=</span> <span class="p">(</span><span class="s1">&#39;prefix&#39;</span><span class="p">,</span> <span class="s1">&#39;suffix&#39;</span><span class="p">,</span> <span class="s1">&#39;dump_rules&#39;</span><span class="p">,</span> <span class="s1">&#39;default_file&#39;</span><span class="p">,</span> <span class="s1">&#39;check&#39;</span><span class="p">,</span>
+             <span class="s1">&#39;ask_filename&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prefix</span><span class="p">,</span> <span class="n">suffix</span><span class="p">,</span> <span class="n">dump_rules</span><span class="p">,</span> <span class="n">default_file</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                 <span class="n">check</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">ask_filename</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        prefix : str</span>
+<span class="sd">            Starting unique string in file to find and begin the insertion at,</span>
+<span class="sd">            e.g. &#39;# XONSH WIZARD START\n&#39;</span>
+<span class="sd">        suffix : str</span>
+<span class="sd">            Ending unique string to find in the file and end the replacement at,</span>
+<span class="sd">            e.g. &#39;\n# XONSH WIZARD END&#39;</span>
+<span class="sd">        dump_rules : dict of strs to functions</span>
+<span class="sd">            This is a dictionary that maps the path-like match strings to functions</span>
+<span class="sd">            that take the flat path and the value as arguments and convert the state</span>
+<span class="sd">            value at a path to a string. The keys here may use wildcards (as seen in</span>
+<span class="sd">            the standard library fnmatch module). For example::</span>
+
+<span class="sd">                dump_rules = {</span>
+<span class="sd">                    &#39;/path/to/exact&#39;: lambda path, x: str(x),</span>
+<span class="sd">                    &#39;/otherpath/*&#39;: lambda path, x: x,</span>
+<span class="sd">                    &#39;*ending&#39;: lambda path x: repr(x),</span>
+<span class="sd">                    &#39;/&#39;: None,</span>
+<span class="sd">                    }</span>
+
+<span class="sd">            If a wildcard is not used in a path, then that rule will be used</span>
+<span class="sd">            used on an exact match. If wildcards are used, the deepest and longest</span>
+<span class="sd">            match is used.  If None is given instead of a the function, it means to</span>
+<span class="sd">            skip generating that key.</span>
+<span class="sd">        default_file : str, optional</span>
+<span class="sd">            The default filename to save the file as.</span>
+<span class="sd">        check : bool, optional</span>
+<span class="sd">            Whether to print the current state and ask if it should be</span>
+<span class="sd">            saved/loaded prior to asking for the file name and saving the</span>
+<span class="sd">            file, default=True.</span>
+<span class="sd">        ask_filename : bool, optional</span>
+<span class="sd">            Whether to ask for the filename (if ``False``, always use the</span>
+<span class="sd">            default filename)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_dr</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">default_file</span><span class="o">=</span><span class="n">default_file</span><span class="p">,</span> <span class="n">check</span><span class="o">=</span><span class="n">check</span><span class="p">,</span>
+                         <span class="n">ask_filename</span><span class="o">=</span><span class="n">ask_filename</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">prefix</span> <span class="o">=</span> <span class="n">prefix</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">suffix</span> <span class="o">=</span> <span class="n">suffix</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dump_rules</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">string_rules</span> <span class="o">=</span> <span class="n">dump_rules</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">dump_rules</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dr</span>
+
+    <span class="nd">@dump_rules</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">dump_rules</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="n">dr</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">func</span> <span class="ow">in</span> <span class="n">value</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">key_trans</span> <span class="o">=</span> <span class="n">fnmatch</span><span class="o">.</span><span class="n">translate</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+            <span class="n">r</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">key_trans</span><span class="p">)</span>
+            <span class="n">dr</span><span class="p">[</span><span class="n">r</span><span class="p">]</span> <span class="o">=</span> <span class="n">func</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_dr</span> <span class="o">=</span> <span class="n">dr</span>
+
+<div class="viewcode-block" id="FileInserter.find_rule"><a class="viewcode-back" href="../../api/wizard.html#xonsh.wizard.FileInserter.find_rule">[docs]</a>    <span class="k">def</span> <span class="nf">find_rule</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;For a path, find the key and conversion function that should be used to</span>
+<span class="sd">        dump a value.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">string_rules</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">path</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">string_rules</span><span class="p">[</span><span class="n">path</span><span class="p">]</span>
+        <span class="n">len_funcs</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">rule</span><span class="p">,</span> <span class="n">func</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">dump_rules</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">m</span> <span class="o">=</span> <span class="n">rule</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">m</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">span</span><span class="p">()</span>
+            <span class="n">len_funcs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">j</span> <span class="o">-</span> <span class="n">i</span><span class="p">,</span> <span class="n">rule</span><span class="p">,</span> <span class="n">func</span><span class="p">))</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">len_funcs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c1"># No dump rule function for path</span>
+            <span class="k">return</span> <span class="n">path</span><span class="p">,</span> <span class="kc">None</span>
+        <span class="n">len_funcs</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">rule</span><span class="p">,</span> <span class="n">func</span> <span class="o">=</span> <span class="n">len_funcs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">rule</span><span class="p">,</span> <span class="n">func</span></div></div>
 
 
 <div class="viewcode-block" id="create_truefalse_cond"><a class="viewcode-back" href="../../api/wizard.html#xonsh.wizard.create_truefalse_cond">[docs]</a><span class="k">def</span> <span class="nf">create_truefalse_cond</span><span class="p">(</span><span class="n">prompt</span><span class="o">=</span><span class="s1">&#39;yes or no [default: no]? &#39;</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
@@ -578,7 +668,32 @@
             <span class="n">i</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="n">p</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">loc</span><span class="p">)</span>
             <span class="n">ex</span> <span class="o">=</span> <span class="p">[</span><span class="kc">None</span><span class="p">]</span><span class="o">*</span><span class="n">i</span>
             <span class="n">loc</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">ex</span><span class="p">)</span>
-        <span class="n">loc</span><span class="p">[</span><span class="n">p</span><span class="p">]</span> <span class="o">=</span> <span class="n">val</span></div></div>
+        <span class="n">loc</span><span class="p">[</span><span class="n">p</span><span class="p">]</span> <span class="o">=</span> <span class="n">val</span></div>
+
+<div class="viewcode-block" id="StateVisitor.flatten"><a class="viewcode-back" href="../../api/wizard.html#xonsh.wizard.StateVisitor.flatten">[docs]</a>    <span class="k">def</span> <span class="nf">flatten</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="s1">&#39;/&#39;</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">flat</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns a dict version of the store whose keys are paths.</span>
+<span class="sd">        Note that list and dict entries will always end in &#39;/&#39;, allowing</span>
+<span class="sd">        disambiquation in dump_rules.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">value</span>
+        <span class="n">flat</span> <span class="o">=</span> <span class="p">{}</span> <span class="k">if</span> <span class="n">flat</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">flat</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Mapping</span><span class="p">):</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="n">path</span> <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s1">&#39;/&#39;</span><span class="p">)</span> <span class="k">else</span> <span class="n">path</span> <span class="o">+</span> <span class="s1">&#39;/&#39;</span>
+            <span class="n">flat</span><span class="p">[</span><span class="n">path</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+            <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">value</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">p</span> <span class="o">=</span> <span class="n">path</span> <span class="o">+</span> <span class="n">k</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="n">path</span><span class="o">=</span><span class="n">p</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">v</span><span class="p">,</span> <span class="n">flat</span><span class="o">=</span><span class="n">flat</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">)):</span>
+            <span class="n">flat</span><span class="p">[</span><span class="n">path</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Sequence</span><span class="p">):</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="n">path</span> <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s1">&#39;/&#39;</span><span class="p">)</span> <span class="k">else</span> <span class="n">path</span> <span class="o">+</span> <span class="s1">&#39;/&#39;</span>
+            <span class="n">flat</span><span class="p">[</span><span class="n">path</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+                <span class="n">p</span> <span class="o">=</span> <span class="n">path</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="n">path</span><span class="o">=</span><span class="n">p</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">v</span><span class="p">,</span> <span class="n">flat</span><span class="o">=</span><span class="n">flat</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">flat</span><span class="p">[</span><span class="n">path</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="k">return</span> <span class="n">flat</span></div></div>
 
 
 <span class="n">YN</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{GREEN}</span><span class="s2">yes</span><span class="si">{NO_COLOR}</span><span class="s2"> or </span><span class="si">{RED}</span><span class="s2">no</span><span class="si">{NO_COLOR}</span><span class="s2"> [default: no]? &quot;</span>
@@ -677,7 +792,7 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">indices</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">idxname</span><span class="p">]</span> <span class="o">=</span> <span class="n">origidx</span>
         <span class="k">return</span> <span class="n">rtns</span></div>
 
-<div class="viewcode-block" id="PromptVisitor.visit_save"><a class="viewcode-back" href="../../api/wizard.html#xonsh.wizard.PromptVisitor.visit_save">[docs]</a>    <span class="k">def</span> <span class="nf">visit_save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">):</span>
+<div class="viewcode-block" id="PromptVisitor.visit_savejson"><a class="viewcode-back" href="../../api/wizard.html#xonsh.wizard.PromptVisitor.visit_savejson">[docs]</a>    <span class="k">def</span> <span class="nf">visit_savejson</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">):</span>
         <span class="n">jstate</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">state</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
                             <span class="n">default</span><span class="o">=</span><span class="n">serialize_xonsh_json</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">check</span><span class="p">:</span>
@@ -701,7 +816,7 @@
             <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">jstate</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">fname</span></div>
 
-<div class="viewcode-block" id="PromptVisitor.visit_load"><a class="viewcode-back" href="../../api/wizard.html#xonsh.wizard.PromptVisitor.visit_load">[docs]</a>    <span class="k">def</span> <span class="nf">visit_load</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">):</span>
+<div class="viewcode-block" id="PromptVisitor.visit_loadjson"><a class="viewcode-back" href="../../api/wizard.html#xonsh.wizard.PromptVisitor.visit_loadjson">[docs]</a>    <span class="k">def</span> <span class="nf">visit_loadjson</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">check</span><span class="p">:</span>
             <span class="n">ap</span> <span class="o">=</span> <span class="s1">&#39;Would you like to load an existing file, &#39;</span> <span class="o">+</span> <span class="n">YN</span>
             <span class="n">asker</span> <span class="o">=</span> <span class="n">TrueFalse</span><span class="p">(</span><span class="n">prompt</span><span class="o">=</span><span class="n">ap</span><span class="p">)</span>
@@ -718,6 +833,49 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="n">print_color</span><span class="p">((</span><span class="s1">&#39;{{RED}}</span><span class="si">{0!r}</span><span class="s1"> could not be found, &#39;</span>
                          <span class="s1">&#39;continuing.{{NO_COLOR}}&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">fname</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">fname</span></div>
+
+<div class="viewcode-block" id="PromptVisitor.visit_fileinserter"><a class="viewcode-back" href="../../api/wizard.html#xonsh.wizard.PromptVisitor.visit_fileinserter">[docs]</a>    <span class="k">def</span> <span class="nf">visit_fileinserter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">):</span>
+        <span class="c1"># perform the dumping operation.</span>
+        <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">prefix</span><span class="p">]</span>
+        <span class="n">flat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">path</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">flat</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+            <span class="n">rule</span><span class="p">,</span> <span class="n">func</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">find_rule</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">func</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">line</span> <span class="o">=</span> <span class="n">func</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">suffix</span><span class="p">)</span>
+        <span class="n">new</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span>
+        <span class="c1"># check if we should write this out</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">check</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s1">&#39;The current state to insert is:</span><span class="se">\n\n</span><span class="si">{0}</span><span class="se">\n</span><span class="s1">&#39;</span>
+            <span class="nb">print</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">textwrap</span><span class="o">.</span><span class="n">indent</span><span class="p">(</span><span class="n">new</span><span class="p">,</span> <span class="s1">&#39;    &#39;</span><span class="p">)))</span>
+            <span class="n">ap</span> <span class="o">=</span> <span class="s1">&#39;Would you like to write out the current state, &#39;</span> <span class="o">+</span> <span class="n">YN</span>
+            <span class="n">asker</span> <span class="o">=</span> <span class="n">TrueFalse</span><span class="p">(</span><span class="n">prompt</span><span class="o">=</span><span class="n">ap</span><span class="p">)</span>
+            <span class="n">do_save</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">visit</span><span class="p">(</span><span class="n">asker</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">do_save</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">Unstorable</span>
+        <span class="c1"># get and backup the file.</span>
+        <span class="n">fname</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">ask_filename</span><span class="p">:</span>
+            <span class="n">fname</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">visit_input</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">fname</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">fname</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">default_file</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">fname</span><span class="p">):</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="n">s</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="n">before</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">s</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">prefix</span><span class="p">)</span>
+            <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">after</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">suffix</span><span class="p">)</span>
+            <span class="n">backup_file</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">before</span> <span class="o">=</span> <span class="n">after</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+            <span class="n">dname</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">dname</span><span class="p">:</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">dname</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="c1"># write out the file</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="s1">&#39;w&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">before</span> <span class="o">+</span> <span class="n">new</span> <span class="o">+</span> <span class="n">after</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">fname</span></div></div>
 </pre></div>
 
@@ -771,7 +929,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../sidebar.html">xonsh 0.6.1.dev7 documentation</a> &#187;</li>
+    <li><a href="../../sidebar.html">xonsh 0.6.1.dev30 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
       </ul>
