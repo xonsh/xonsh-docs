@@ -80,8 +80,7 @@
 
 <span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="k">import</span> <span class="n">lazyobject</span>
 <span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="k">import</span> <span class="n">to_bool</span><span class="p">,</span> <span class="n">ensure_string</span>
-<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="k">import</span> <span class="n">ON_WINDOWS</span><span class="p">,</span> <span class="n">ON_CYGWIN</span><span class="p">,</span> <span class="n">ON_MSYS</span>
-
+<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="k">import</span> <span class="n">ON_WINDOWS</span><span class="p">,</span> <span class="n">ON_CYGWIN</span><span class="p">,</span> <span class="n">ON_MSYS</span><span class="p">,</span> <span class="n">os_environ</span>
 
 <span class="n">COMMAND</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span><span class="si">{seterrprevcmd}</span><span class="s2"></span>
 <span class="si">{prevcmd}</span><span class="s2"></span>
@@ -601,20 +600,43 @@
     <span class="k">return</span> <span class="n">shell</span></div>
 
 
-<div class="viewcode-block" id="load_foreign_envs"><a class="viewcode-back" href="../../api/foreign_shells.html#xonsh.foreign_shells.load_foreign_envs">[docs]</a><span class="k">def</span> <span class="nf">load_foreign_envs</span><span class="p">(</span><span class="n">shells</span><span class="p">):</span>
+<span class="k">def</span> <span class="nf">_get_shells</span><span class="p">(</span><span class="n">shells</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">issue_warning</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">shells</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">config</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s1">&#39;Only one of shells and config may be non-None.&#39;</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">shells</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">pass</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s1">&#39;__xonsh_env__&#39;</span><span class="p">,</span> <span class="n">os_environ</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;LOADED_CONFIG&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="n">conf</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_config__</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="kn">from</span> <span class="nn">xonsh.environ</span> <span class="k">import</span> <span class="n">load_static_config</span>
+            <span class="n">conf</span> <span class="o">=</span> <span class="n">load_static_config</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span>
+        <span class="n">shells</span> <span class="o">=</span> <span class="n">conf</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;foreign_shells&#39;</span><span class="p">,</span> <span class="p">())</span>
+    <span class="k">return</span> <span class="n">shells</span>
+
+
+<div class="viewcode-block" id="load_foreign_envs"><a class="viewcode-back" href="../../api/foreign_shells.html#xonsh.foreign_shells.load_foreign_envs">[docs]</a><span class="k">def</span> <span class="nf">load_foreign_envs</span><span class="p">(</span><span class="n">shells</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">issue_warning</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Loads environments from foreign shells.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
-<span class="sd">    shells : sequence of dicts</span>
+<span class="sd">    shells : sequence of dicts, optional</span>
 <span class="sd">        An iterable of dicts that can be passed into foreign_shell_data() as</span>
-<span class="sd">        keyword arguments.</span>
+<span class="sd">        keyword arguments. Not compatible with config not being None.</span>
+<span class="sd">    config : str of None, optional</span>
+<span class="sd">        Path to the static config file. Not compatible with shell not being None.</span>
+<span class="sd">        If both shell and config is None, then it will be read from the</span>
+<span class="sd">        $XONSHCONFIG environment variable.</span>
+<span class="sd">    issue_warning : bool, optional</span>
+<span class="sd">        Issues warnings if config file cannot be found.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
 <span class="sd">    env : dict</span>
 <span class="sd">        A dictionary of the merged environments.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">shells</span> <span class="o">=</span> <span class="n">_get_shells</span><span class="p">(</span><span class="n">shells</span><span class="o">=</span><span class="n">shells</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="n">config</span><span class="p">,</span> <span class="n">issue_warning</span><span class="o">=</span><span class="n">issue_warning</span><span class="p">)</span>
     <span class="n">env</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="k">for</span> <span class="n">shell</span> <span class="ow">in</span> <span class="n">shells</span><span class="p">:</span>
         <span class="n">shell</span> <span class="o">=</span> <span class="n">ensure_shell</span><span class="p">(</span><span class="n">shell</span><span class="p">)</span>
@@ -624,20 +646,27 @@
     <span class="k">return</span> <span class="n">env</span></div>
 
 
-<div class="viewcode-block" id="load_foreign_aliases"><a class="viewcode-back" href="../../api/foreign_shells.html#xonsh.foreign_shells.load_foreign_aliases">[docs]</a><span class="k">def</span> <span class="nf">load_foreign_aliases</span><span class="p">(</span><span class="n">shells</span><span class="p">):</span>
+<div class="viewcode-block" id="load_foreign_aliases"><a class="viewcode-back" href="../../api/foreign_shells.html#xonsh.foreign_shells.load_foreign_aliases">[docs]</a><span class="k">def</span> <span class="nf">load_foreign_aliases</span><span class="p">(</span><span class="n">shells</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">issue_warning</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Loads aliases from foreign shells.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
-<span class="sd">    shells : sequence of dicts</span>
+<span class="sd">    shells : sequence of dicts, optional</span>
 <span class="sd">        An iterable of dicts that can be passed into foreign_shell_data() as</span>
-<span class="sd">        keyword arguments.</span>
+<span class="sd">        keyword arguments. Not compatible with config not being None.</span>
+<span class="sd">    config : str of None, optional</span>
+<span class="sd">        Path to the static config file. Not compatible with shell not being None.</span>
+<span class="sd">        If both shell and config is None, then it will be read from the</span>
+<span class="sd">        $XONSHCONFIG environment variable.</span>
+<span class="sd">    issue_warning : bool, optional</span>
+<span class="sd">        Issues warnings if config file cannot be found.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
 <span class="sd">    aliases : dict</span>
 <span class="sd">        A dictionary of the merged aliases.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">shells</span> <span class="o">=</span> <span class="n">_get_shells</span><span class="p">(</span><span class="n">shells</span><span class="o">=</span><span class="n">shells</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="n">config</span><span class="p">,</span> <span class="n">issue_warning</span><span class="o">=</span><span class="n">issue_warning</span><span class="p">)</span>
     <span class="n">aliases</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="n">xonsh_aliases</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">aliases</span>
     <span class="k">for</span> <span class="n">shell</span> <span class="ow">in</span> <span class="n">shells</span><span class="p">:</span>
