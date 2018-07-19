@@ -95,7 +95,7 @@
 <span class="c1"># dependencies</span>
 <span class="kn">from</span> <span class="nn">xonsh</span> <span class="k">import</span> <span class="n">__version__</span>
 <span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="k">import</span> <span class="n">LazyObject</span><span class="p">,</span> <span class="n">LazyDict</span><span class="p">,</span> <span class="n">lazyobject</span>
-<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="k">import</span> <span class="p">(</span><span class="n">has_prompt_toolkit</span><span class="p">,</span> <span class="n">scandir</span><span class="p">,</span> <span class="n">DEFAULT_ENCODING</span><span class="p">,</span>
+<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="k">import</span> <span class="p">(</span><span class="n">scandir</span><span class="p">,</span> <span class="n">DEFAULT_ENCODING</span><span class="p">,</span>
                             <span class="n">ON_LINUX</span><span class="p">,</span> <span class="n">ON_WINDOWS</span><span class="p">,</span> <span class="n">PYTHON_VERSION_INFO</span><span class="p">,</span>
                             <span class="n">expanduser</span><span class="p">,</span> <span class="n">os_environ</span><span class="p">)</span>
 
@@ -1622,18 +1622,37 @@
     <span class="k">return</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_shell__</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">color_style</span><span class="p">()</span></div>
 
 
+<span class="k">def</span> <span class="nf">_token_attr_from_stylemap</span><span class="p">(</span><span class="n">stylemap</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;yields tokens attr, and index from a stylemap &quot;&quot;&quot;</span>
+    <span class="kn">import</span> <span class="nn">prompt_toolkit</span> <span class="k">as</span> <span class="nn">ptk</span>
+    <span class="k">if</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_shell__</span><span class="o">.</span><span class="n">shell_type</span> <span class="o">==</span> <span class="s1">&#39;prompt_toolkit1&#39;</span><span class="p">:</span>
+        <span class="n">style</span> <span class="o">=</span> <span class="n">ptk</span><span class="o">.</span><span class="n">styles</span><span class="o">.</span><span class="n">style_from_dict</span><span class="p">(</span><span class="n">stylemap</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">token</span> <span class="ow">in</span> <span class="n">stylemap</span><span class="p">:</span>
+            <span class="k">yield</span> <span class="n">token</span><span class="p">,</span> <span class="n">style</span><span class="o">.</span><span class="n">token_to_attrs</span><span class="p">[</span><span class="n">token</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">style</span> <span class="o">=</span> <span class="n">ptk</span><span class="o">.</span><span class="n">styles</span><span class="o">.</span><span class="n">style_from_pygments_dict</span><span class="p">(</span><span class="n">stylemap</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">token</span> <span class="ow">in</span> <span class="n">stylemap</span><span class="p">:</span>
+            <span class="n">style_str</span> <span class="o">=</span> <span class="s1">&#39;class:</span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+                <span class="n">ptk</span><span class="o">.</span><span class="n">styles</span><span class="o">.</span><span class="n">pygments</span><span class="o">.</span><span class="n">pygments_token_to_classname</span><span class="p">(</span><span class="n">token</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">yield</span> <span class="p">(</span><span class="n">token</span><span class="p">,</span> <span class="n">style</span><span class="o">.</span><span class="n">get_attrs_for_style_str</span><span class="p">(</span><span class="n">style_str</span><span class="p">))</span>
+
+
+<span class="k">def</span> <span class="nf">_get_color_lookup_table</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Returns the prompt_toolkit win32 ColorLookupTable &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_shell__</span><span class="o">.</span><span class="n">shell_type</span> <span class="o">==</span> <span class="s1">&#39;prompt_toolkit1&#39;</span><span class="p">:</span>
+        <span class="kn">from</span> <span class="nn">prompt_toolkit.terminal.win32_output</span> <span class="k">import</span> <span class="n">ColorLookupTable</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="kn">from</span> <span class="nn">prompt_toolkit.output.win32</span> <span class="k">import</span> <span class="n">ColorLookupTable</span>
+    <span class="k">return</span> <span class="n">ColorLookupTable</span><span class="p">()</span>
+
+
 <span class="k">def</span> <span class="nf">_get_color_indexes</span><span class="p">(</span><span class="n">style_map</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot; Generates the color and windows color index for a style &quot;&quot;&quot;</span>
-    <span class="kn">import</span> <span class="nn">prompt_toolkit</span>
-    <span class="n">table</span> <span class="o">=</span> <span class="n">prompt_toolkit</span><span class="o">.</span><span class="n">terminal</span><span class="o">.</span><span class="n">win32_output</span><span class="o">.</span><span class="n">ColorLookupTable</span><span class="p">()</span>
-    <span class="n">pt_style</span> <span class="o">=</span> <span class="n">prompt_toolkit</span><span class="o">.</span><span class="n">styles</span><span class="o">.</span><span class="n">style_from_dict</span><span class="p">(</span><span class="n">style_map</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">token</span> <span class="ow">in</span> <span class="n">style_map</span><span class="p">:</span>
-        <span class="n">attr</span> <span class="o">=</span> <span class="n">pt_style</span><span class="o">.</span><span class="n">token_to_attrs</span><span class="p">[</span><span class="n">token</span><span class="p">]</span>
+    <span class="sd">&quot;&quot;&quot;Generates the color and windows color index for a style &quot;&quot;&quot;</span>
+    <span class="n">table</span> <span class="o">=</span> <span class="n">_get_color_lookup_table</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">token</span><span class="p">,</span> <span class="n">attr</span> <span class="ow">in</span> <span class="n">_token_attr_from_stylemap</span><span class="p">(</span><span class="n">style_map</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">attr</span><span class="o">.</span><span class="n">color</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">try</span><span class="p">:</span>
-                <span class="n">index</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">lookup_color</span><span class="p">(</span><span class="n">attr</span><span class="o">.</span><span class="n">color</span><span class="p">,</span> <span class="n">attr</span><span class="o">.</span><span class="n">bgcolor</span><span class="p">)</span>
-            <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
-                <span class="n">index</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">lookup_fg_color</span><span class="p">(</span><span class="n">attr</span><span class="o">.</span><span class="n">color</span><span class="p">)</span>
+            <span class="n">index</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">lookup_fg_color</span><span class="p">(</span><span class="n">attr</span><span class="o">.</span><span class="n">color</span><span class="p">)</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="n">rgb</span> <span class="o">=</span> <span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">attr</span><span class="o">.</span><span class="n">color</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="mi">2</span><span class="p">],</span> <span class="mi">16</span><span class="p">),</span>
                        <span class="nb">int</span><span class="p">(</span><span class="n">attr</span><span class="o">.</span><span class="n">color</span><span class="p">[</span><span class="mi">2</span><span class="p">:</span><span class="mi">4</span><span class="p">],</span> <span class="mi">16</span><span class="p">),</span>
@@ -1650,9 +1669,7 @@
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">modified_style</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="n">stype</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;SHELL_TYPE&#39;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="p">(</span><span class="ow">not</span> <span class="n">ON_WINDOWS</span> <span class="ow">or</span>
-            <span class="p">(</span><span class="n">stype</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s1">&#39;prompt_toolkit&#39;</span><span class="p">,</span> <span class="s1">&#39;best&#39;</span><span class="p">))</span> <span class="ow">or</span>
-            <span class="p">(</span><span class="n">stype</span> <span class="o">==</span> <span class="s1">&#39;best&#39;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">has_prompt_toolkit</span><span class="p">())):</span>
+    <span class="k">if</span> <span class="p">(</span><span class="ow">not</span> <span class="n">ON_WINDOWS</span> <span class="ow">or</span> <span class="s1">&#39;prompt_toolkit&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">stype</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">modified_style</span>
     <span class="k">if</span> <span class="n">replace_colors</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">ansi</span><span class="p">:</span>
@@ -1688,9 +1705,7 @@
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">modified_style</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="n">stype</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh_env__</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;SHELL_TYPE&#39;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="p">(</span><span class="ow">not</span> <span class="n">ON_WINDOWS</span> <span class="ow">or</span>
-            <span class="p">(</span><span class="n">stype</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s1">&#39;prompt_toolkit&#39;</span><span class="p">,</span> <span class="s1">&#39;best&#39;</span><span class="p">))</span> <span class="ow">or</span>
-            <span class="p">(</span><span class="n">stype</span> <span class="o">==</span> <span class="s1">&#39;best&#39;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">has_prompt_toolkit</span><span class="p">())):</span>
+    <span class="k">if</span> <span class="p">(</span><span class="ow">not</span> <span class="n">ON_WINDOWS</span> <span class="ow">or</span> <span class="s1">&#39;prompt_toolkit1&#39;</span> <span class="o">!=</span> <span class="n">stype</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">modified_style</span>
     <span class="k">for</span> <span class="n">token</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">rgb</span> <span class="ow">in</span> <span class="n">_get_color_indexes</span><span class="p">(</span><span class="n">style_map</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">idx</span> <span class="o">==</span> <span class="mi">7</span> <span class="ow">and</span> <span class="n">rgb</span><span class="p">:</span>
