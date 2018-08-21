@@ -451,6 +451,9 @@
 <span class="sd">            Handle to captured stdin</span>
 <span class="sd">        captured_stderr : file-like</span>
 <span class="sd">            Handle to captured stderr</span>
+<span class="sd">        stack : list of FrameInfo namedtuples or None</span>
+<span class="sd">            The stack of the call-site of alias, if the alias requires it.</span>
+<span class="sd">            None otherwise.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_stdin</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stdout</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stderr</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="c1"># args</span>
@@ -471,6 +474,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">last_in_pipeline</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">captured_stdout</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">captured_stderr</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stack</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="k">def</span> <span class="nf">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="n">s</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span> <span class="o">+</span> <span class="s1">&#39;(&#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;, &#39;</span>
@@ -631,6 +635,7 @@
         <span class="n">spec</span><span class="o">.</span><span class="n">resolve_auto_cd</span><span class="p">()</span>
         <span class="n">spec</span><span class="o">.</span><span class="n">resolve_executable_commands</span><span class="p">()</span>
         <span class="n">spec</span><span class="o">.</span><span class="n">resolve_alias_cls</span><span class="p">()</span>
+        <span class="n">spec</span><span class="o">.</span><span class="n">resolve_stack</span><span class="p">()</span>
         <span class="k">return</span> <span class="n">spec</span></div>
 
 <div class="viewcode-block" id="SubprocSpec.redirect_leading"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.SubprocSpec.redirect_leading">[docs]</a>    <span class="k">def</span> <span class="nf">redirect_leading</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -718,7 +723,24 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">threadable</span> <span class="o">=</span> <span class="n">thable</span>
         <span class="c1"># also check capturability, while we are here</span>
         <span class="n">cpable</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">alias</span><span class="p">,</span> <span class="s1">&#39;__xonsh_capturable__&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">captured</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">captured</span> <span class="o">=</span> <span class="n">cpable</span></div></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">captured</span> <span class="o">=</span> <span class="n">cpable</span></div>
+
+<div class="viewcode-block" id="SubprocSpec.resolve_stack"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.SubprocSpec.resolve_stack">[docs]</a>    <span class="k">def</span> <span class="nf">resolve_stack</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Computes the stack for a callable alias&#39;s call-site, if needed.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">callable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">alias</span><span class="p">):</span>
+            <span class="k">return</span>
+        <span class="c1"># check that we actual need the stack</span>
+        <span class="n">sig</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">signature</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">alias</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sig</span><span class="o">.</span><span class="n">parameters</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">5</span> <span class="ow">and</span> <span class="s1">&#39;stack&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">sig</span><span class="o">.</span><span class="n">parameters</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="c1"># compute the stack, and filter out these build methods</span>
+        <span class="c1"># run_subproc() is the 4th command in the stack</span>
+        <span class="c1"># we want to filter out one up, e.g. subproc_captured_hiddenobject()</span>
+        <span class="c1"># after that the stack from the call site starts.</span>
+        <span class="n">stack</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="n">context</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">stack</span><span class="p">[</span><span class="mi">3</span><span class="p">][</span><span class="mi">3</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;run_subproc&#39;</span><span class="p">,</span> <span class="s1">&#39;xonsh stack has changed!&#39;</span>
+        <span class="k">del</span> <span class="n">stack</span><span class="p">[:</span><span class="mi">5</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stack</span> <span class="o">=</span> <span class="n">stack</span></div></div>
 
 
 <span class="k">def</span> <span class="nf">_safe_pipe_properties</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">use_tty</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
