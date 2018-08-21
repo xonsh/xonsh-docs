@@ -8,7 +8,7 @@
   <head>
     <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <title>xonsh.pyghooks &#8212; xonsh 0.7.5 documentation</title>
+    <title>xonsh.pyghooks &#8212; xonsh 0.7.6.dev23 documentation</title>
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
     <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
@@ -38,7 +38,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../sidebar.html">xonsh 0.7.5 documentation</a> &#187;</li>
+    <li><a href="../../sidebar.html">xonsh 0.7.6.dev23 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -77,14 +77,21 @@
     <span class="n">intensify_colors_for_cmd_exe</span><span class="p">,</span>
     <span class="n">ansicolors_to_ptk1_names</span><span class="p">,</span>
     <span class="n">ANSICOLOR_NAMES_MAP</span><span class="p">,</span>
-    <span class="n">hardcode_colors_for_win10</span>
+    <span class="n">PTK_NEW_OLD_COLOR_MAP</span><span class="p">,</span>
+    <span class="n">hardcode_colors_for_win10</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="kn">from</span> <span class="nn">xonsh.color_tools</span> <span class="k">import</span> <span class="p">(</span><span class="n">RE_BACKGROUND</span><span class="p">,</span> <span class="n">BASE_XONSH_COLORS</span><span class="p">,</span> <span class="n">make_palette</span><span class="p">,</span>
                                <span class="n">find_closest_color</span><span class="p">)</span>
 <span class="kn">from</span> <span class="nn">xonsh.style_tools</span> <span class="k">import</span> <span class="n">norm_name</span>
 <span class="kn">from</span> <span class="nn">xonsh.lazyimps</span> <span class="k">import</span> <span class="n">terminal256</span>
-<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="k">import</span> <span class="n">os_environ</span><span class="p">,</span> <span class="n">win_ansi_support</span>
+<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="k">import</span> <span class="p">(</span>
+    <span class="n">os_environ</span><span class="p">,</span>
+    <span class="n">win_ansi_support</span><span class="p">,</span>
+    <span class="n">ptk_version_info</span><span class="p">,</span>
+    <span class="n">pygments_version_info</span><span class="p">,</span>
+<span class="p">)</span>
+
 <span class="kn">from</span> <span class="nn">xonsh.pygments_cache</span> <span class="k">import</span> <span class="n">get_style_by_name</span>
 
 
@@ -1389,12 +1396,43 @@
     <span class="k">return</span> <span class="n">astyle</span></div>
 
 
+<span class="k">def</span> <span class="nf">_monkey_patch_pygments_codes</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot; Monky patch pygments&#39; dict of console codes,</span>
+<span class="sd">        with new color names</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span> <span class="nn">pygments.console</span>
+    <span class="k">if</span> <span class="s1">&#39;brightblack&#39;</span> <span class="ow">in</span> <span class="n">pygments</span><span class="o">.</span><span class="n">console</span><span class="o">.</span><span class="n">codes</span><span class="p">:</span>
+        <span class="c1"># Assume that colors are already fixed in pygments</span>
+        <span class="c1"># for example when using pygments from source</span>
+        <span class="k">return</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">pygments</span><span class="o">.</span><span class="n">console</span><span class="p">,</span> <span class="s2">&quot;_xonsh_patched&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+        <span class="n">patched_codes</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">new</span><span class="p">,</span> <span class="n">old</span> <span class="ow">in</span> <span class="n">PTK_NEW_OLD_COLOR_MAP</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">old</span> <span class="ow">in</span> <span class="n">pygments</span><span class="o">.</span><span class="n">console</span><span class="o">.</span><span class="n">codes</span><span class="p">:</span>
+                <span class="n">patched_codes</span><span class="p">[</span><span class="n">new</span><span class="p">[</span><span class="mi">1</span><span class="p">:]]</span> <span class="o">=</span> <span class="n">pygments</span><span class="o">.</span><span class="n">console</span><span class="o">.</span><span class="n">codes</span><span class="p">[</span><span class="n">old</span><span class="p">]</span>
+        <span class="n">pygments</span><span class="o">.</span><span class="n">console</span><span class="o">.</span><span class="n">codes</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">patched_codes</span><span class="p">)</span>
+        <span class="n">pygments</span><span class="o">.</span><span class="n">console</span><span class="o">.</span><span class="n">_xonsh_patched</span> <span class="o">=</span> <span class="kc">True</span>
+
+
 <span class="c1">#</span>
 <span class="c1"># Formatter</span>
 <span class="c1">#</span>
 
 <div class="viewcode-block" id="XonshTerminal256Formatter"><a class="viewcode-back" href="../../api/pyghooks.html#xonsh.pyghooks.XonshTerminal256Formatter">[docs]</a><span class="nd">@lazyobject</span>
 <span class="k">def</span> <span class="nf">XonshTerminal256Formatter</span><span class="p">():</span>
+
+    <span class="k">if</span> <span class="p">(</span>
+        <span class="n">ptk_version_info</span><span class="p">()</span>
+        <span class="ow">and</span> <span class="n">ptk_version_info</span><span class="p">()</span> <span class="o">&gt;</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="ow">and</span> <span class="n">pygments_version_info</span><span class="p">()</span>
+        <span class="ow">and</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">pygments_version_info</span><span class="p">()</span> <span class="o">&lt;</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+    <span class="p">):</span>
+        <span class="c1"># Monky patch pygments&#39; dict of console codes</span>
+        <span class="c1"># with the new color names used by PTK2</span>
+        <span class="c1"># Can be removed once pygment names get fixed.</span>
+        <span class="n">_monkey_patch_pygments_codes</span><span class="p">()</span>
+
     <span class="k">class</span> <span class="nc">XonshTerminal256FormatterProxy</span><span class="p">(</span><span class="n">terminal256</span><span class="o">.</span><span class="n">Terminal256Formatter</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Proxy class for xonsh terminal256 formatting that understands.</span>
 <span class="sd">        xonsh color tokens.</span>
@@ -1465,7 +1503,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../sidebar.html">xonsh 0.7.5 documentation</a> &#187;</li>
+    <li><a href="../../sidebar.html">xonsh 0.7.6.dev23 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
       </ul>
@@ -1474,7 +1512,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.7.7.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.7.5.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>
