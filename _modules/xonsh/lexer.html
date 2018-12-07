@@ -8,7 +8,7 @@
   <head>
     <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <title>xonsh.lexer &#8212; xonsh 0.8.3 documentation</title>
+    <title>xonsh.lexer &#8212; xonsh 0.8.4.dev75 documentation</title>
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css" />
@@ -39,7 +39,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../sidebar.html">xonsh 0.8.3 documentation</a> &#187;</li>
+    <li><a href="../../sidebar.html">xonsh 0.8.4.dev75 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -59,6 +59,7 @@
 <span class="sd">Written using a hybrid of ``tokenize`` and PLY.</span>
 <span class="sd">&quot;&quot;&quot;</span>
 <span class="kn">import</span> <span class="nn">io</span>
+<span class="kn">import</span> <span class="nn">re</span>
 
 <span class="c1"># &#39;keyword&#39; interferes with ast.keyword</span>
 <span class="kn">import</span> <span class="nn">keyword</span> <span class="k">as</span> <span class="nn">kwmod</span>
@@ -171,21 +172,33 @@
     <span class="k">return</span> <span class="n">tm</span>
 
 
+<span class="n">NEED_WHITESPACE</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">([</span><span class="s2">&quot;and&quot;</span><span class="p">,</span> <span class="s2">&quot;or&quot;</span><span class="p">])</span>
+
+
+<span class="nd">@lazyobject</span>
+<span class="k">def</span> <span class="nf">RE_NEED_WHITESPACE</span><span class="p">():</span>
+    <span class="n">pattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s2">&quot;\s?(&quot;</span> <span class="o">+</span> <span class="s2">&quot;|&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">NEED_WHITESPACE</span><span class="p">)</span> <span class="o">+</span> <span class="sa">r</span><span class="s2">&quot;)(\s|[</span><span class="se">\\</span><span class="s2">]$)&quot;</span>
+    <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">pattern</span><span class="p">)</span>
+
+
 <div class="viewcode-block" id="handle_name"><a class="viewcode-back" href="../../api/lexer.html#xonsh.lexer.handle_name">[docs]</a><span class="k">def</span> <span class="nf">handle_name</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Function for handling name tokens&quot;&quot;&quot;</span>
     <span class="n">typ</span> <span class="o">=</span> <span class="s2">&quot;NAME&quot;</span>
+    <span class="n">state</span><span class="p">[</span><span class="s2">&quot;last&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">token</span>
+    <span class="n">needs_whitespace</span> <span class="o">=</span> <span class="n">token</span><span class="o">.</span><span class="n">string</span> <span class="ow">in</span> <span class="n">NEED_WHITESPACE</span>
+    <span class="n">has_whitespace</span> <span class="o">=</span> <span class="n">needs_whitespace</span> <span class="ow">and</span> <span class="n">RE_NEED_WHITESPACE</span><span class="o">.</span><span class="n">match</span><span class="p">(</span>
+        <span class="n">token</span><span class="o">.</span><span class="n">line</span><span class="p">[</span><span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">token</span><span class="o">.</span><span class="n">start</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="p">:]</span>
+    <span class="p">)</span>
     <span class="k">if</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;pymode&quot;</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="mi">0</span><span class="p">]:</span>
-        <span class="k">if</span> <span class="n">token</span><span class="o">.</span><span class="n">string</span> <span class="ow">in</span> <span class="n">kwmod</span><span class="o">.</span><span class="n">kwlist</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">needs_whitespace</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">has_whitespace</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="k">elif</span> <span class="n">token</span><span class="o">.</span><span class="n">string</span> <span class="ow">in</span> <span class="n">kwmod</span><span class="o">.</span><span class="n">kwlist</span><span class="p">:</span>
             <span class="n">typ</span> <span class="o">=</span> <span class="n">token</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
-        <span class="n">state</span><span class="p">[</span><span class="s2">&quot;last&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">token</span>
         <span class="k">yield</span> <span class="n">_new_token</span><span class="p">(</span><span class="n">typ</span><span class="p">,</span> <span class="n">token</span><span class="o">.</span><span class="n">string</span><span class="p">,</span> <span class="n">token</span><span class="o">.</span><span class="n">start</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="n">prev</span> <span class="o">=</span> <span class="n">state</span><span class="p">[</span><span class="s2">&quot;last&quot;</span><span class="p">]</span>
-        <span class="n">state</span><span class="p">[</span><span class="s2">&quot;last&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">token</span>
-        <span class="n">has_whitespace</span> <span class="o">=</span> <span class="n">prev</span><span class="o">.</span><span class="n">end</span> <span class="o">!=</span> <span class="n">token</span><span class="o">.</span><span class="n">start</span>
-        <span class="k">if</span> <span class="n">token</span><span class="o">.</span><span class="n">string</span> <span class="o">==</span> <span class="s2">&quot;and&quot;</span> <span class="ow">and</span> <span class="n">has_whitespace</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">has_whitespace</span> <span class="ow">and</span> <span class="n">token</span><span class="o">.</span><span class="n">string</span> <span class="o">==</span> <span class="s2">&quot;and&quot;</span><span class="p">:</span>
             <span class="k">yield</span> <span class="n">_new_token</span><span class="p">(</span><span class="s2">&quot;AND&quot;</span><span class="p">,</span> <span class="n">token</span><span class="o">.</span><span class="n">string</span><span class="p">,</span> <span class="n">token</span><span class="o">.</span><span class="n">start</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="n">token</span><span class="o">.</span><span class="n">string</span> <span class="o">==</span> <span class="s2">&quot;or&quot;</span> <span class="ow">and</span> <span class="n">has_whitespace</span><span class="p">:</span>
+        <span class="k">elif</span> <span class="n">has_whitespace</span> <span class="ow">and</span> <span class="n">token</span><span class="o">.</span><span class="n">string</span> <span class="o">==</span> <span class="s2">&quot;or&quot;</span><span class="p">:</span>
             <span class="k">yield</span> <span class="n">_new_token</span><span class="p">(</span><span class="s2">&quot;OR&quot;</span><span class="p">,</span> <span class="n">token</span><span class="o">.</span><span class="n">string</span><span class="p">,</span> <span class="n">token</span><span class="o">.</span><span class="n">start</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">yield</span> <span class="n">_new_token</span><span class="p">(</span><span class="s2">&quot;NAME&quot;</span><span class="p">,</span> <span class="n">token</span><span class="o">.</span><span class="n">string</span><span class="p">,</span> <span class="n">token</span><span class="o">.</span><span class="n">start</span><span class="p">)</span></div>
@@ -605,7 +618,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../sidebar.html">xonsh 0.8.3 documentation</a> &#187;</li>
+    <li><a href="../../sidebar.html">xonsh 0.8.4.dev75 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
       </ul>
