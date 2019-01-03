@@ -8,7 +8,7 @@
   <head>
     <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <title>xontrib.voxapi &#8212; xonsh 0.8.7.dev10 documentation</title>
+    <title>xontrib.voxapi &#8212; xonsh 0.8.7.dev20 documentation</title>
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css" />
@@ -40,7 +40,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../sidebar.html">xonsh 0.8.7.dev10 documentation</a> &#187;</li>
+    <li><a href="../../sidebar.html">xonsh 0.8.7.dev20 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -66,10 +66,12 @@
 <span class="sd">&quot;&quot;&quot;</span>
 <span class="kn">import</span> <span class="nn">os</span>
 <span class="kn">import</span> <span class="nn">sys</span>
-<span class="kn">import</span> <span class="nn">venv</span>
 <span class="kn">import</span> <span class="nn">shutil</span>
+<span class="kn">import</span> <span class="nn">logging</span>
 <span class="kn">import</span> <span class="nn">builtins</span>
 <span class="kn">import</span> <span class="nn">collections.abc</span>
+<span class="kn">import</span> <span class="nn">subprocess</span> <span class="k">as</span> <span class="nn">sp</span>
+
 
 <span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="k">import</span> <span class="n">ON_POSIX</span><span class="p">,</span> <span class="n">ON_WINDOWS</span>
 <span class="kn">from</span> <span class="nn">xonsh.fs</span> <span class="k">import</span> <span class="n">PathLike</span><span class="p">,</span> <span class="n">fspath</span>
@@ -170,14 +172,22 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">venvdir</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s1">&#39;VIRTUALENV_HOME&#39;</span><span class="p">]</span>
 
-<div class="viewcode-block" id="Vox.create"><a class="viewcode-back" href="../../api/vox.html#xontrib.voxapi.Vox.create">[docs]</a>    <span class="k">def</span> <span class="nf">create</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">system_site_packages</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">symlinks</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-               <span class="n">with_pip</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<div class="viewcode-block" id="Vox.create"><a class="viewcode-back" href="../../api/vox.html#xontrib.voxapi.Vox.create">[docs]</a>    <span class="k">def</span> <span class="nf">create</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">name</span><span class="p">,</span>
+        <span class="n">interpreter</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">system_site_packages</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">symlinks</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">with_pip</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Create a virtual environment in $VIRTUALENV_HOME with python3&#39;s ``venv``.</span>
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        name : str</span>
 <span class="sd">            Virtual environment name</span>
+<span class="sd">        interpreter: str</span>
+<span class="sd">            Python interpreter used to create the virtual environment.</span>
 <span class="sd">        system_site_packages : bool</span>
 <span class="sd">            If True, the system (global) site-packages dir is available to</span>
 <span class="sd">            created environments.</span>
@@ -187,6 +197,9 @@
 <span class="sd">        with_pip : bool</span>
 <span class="sd">            If True, ensure pip is installed in the virtual environment. (Default is True)</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">interpreter</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">_get_vox_default_interpreter</span><span class="p">()</span> <span class="k">if</span> <span class="n">interpreter</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">interpreter</span>
+        <span class="p">)</span>
         <span class="c1"># NOTE: clear=True is the same as delete then create.</span>
         <span class="c1"># NOTE: upgrade=True is its own method</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">PathLike</span><span class="p">):</span>
@@ -194,14 +207,16 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="n">env_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">venvdir</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_check_reserved</span><span class="p">(</span><span class="n">env_path</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;venv can&#39;t contain reserved names (</span><span class="si">{}</span><span class="s2">)&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">_subdir_names</span><span class="p">())))</span>
-        <span class="n">venv</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
-            <span class="n">env_path</span><span class="p">,</span>
-            <span class="n">system_site_packages</span><span class="o">=</span><span class="n">system_site_packages</span><span class="p">,</span> <span class="n">symlinks</span><span class="o">=</span><span class="n">symlinks</span><span class="p">,</span>
-            <span class="n">with_pip</span><span class="o">=</span><span class="n">with_pip</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;venv can&#39;t contain reserved names (</span><span class="si">{}</span><span class="s2">)&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+                    <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">_subdir_names</span><span class="p">())</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_create</span><span class="p">(</span><span class="n">env_path</span><span class="p">,</span> <span class="n">interpreter</span><span class="p">,</span> <span class="n">symlinks</span><span class="o">=</span><span class="n">symlinks</span><span class="p">,</span> <span class="n">with_pip</span><span class="o">=</span><span class="n">with_pip</span><span class="p">)</span>
         <span class="n">events</span><span class="o">.</span><span class="n">vox_on_create</span><span class="o">.</span><span class="n">fire</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="Vox.upgrade"><a class="viewcode-back" href="../../api/vox.html#xontrib.voxapi.Vox.upgrade">[docs]</a>    <span class="k">def</span> <span class="nf">upgrade</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">symlinks</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">with_pip</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<div class="viewcode-block" id="Vox.upgrade"><a class="viewcode-back" href="../../api/vox.html#xontrib.voxapi.Vox.upgrade">[docs]</a>    <span class="k">def</span> <span class="nf">upgrade</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">symlinks</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">with_pip</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">interpreter</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Create a virtual environment in $VIRTUALENV_HOME with python3&#39;s ``venv``.</span>
 
 <span class="sd">        WARNING: If a virtual environment was created with symlinks or without PIP, you must</span>
@@ -211,33 +226,77 @@
 <span class="sd">        ----------</span>
 <span class="sd">        name : str</span>
 <span class="sd">            Virtual environment name</span>
+<span class="sd">        interpreter: str</span>
+<span class="sd">            The Python interpreter used to create the virtualenv</span>
 <span class="sd">        symlinks : bool</span>
 <span class="sd">            If True, attempt to symlink rather than copy files into virtual</span>
 <span class="sd">            environment.</span>
 <span class="sd">        with_pip : bool</span>
 <span class="sd">            If True, ensure pip is installed in the virtual environment.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">interpreter</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">_get_vox_default_interpreter</span><span class="p">()</span> <span class="k">if</span> <span class="n">interpreter</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">interpreter</span>
+        <span class="p">)</span>
         <span class="c1"># venv doesn&#39;t reload this, so we have to do it ourselves.</span>
         <span class="c1"># Is there a bug for this in Python? There should be.</span>
         <span class="n">env_path</span><span class="p">,</span> <span class="n">bin_path</span> <span class="o">=</span> <span class="bp">self</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
-        <span class="n">cfgfile</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">env_path</span><span class="p">,</span> <span class="s1">&#39;pyvenv.cfg&#39;</span><span class="p">)</span>
+        <span class="n">cfgfile</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">env_path</span><span class="p">,</span> <span class="s2">&quot;pyvenv.cfg&quot;</span><span class="p">)</span>
         <span class="n">cfgops</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">cfgfile</span><span class="p">)</span> <span class="k">as</span> <span class="n">cfgfile</span><span class="p">:</span>
             <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="n">cfgfile</span><span class="p">:</span>
                 <span class="n">l</span> <span class="o">=</span> <span class="n">l</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
-                <span class="k">if</span> <span class="s1">&#39;=&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">l</span><span class="p">:</span>
+                <span class="k">if</span> <span class="s2">&quot;=&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">l</span><span class="p">:</span>
                     <span class="k">continue</span>
-                <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="n">l</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;=&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="n">l</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
                 <span class="n">cfgops</span><span class="p">[</span><span class="n">k</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span> <span class="o">=</span> <span class="n">v</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
         <span class="n">flags</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="s1">&#39;system_site_packages&#39;</span><span class="p">:</span> <span class="n">cfgops</span><span class="p">[</span><span class="s1">&#39;include-system-site-packages&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;true&#39;</span><span class="p">,</span>
-            <span class="s1">&#39;symlinks&#39;</span><span class="p">:</span> <span class="n">symlinks</span><span class="p">,</span>
-            <span class="s1">&#39;with_pip&#39;</span><span class="p">:</span> <span class="n">with_pip</span><span class="p">,</span>
+            <span class="s2">&quot;system_site_packages&quot;</span><span class="p">:</span> <span class="n">cfgops</span><span class="p">[</span><span class="s2">&quot;include-system-site-packages&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;true&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;symlinks&quot;</span><span class="p">:</span> <span class="n">symlinks</span><span class="p">,</span>
+            <span class="s2">&quot;with_pip&quot;</span><span class="p">:</span> <span class="n">with_pip</span><span class="p">,</span>
         <span class="p">}</span>
         <span class="c1"># END things we shouldn&#39;t be doing.</span>
 
         <span class="c1"># Ok, do what we came here to do.</span>
-        <span class="n">venv</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">env_path</span><span class="p">,</span> <span class="n">upgrade</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">flags</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_create</span><span class="p">(</span><span class="n">env_path</span><span class="p">,</span> <span class="n">interpreter</span><span class="p">,</span> <span class="n">upgrade</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">flags</span><span class="p">)</span></div>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_create</span><span class="p">(</span>
+        <span class="n">env_path</span><span class="p">,</span>
+        <span class="n">interpreter</span><span class="p">,</span>
+        <span class="n">system_site_packages</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">symlinks</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">with_pip</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">upgrade</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="n">version_output</span> <span class="o">=</span> <span class="n">sp</span><span class="o">.</span><span class="n">check_output</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">interpreter</span><span class="p">,</span> <span class="s2">&quot;--version&quot;</span><span class="p">],</span> <span class="n">stderr</span><span class="o">=</span><span class="n">sp</span><span class="o">.</span><span class="n">STDOUT</span><span class="p">,</span> <span class="n">universal_newlines</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)</span>
+
+        <span class="n">interpreter_major_version</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">version_output</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">module</span> <span class="o">=</span> <span class="s2">&quot;venv&quot;</span> <span class="k">if</span> <span class="n">interpreter_major_version</span> <span class="o">&gt;=</span> <span class="mi">3</span> <span class="k">else</span> <span class="s2">&quot;virtualenv&quot;</span>
+        <span class="n">system_site_packages</span> <span class="o">=</span> <span class="s2">&quot;--system-site-packages&quot;</span> <span class="k">if</span> <span class="n">system_site_packages</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+        <span class="n">symlinks</span> <span class="o">=</span> <span class="s2">&quot;--symlinks&quot;</span> <span class="k">if</span> <span class="n">symlinks</span> <span class="ow">and</span> <span class="n">interpreter_major_version</span> <span class="o">&gt;=</span> <span class="mi">3</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+        <span class="n">with_pip</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span> <span class="k">if</span> <span class="n">with_pip</span> <span class="k">else</span> <span class="s2">&quot;--without-pip&quot;</span>
+        <span class="n">upgrade</span> <span class="o">=</span> <span class="s2">&quot;--upgrade&quot;</span> <span class="k">if</span> <span class="n">upgrade</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+
+        <span class="n">cmd</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">interpreter</span><span class="p">,</span>
+            <span class="s2">&quot;-m&quot;</span><span class="p">,</span>
+            <span class="n">module</span><span class="p">,</span>
+            <span class="n">env_path</span><span class="p">,</span>
+            <span class="n">system_site_packages</span><span class="p">,</span>
+            <span class="n">symlinks</span><span class="p">,</span>
+            <span class="n">with_pip</span><span class="p">,</span>
+            <span class="n">upgrade</span><span class="p">,</span>
+        <span class="p">]</span>
+        <span class="n">cmd</span> <span class="o">=</span> <span class="p">[</span><span class="n">arg</span> <span class="k">for</span> <span class="n">arg</span> <span class="ow">in</span> <span class="n">cmd</span> <span class="k">if</span> <span class="n">arg</span><span class="p">]</span>  <span class="c1"># remove empty args</span>
+
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
+
+        <span class="n">return_code</span> <span class="o">=</span> <span class="n">sp</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">return_code</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span><span class="n">return_code</span><span class="p">)</span>
 
     <span class="nd">@staticmethod</span>
     <span class="k">def</span> <span class="nf">_check_reserved</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
@@ -385,6 +444,11 @@
         <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">env_path</span><span class="p">)</span>
 
         <span class="n">events</span><span class="o">.</span><span class="n">vox_on_delete</span><span class="o">.</span><span class="n">fire</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span></div>
+
+
+<span class="k">def</span> <span class="nf">_get_vox_default_interpreter</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Return the interpreter set by the $VOX_DEFAULT_INTERPRETER if set else sys.executable&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;VOX_DEFAULT_INTERPRETER&quot;</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">)</span>
 </pre></div>
 
           </div>
@@ -439,7 +503,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../sidebar.html">xonsh 0.8.7.dev10 documentation</a> &#187;</li>
+    <li><a href="../../sidebar.html">xonsh 0.8.7.dev20 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
       </ul>
