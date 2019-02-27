@@ -8,7 +8,7 @@
   <head>
     <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <title>xonsh.environ &#8212; xonsh 0.8.10 documentation</title>
+    <title>xonsh.environ &#8212; xonsh 0.8.11.dev44 documentation</title>
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css" />
@@ -40,7 +40,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../sidebar.html">xonsh 0.8.10 documentation</a> &#187;</li>
+    <li><a href="../../sidebar.html">xonsh 0.8.11.dev44 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -67,6 +67,7 @@
 <span class="kn">import</span> <span class="nn">contextlib</span>
 <span class="kn">import</span> <span class="nn">collections</span>
 <span class="kn">import</span> <span class="nn">collections.abc</span> <span class="k">as</span> <span class="nn">cabc</span>
+<span class="kn">import</span> <span class="nn">subprocess</span>
 
 <span class="kn">from</span> <span class="nn">xonsh</span> <span class="k">import</span> <span class="n">__version__</span> <span class="k">as</span> <span class="n">XONSH_VERSION</span>
 <span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="k">import</span> <span class="n">LazyObject</span><span class="p">,</span> <span class="n">lazyobject</span>
@@ -87,6 +88,7 @@
 <span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="k">import</span> <span class="p">(</span>
     <span class="n">always_true</span><span class="p">,</span>
     <span class="n">always_false</span><span class="p">,</span>
+    <span class="n">detype</span><span class="p">,</span>
     <span class="n">ensure_string</span><span class="p">,</span>
     <span class="n">is_env_path</span><span class="p">,</span>
     <span class="n">str_to_env_path</span><span class="p">,</span>
@@ -134,6 +136,11 @@
     <span class="n">to_str_str_dict</span><span class="p">,</span>
     <span class="n">dict_to_str</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span> <span class="nn">xonsh.ansi_colors</span> <span class="k">import</span> <span class="p">(</span>
+    <span class="n">ansi_color_escape_code_to_name</span><span class="p">,</span>
+    <span class="n">ansi_reverse_style</span><span class="p">,</span>
+    <span class="n">ansi_style_by_name</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">import</span> <span class="nn">xonsh.prompt.base</span> <span class="k">as</span> <span class="nn">prompt</span>
 
 
@@ -157,6 +164,17 @@
 <span class="sd">Fires after an environment variable is changed.</span>
 <span class="sd">Note: Setting envvars inside the handler might</span>
 <span class="sd">cause a recursion until the limit.</span>
+<span class="sd">&quot;&quot;&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="n">events</span><span class="o">.</span><span class="n">doc</span><span class="p">(</span>
+    <span class="s2">&quot;on_pre_spec_run_ls&quot;</span><span class="p">,</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">on_pre_spec_run_ls(spec: xonsh.built_ins.SubprocSpec) -&gt; None</span>
+
+<span class="sd">Fires right before a SubprocSpec.run() is called for the ls</span>
+<span class="sd">command.</span>
 <span class="sd">&quot;&quot;&quot;</span><span class="p">,</span>
 <span class="p">)</span>
 
@@ -214,6 +232,301 @@
     <span class="k">return</span> <span class="n">val</span></div>
 
 
+<span class="c1">#</span>
+<span class="c1"># $LS_COLORS tools</span>
+<span class="c1">#</span>
+
+
+<div class="viewcode-block" id="LsColors"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.LsColors">[docs]</a><span class="k">class</span> <span class="nc">LsColors</span><span class="p">(</span><span class="n">cabc</span><span class="o">.</span><span class="n">MutableMapping</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Helps convert to/from $LS_COLORS format, respecting the xonsh color style.</span>
+<span class="sd">    This accepts the same inputs as dict().</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">default_settings</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;*.7z&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.Z&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.aac&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;CYAN&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.ace&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.alz&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.arc&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.arj&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.asf&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.au&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;CYAN&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.avi&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.bmp&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.bz&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.bz2&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.cab&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.cgm&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.cpio&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.deb&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.dl&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.dwm&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.dz&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.ear&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.emf&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.esd&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.flac&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;CYAN&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.flc&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.fli&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.flv&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.gif&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.gl&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.gz&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.jar&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.jpeg&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.jpg&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.lha&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.lrz&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.lz&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.lz4&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.lzh&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.lzma&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.lzo&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.m2v&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.m4a&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;CYAN&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.m4v&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.mid&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;CYAN&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.midi&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;CYAN&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.mjpeg&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.mjpg&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.mka&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;CYAN&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.mkv&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.mng&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.mov&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.mp3&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;CYAN&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.mp4&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.mp4v&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.mpc&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;CYAN&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.mpeg&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.mpg&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.nuv&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.oga&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;CYAN&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.ogg&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;CYAN&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.ogm&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.ogv&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.ogx&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.opus&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;CYAN&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.pbm&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.pcx&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.pgm&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.png&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.ppm&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.qt&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.ra&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;CYAN&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.rar&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.rm&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.rmvb&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.rpm&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.rz&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.sar&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.spx&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;CYAN&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.svg&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.svgz&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.swm&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.t7z&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.tar&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.taz&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.tbz&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.tbz2&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.tga&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.tgz&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.tif&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.tiff&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.tlz&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.txz&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.tz&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.tzo&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.tzst&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.vob&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.war&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.wav&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;CYAN&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.webm&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.wim&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.wmv&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.xbm&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.xcf&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.xpm&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.xspf&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;CYAN&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.xwd&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.xz&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.yuv&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.z&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.zip&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.zoo&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;*.zst&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_RED&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;bd&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BACKGROUND_BLACK&quot;</span><span class="p">,</span> <span class="s2">&quot;YELLOW&quot;</span><span class="p">),</span>
+        <span class="s2">&quot;ca&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BLACK&quot;</span><span class="p">,</span> <span class="s2">&quot;BACKGROUND_RED&quot;</span><span class="p">),</span>
+        <span class="s2">&quot;cd&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BACKGROUND_BLACK&quot;</span><span class="p">,</span> <span class="s2">&quot;YELLOW&quot;</span><span class="p">),</span>
+        <span class="s2">&quot;di&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_BLUE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;do&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;ex&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_GREEN&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;ln&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_CYAN&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;mh&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;NO_COLOR&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;mi&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;NO_COLOR&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;or&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BACKGROUND_BLACK&quot;</span><span class="p">,</span> <span class="s2">&quot;RED&quot;</span><span class="p">),</span>
+        <span class="s2">&quot;ow&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BLUE&quot;</span><span class="p">,</span> <span class="s2">&quot;BACKGROUND_GREEN&quot;</span><span class="p">),</span>
+        <span class="s2">&quot;pi&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BACKGROUND_BLACK&quot;</span><span class="p">,</span> <span class="s2">&quot;YELLOW&quot;</span><span class="p">),</span>
+        <span class="s2">&quot;rs&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;NO_COLOR&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;sg&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BLACK&quot;</span><span class="p">,</span> <span class="s2">&quot;BACKGROUND_YELLOW&quot;</span><span class="p">),</span>
+        <span class="s2">&quot;so&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BOLD_PURPLE&quot;</span><span class="p">,),</span>
+        <span class="s2">&quot;st&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;WHITE&quot;</span><span class="p">,</span> <span class="s2">&quot;BACKGROUND_BLUE&quot;</span><span class="p">),</span>
+        <span class="s2">&quot;su&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;WHITE&quot;</span><span class="p">,</span> <span class="s2">&quot;BACKGROUND_RED&quot;</span><span class="p">),</span>
+        <span class="s2">&quot;tw&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;BLACK&quot;</span><span class="p">,</span> <span class="s2">&quot;BACKGROUND_GREEN&quot;</span><span class="p">),</span>
+    <span class="p">}</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_d</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_style</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_style_name</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="nf">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">__setitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+
+    <span class="k">def</span> <span class="nf">__delitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span>
+
+    <span class="k">def</span> <span class="nf">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">&quot;</span><span class="si">{0}</span><span class="s2">.</span><span class="si">{1}</span><span class="s2">(...)&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__module__</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_repr_pretty_</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">cycle</span><span class="p">):</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{0}</span><span class="s2">.</span><span class="si">{1}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__module__</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">p</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">name</span> <span class="o">+</span> <span class="s2">&quot;(&quot;</span><span class="p">,</span> <span class="s2">&quot;)&quot;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">cycle</span><span class="p">:</span>
+                <span class="n">p</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="s2">&quot;...&quot;</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+                <span class="n">p</span><span class="o">.</span><span class="n">break_</span><span class="p">()</span>
+                <span class="n">p</span><span class="o">.</span><span class="n">pretty</span><span class="p">(</span><span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="p">))</span>
+
+<div class="viewcode-block" id="LsColors.detype"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.LsColors.detype">[docs]</a>    <span class="k">def</span> <span class="nf">detype</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;De-types the instance, allowing it to be exported to the environment.&quot;&quot;&quot;</span>
+        <span class="n">style</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">style</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="s2">&quot;:&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+                <span class="p">[</span>
+                    <span class="n">key</span> <span class="o">+</span> <span class="s2">&quot;=&quot;</span> <span class="o">+</span> <span class="s2">&quot;;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="n">style</span><span class="p">[</span><span class="n">v</span><span class="p">]</span> <span class="ow">or</span> <span class="s2">&quot;0&quot;</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">val</span><span class="p">])</span>
+                    <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="o">.</span><span class="n">items</span><span class="p">())</span>
+                <span class="p">]</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span></div>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">style_name</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Current XONSH_COLOR_STYLE value&quot;&quot;&quot;</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
+        <span class="n">env_style_name</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_COLOR_STYLE&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_style_name</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_style_name</span> <span class="o">!=</span> <span class="n">env_style_name</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_style_name</span> <span class="o">=</span> <span class="n">env_style_name</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_style</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dtyped</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_style_name</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">style</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;The ANSI color style for the current XONSH_COLOR_STYLE&quot;&quot;&quot;</span>
+        <span class="n">style_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">style_name</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_style</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_style</span> <span class="o">=</span> <span class="n">ansi_style_by_name</span><span class="p">(</span><span class="n">style_name</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_style</span>
+
+<div class="viewcode-block" id="LsColors.fromstring"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.LsColors.fromstring">[docs]</a>    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">fromstring</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">s</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Creates a new instance of the LsColors class from a colon-separated</span>
+<span class="sd">        string of dircolor-valid keys to ANSI color escape sequences.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">obj</span> <span class="o">=</span> <span class="bp">cls</span><span class="p">()</span>
+        <span class="c1"># string inputs always use default codes, so translating into</span>
+        <span class="c1"># xonsh names should be done from defaults</span>
+        <span class="n">reversed_default</span> <span class="o">=</span> <span class="n">ansi_reverse_style</span><span class="p">(</span><span class="n">style</span><span class="o">=</span><span class="s2">&quot;default&quot;</span><span class="p">)</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">s</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">):</span>
+            <span class="n">key</span><span class="p">,</span> <span class="n">eq</span><span class="p">,</span> <span class="n">esc</span> <span class="o">=</span> <span class="n">item</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">eq</span><span class="p">:</span>
+                <span class="c1"># not a valid item</span>
+                <span class="k">continue</span>
+            <span class="n">data</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">ansi_color_escape_code_to_name</span><span class="p">(</span>
+                <span class="n">esc</span><span class="p">,</span> <span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="n">reversed_style</span><span class="o">=</span><span class="n">reversed_default</span>
+            <span class="p">)</span>
+        <span class="n">obj</span><span class="o">.</span><span class="n">_d</span> <span class="o">=</span> <span class="n">data</span>
+        <span class="k">return</span> <span class="n">obj</span></div>
+
+<div class="viewcode-block" id="LsColors.fromdircolors"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.LsColors.fromdircolors">[docs]</a>    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">fromdircolors</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Constructs an LsColors instance by running dircolors.</span>
+<span class="sd">        If a filename is provided, it is passed down to the dircolors command.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># assemble command</span>
+        <span class="n">cmd</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;dircolors&quot;</span><span class="p">,</span> <span class="s2">&quot;-b&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">filename</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">cmd</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span>
+        <span class="c1"># get env</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s2">&quot;__xonsh__&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="p">,</span> <span class="s2">&quot;env&quot;</span><span class="p">):</span>
+            <span class="n">denv</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">detype</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">denv</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="c1"># run dircolors</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">(</span>
+                <span class="n">cmd</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">denv</span><span class="p">,</span> <span class="n">universal_newlines</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">,</span> <span class="ne">FileNotFoundError</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="bp">cls</span><span class="o">.</span><span class="n">default_settings</span><span class="p">)</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">s</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s2">&quot;&#39;&quot;</span><span class="p">)</span>
+        <span class="n">s</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">rpartition</span><span class="p">(</span><span class="s2">&quot;&#39;&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">fromstring</span><span class="p">(</span><span class="n">s</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="LsColors.convert"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.LsColors.convert">[docs]</a>    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">convert</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Converts an object to LsColors, if needed.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="bp">cls</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">x</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">fromstring</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">fromstring</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">decode</span><span class="p">())</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">x</span><span class="p">)</span></div></div>
+
+
+<div class="viewcode-block" id="is_lscolors"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.is_lscolors">[docs]</a><span class="k">def</span> <span class="nf">is_lscolors</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Checks if an object is an instance of LsColors&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">LsColors</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ensure_ls_colors_in_env"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.ensure_ls_colors_in_env">[docs]</a><span class="nd">@events</span><span class="o">.</span><span class="n">on_pre_spec_run_ls</span>
+<span class="k">def</span> <span class="nf">ensure_ls_colors_in_env</span><span class="p">(</span><span class="n">spec</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;This ensures that the $LS_COLORS environment variable is in the</span>
+<span class="sd">    environment. This fires exactly once upon the first time the</span>
+<span class="sd">    ls command is called.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
+    <span class="k">if</span> <span class="s2">&quot;LS_COLORS&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">env</span><span class="o">.</span><span class="n">_d</span><span class="p">:</span>
+        <span class="c1"># this adds it to the env too</span>
+        <span class="n">default_lscolors</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+    <span class="n">events</span><span class="o">.</span><span class="n">on_pre_spec_run_ls</span><span class="o">.</span><span class="n">discard</span><span class="p">(</span><span class="n">ensure_ls_colors_in_env</span><span class="p">)</span></div>
+
+
+<span class="c1">#</span>
+<span class="c1"># Ensurerers</span>
+<span class="c1">#</span>
+
 <span class="n">Ensurer</span> <span class="o">=</span> <span class="n">collections</span><span class="o">.</span><span class="n">namedtuple</span><span class="p">(</span><span class="s2">&quot;Ensurer&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;validate&quot;</span><span class="p">,</span> <span class="s2">&quot;convert&quot;</span><span class="p">,</span> <span class="s2">&quot;detype&quot;</span><span class="p">])</span>
 <span class="n">Ensurer</span><span class="o">.</span><span class="vm">__doc__</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;Named tuples whose elements are functions that</span>
 <span class="s2">represent environment variable validation, conversion, detyping.</span>
@@ -269,6 +582,7 @@
         <span class="s2">&quot;LC_MONETARY&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">always_false</span><span class="p">,</span> <span class="n">locale_convert</span><span class="p">(</span><span class="s2">&quot;LC_MONETARY&quot;</span><span class="p">),</span> <span class="n">ensure_string</span><span class="p">),</span>
         <span class="s2">&quot;LC_NUMERIC&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">always_false</span><span class="p">,</span> <span class="n">locale_convert</span><span class="p">(</span><span class="s2">&quot;LC_NUMERIC&quot;</span><span class="p">),</span> <span class="n">ensure_string</span><span class="p">),</span>
         <span class="s2">&quot;LC_TIME&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">always_false</span><span class="p">,</span> <span class="n">locale_convert</span><span class="p">(</span><span class="s2">&quot;LC_TIME&quot;</span><span class="p">),</span> <span class="n">ensure_string</span><span class="p">),</span>
+        <span class="s2">&quot;LS_COLORS&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">is_lscolors</span><span class="p">,</span> <span class="n">LsColors</span><span class="o">.</span><span class="n">convert</span><span class="p">,</span> <span class="n">detype</span><span class="p">),</span>
         <span class="s2">&quot;LOADED_RC_FILES&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">is_bool_seq</span><span class="p">,</span> <span class="n">csv_to_bool_seq</span><span class="p">,</span> <span class="n">bool_seq_to_csv</span><span class="p">),</span>
         <span class="s2">&quot;MOUSE_SUPPORT&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">is_bool</span><span class="p">,</span> <span class="n">to_bool</span><span class="p">,</span> <span class="n">bool_to_str</span><span class="p">),</span>
         <span class="s2">&quot;MULTILINE_PROMPT&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">is_string_or_callable</span><span class="p">,</span> <span class="n">ensure_string</span><span class="p">,</span> <span class="n">ensure_string</span><span class="p">),</span>
@@ -280,6 +594,7 @@
         <span class="p">),</span>
         <span class="s2">&quot;PRETTY_PRINT_RESULTS&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">is_bool</span><span class="p">,</span> <span class="n">to_bool</span><span class="p">,</span> <span class="n">bool_to_str</span><span class="p">),</span>
         <span class="s2">&quot;PROMPT&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">is_string_or_callable</span><span class="p">,</span> <span class="n">ensure_string</span><span class="p">,</span> <span class="n">ensure_string</span><span class="p">),</span>
+        <span class="s2">&quot;PROMPT_FIELDS&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">always_true</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
         <span class="s2">&quot;PROMPT_TOOLKIT_COLOR_DEPTH&quot;</span><span class="p">:</span> <span class="p">(</span>
             <span class="n">always_false</span><span class="p">,</span>
             <span class="n">ptk2_color_depth_setter</span><span class="p">,</span>
@@ -403,6 +718,19 @@
     <span class="k">return</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_INTERACTIVE&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span></div>
 
 
+<div class="viewcode-block" id="default_lscolors"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.default_lscolors">[docs]</a><span class="nd">@default_value</span>
+<span class="k">def</span> <span class="nf">default_lscolors</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Gets a default instanse of LsColors&quot;&quot;&quot;</span>
+    <span class="n">inherited_lscolors</span> <span class="o">=</span> <span class="n">os_environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;LS_COLORS&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">inherited_lscolors</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">lsc</span> <span class="o">=</span> <span class="n">LsColors</span><span class="o">.</span><span class="n">fromdircolors</span><span class="p">()</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">lsc</span> <span class="o">=</span> <span class="n">LsColors</span><span class="o">.</span><span class="n">fromstring</span><span class="p">(</span><span class="n">inherited_lscolors</span><span class="p">)</span>
+    <span class="c1"># have to place this in the env, so it is applied</span>
+    <span class="n">env</span><span class="p">[</span><span class="s2">&quot;LS_COLORS&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">lsc</span>
+    <span class="k">return</span> <span class="n">lsc</span></div>
+
+
 <span class="c1"># Default values should generally be immutable, that way if a user wants</span>
 <span class="c1"># to set them they have to do a copy and write them to the environment.</span>
 <span class="c1"># try to keep this sorted.</span>
@@ -444,6 +772,7 @@
         <span class="s2">&quot;LC_TIME&quot;</span><span class="p">:</span> <span class="n">locale</span><span class="o">.</span><span class="n">setlocale</span><span class="p">(</span><span class="n">locale</span><span class="o">.</span><span class="n">LC_TIME</span><span class="p">),</span>
         <span class="s2">&quot;LC_MONETARY&quot;</span><span class="p">:</span> <span class="n">locale</span><span class="o">.</span><span class="n">setlocale</span><span class="p">(</span><span class="n">locale</span><span class="o">.</span><span class="n">LC_MONETARY</span><span class="p">),</span>
         <span class="s2">&quot;LC_NUMERIC&quot;</span><span class="p">:</span> <span class="n">locale</span><span class="o">.</span><span class="n">setlocale</span><span class="p">(</span><span class="n">locale</span><span class="o">.</span><span class="n">LC_NUMERIC</span><span class="p">),</span>
+        <span class="s2">&quot;LS_COLORS&quot;</span><span class="p">:</span> <span class="n">default_lscolors</span><span class="p">,</span>
         <span class="s2">&quot;LOADED_RC_FILES&quot;</span><span class="p">:</span> <span class="p">(),</span>
         <span class="s2">&quot;MOUSE_SUPPORT&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
         <span class="s2">&quot;MULTILINE_PROMPT&quot;</span><span class="p">:</span> <span class="s2">&quot;.&quot;</span><span class="p">,</span>
@@ -697,6 +1026,7 @@
             <span class="n">configurable</span><span class="o">=</span><span class="n">ON_WINDOWS</span><span class="p">,</span>
         <span class="p">),</span>
         <span class="s2">&quot;LANG&quot;</span><span class="p">:</span> <span class="n">VarDocs</span><span class="p">(</span><span class="s2">&quot;Fallback locale setting for systems where it matters&quot;</span><span class="p">),</span>
+        <span class="s2">&quot;LS_COLORS&quot;</span><span class="p">:</span> <span class="n">VarDocs</span><span class="p">(</span><span class="s2">&quot;Color settings for ``ls`` command line utility&quot;</span><span class="p">),</span>
         <span class="s2">&quot;LOADED_RC_FILES&quot;</span><span class="p">:</span> <span class="n">VarDocs</span><span class="p">(</span>
             <span class="s2">&quot;Whether or not any of the xonsh run control files were loaded at &quot;</span>
             <span class="s2">&quot;startup. This is a sequence of bools in Python that is converted &quot;</span>
@@ -1071,22 +1401,22 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">[</span><span class="s2">&quot;PATH&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">PATH_DEFAULT</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="kc">None</span>
 
-<div class="viewcode-block" id="Env.detypeable"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.detypeable">[docs]</a>    <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="nf">detypeable</span><span class="p">(</span><span class="n">val</span><span class="p">):</span>
-        <span class="k">return</span> <span class="ow">not</span> <span class="p">(</span><span class="n">callable</span><span class="p">(</span><span class="n">val</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">MutableMapping</span><span class="p">))</span></div>
-
 <div class="viewcode-block" id="Env.detype"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.detype">[docs]</a>    <span class="k">def</span> <span class="nf">detype</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span>
         <span class="n">ctx</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">detypeable</span><span class="p">(</span><span class="n">val</span><span class="p">):</span>
-                <span class="k">continue</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
                 <span class="n">key</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
             <span class="n">ensurer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_ensurer</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
-            <span class="n">val</span> <span class="o">=</span> <span class="n">ensurer</span><span class="o">.</span><span class="n">detype</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
-            <span class="n">ctx</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">val</span>
+            <span class="k">if</span> <span class="n">ensurer</span><span class="o">.</span><span class="n">detype</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># cannot be detyped</span>
+                <span class="k">continue</span>
+            <span class="n">deval</span> <span class="o">=</span> <span class="n">ensurer</span><span class="o">.</span><span class="n">detype</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">deval</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># cannot be detyped</span>
+                <span class="k">continue</span>
+            <span class="n">ctx</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">deval</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="n">ctx</span>
         <span class="k">return</span> <span class="n">ctx</span></div>
 
@@ -1108,7 +1438,14 @@
             <span class="n">os_environ</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_orig_env</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_orig_env</span> <span class="o">=</span> <span class="kc">None</span></div>
 
-<div class="viewcode-block" id="Env.get_ensurer"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.get_ensurer">[docs]</a>    <span class="k">def</span> <span class="nf">get_ensurer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">Ensurer</span><span class="p">(</span><span class="n">always_true</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="n">ensure_string</span><span class="p">)):</span>
+    <span class="k">def</span> <span class="nf">_get_default_ensurer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">default</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">default</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">default</span> <span class="o">=</span> <span class="n">Ensurer</span><span class="p">(</span><span class="n">always_true</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="n">ensure_string</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">default</span>
+
+<div class="viewcode-block" id="Env.get_ensurer"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.get_ensurer">[docs]</a>    <span class="k">def</span> <span class="nf">get_ensurer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Gets an ensurer for the given key.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensurers</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensurers</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
@@ -1118,9 +1455,14 @@
             <span class="k">if</span> <span class="n">k</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">break</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">ensurer</span> <span class="o">=</span> <span class="n">default</span>
+            <span class="n">ensurer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_default_ensurer</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="n">default</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_ensurers</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">ensurer</span>
         <span class="k">return</span> <span class="n">ensurer</span></div>
+
+<div class="viewcode-block" id="Env.set_ensurer"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.set_ensurer">[docs]</a>    <span class="k">def</span> <span class="nf">set_ensurer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Sets an ensurer.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ensurers</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span></div>
 
 <div class="viewcode-block" id="Env.get_docs"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.get_docs">[docs]</a>    <span class="k">def</span> <span class="nf">get_docs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">VarDocs</span><span class="p">(</span><span class="s2">&quot;&lt;no documentation&gt;&quot;</span><span class="p">)):</span>
         <span class="sd">&quot;&quot;&quot;Gets the documentation for the environment variable.&quot;&quot;&quot;</span>
@@ -1190,13 +1532,6 @@
 
     <span class="k">def</span> <span class="nf">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
         <span class="c1"># remove this block on next release</span>
-        <span class="k">if</span> <span class="n">key</span> <span class="o">==</span> <span class="s2">&quot;FORMATTER_DICT&quot;</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span>
-                <span class="s2">&quot;PendingDeprecationWarning: FORMATTER_DICT is an alias of &quot;</span>
-                <span class="s2">&quot;PROMPT_FIELDS and will be removed in the next release&quot;</span><span class="p">,</span>
-                <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">,</span>
-            <span class="p">)</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="p">[</span><span class="s2">&quot;PROMPT_FIELDS&quot;</span><span class="p">]</span>
         <span class="k">if</span> <span class="n">key</span> <span class="ow">is</span> <span class="bp">Ellipsis</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span>
         <span class="k">elif</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">:</span>
@@ -1221,24 +1556,26 @@
         <span class="c1"># existing envvars can have any value including None</span>
         <span class="n">old_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_no_value</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">val</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">detypeable</span><span class="p">(</span><span class="n">val</span><span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="kc">None</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;UPDATE_OS_ENVIRON&quot;</span><span class="p">):</span>
-                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_orig_env</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">replace_env</span><span class="p">()</span>
-                <span class="k">else</span><span class="p">:</span>
-                    <span class="n">os_environ</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">ensurer</span><span class="o">.</span><span class="n">detype</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;UPDATE_OS_ENVIRON&quot;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_orig_env</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">replace_env</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="n">ensurer</span><span class="o">.</span><span class="n">detype</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">pass</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">deval</span> <span class="o">=</span> <span class="n">ensurer</span><span class="o">.</span><span class="n">detype</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">deval</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">os_environ</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">deval</span>
         <span class="k">if</span> <span class="n">old_value</span> <span class="ow">is</span> <span class="bp">self</span><span class="o">.</span><span class="n">_no_value</span><span class="p">:</span>
             <span class="n">events</span><span class="o">.</span><span class="n">on_envvar_new</span><span class="o">.</span><span class="n">fire</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">val</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">old_value</span> <span class="o">!=</span> <span class="n">val</span><span class="p">:</span>
             <span class="n">events</span><span class="o">.</span><span class="n">on_envvar_change</span><span class="o">.</span><span class="n">fire</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">key</span><span class="p">,</span> <span class="n">oldvalue</span><span class="o">=</span><span class="n">old_value</span><span class="p">,</span> <span class="n">newvalue</span><span class="o">=</span><span class="n">val</span><span class="p">)</span>
 
     <span class="k">def</span> <span class="nf">__delitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
-        <span class="n">val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">detypeable</span><span class="p">(</span><span class="n">val</span><span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="kc">None</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;UPDATE_OS_ENVIRON&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">os_environ</span><span class="p">:</span>
-                <span class="k">del</span> <span class="n">os_environ</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+        <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;UPDATE_OS_ENVIRON&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">os_environ</span><span class="p">:</span>
+            <span class="k">del</span> <span class="n">os_environ</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
 
 <div class="viewcode-block" id="Env.get"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.get">[docs]</a>    <span class="k">def</span> <span class="nf">get</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;The environment will look up default values from its own defaults if a</span>
@@ -1449,7 +1786,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../sidebar.html">xonsh 0.8.10 documentation</a> &#187;</li>
+    <li><a href="../../sidebar.html">xonsh 0.8.11.dev44 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
       </ul>
