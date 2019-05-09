@@ -6,7 +6,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
   <head>
     <meta charset="utf-8" />
-    <title>xonsh.built_ins &#8212; xonsh 0.8.12 documentation</title>
+    <title>xonsh.built_ins &#8212; xonsh 0.9.0.dev101 documentation</title>
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css" />
@@ -38,7 +38,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../sidebar.html">xonsh 0.8.12 documentation</a> &#187;</li>
+    <li><a href="../../sidebar.html">xonsh 0.9.0.dev101 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -99,7 +99,7 @@
     <span class="n">XonshError</span><span class="p">,</span>
     <span class="n">XonshCalledProcessError</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">xonsh.lazyimps</span> <span class="k">import</span> <span class="n">pty</span><span class="p">,</span> <span class="n">termios</span>
+<span class="kn">from</span> <span class="nn">xonsh.lazyimps</span> <span class="k">import</span> <span class="n">pty</span><span class="p">,</span> <span class="n">termios</span><span class="p">,</span> <span class="n">fcntl</span>
 <span class="kn">from</span> <span class="nn">xonsh.commands_cache</span> <span class="k">import</span> <span class="n">CommandsCache</span>
 <span class="kn">from</span> <span class="nn">xonsh.events</span> <span class="k">import</span> <span class="n">events</span>
 
@@ -663,7 +663,7 @@
 
     <span class="k">def</span> <span class="nf">_cmd_event_name</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">callable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">alias</span><span class="p">):</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">alias</span><span class="o">.</span><span class="vm">__name__</span>
+            <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">alias</span><span class="p">,</span> <span class="s2">&quot;__name__&quot;</span><span class="p">,</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">alias</span><span class="p">))</span>
         <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">binary_loc</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="s2">&quot;&lt;not-found&gt;&quot;</span>
         <span class="k">else</span><span class="p">:</span>
@@ -825,6 +825,17 @@
     <span class="n">props</span> <span class="o">=</span> <span class="n">termios</span><span class="o">.</span><span class="n">tcgetattr</span><span class="p">(</span><span class="n">fd</span><span class="p">)</span>
     <span class="n">props</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">props</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&amp;</span> <span class="p">(</span><span class="o">~</span><span class="n">termios</span><span class="o">.</span><span class="n">ONLCR</span><span class="p">)</span> <span class="o">|</span> <span class="n">termios</span><span class="o">.</span><span class="n">ONLRET</span>
     <span class="n">termios</span><span class="o">.</span><span class="n">tcsetattr</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">termios</span><span class="o">.</span><span class="n">TCSANOW</span><span class="p">,</span> <span class="n">props</span><span class="p">)</span>
+    <span class="c1"># newly created PTYs have a stardard size (24x80), set size to the same size</span>
+    <span class="c1"># than the current terminal</span>
+    <span class="n">winsize</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdin</span><span class="o">.</span><span class="n">isatty</span><span class="p">():</span>
+        <span class="n">winsize</span> <span class="o">=</span> <span class="n">fcntl</span><span class="o">.</span><span class="n">ioctl</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdin</span><span class="o">.</span><span class="n">fileno</span><span class="p">(),</span> <span class="n">termios</span><span class="o">.</span><span class="n">TIOCGWINSZ</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;0000&quot;</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">isatty</span><span class="p">():</span>
+        <span class="n">winsize</span> <span class="o">=</span> <span class="n">fcntl</span><span class="o">.</span><span class="n">ioctl</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">fileno</span><span class="p">(),</span> <span class="n">termios</span><span class="o">.</span><span class="n">TIOCGWINSZ</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;0000&quot;</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="o">.</span><span class="n">isatty</span><span class="p">():</span>
+        <span class="n">winsize</span> <span class="o">=</span> <span class="n">fcntl</span><span class="o">.</span><span class="n">ioctl</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="o">.</span><span class="n">fileno</span><span class="p">(),</span> <span class="n">termios</span><span class="o">.</span><span class="n">TIOCGWINSZ</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;0000&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">winsize</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">fcntl</span><span class="o">.</span><span class="n">ioctl</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">termios</span><span class="o">.</span><span class="n">TIOCSWINSZ</span><span class="p">,</span> <span class="n">winsize</span><span class="p">)</span>
 
 
 <span class="k">def</span> <span class="nf">_update_last_spec</span><span class="p">(</span><span class="n">last</span><span class="p">):</span>
@@ -1378,7 +1389,7 @@
     <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">execer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Parameters</span>
-<span class="sd">        ---------</span>
+<span class="sd">        ----------</span>
 <span class="sd">        execer : Execer, optional</span>
 <span class="sd">            Xonsh execution object, may be None to start</span>
 <span class="sd">        ctx : Mapping, optional</span>
@@ -1391,7 +1402,7 @@
         <span class="sd">&quot;&quot;&quot;Loads the session with default values.</span>
 
 <span class="sd">        Parameters</span>
-<span class="sd">        ---------</span>
+<span class="sd">        ----------</span>
 <span class="sd">        execer : Execer, optional</span>
 <span class="sd">            Xonsh execution object, may be None to start</span>
 <span class="sd">        ctx : Mapping, optional</span>
@@ -1749,7 +1760,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../sidebar.html">xonsh 0.8.12 documentation</a> &#187;</li>
+    <li><a href="../../sidebar.html">xonsh 0.9.0.dev101 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
       </ul>
