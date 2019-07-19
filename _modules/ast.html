@@ -6,7 +6,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
   <head>
     <meta charset="utf-8" />
-    <title>ast &#8212; xonsh 0.9.8 documentation</title>
+    <title>ast &#8212; xonsh 0.9.9.dev34 documentation</title>
     <link rel="stylesheet" href="../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
     <link rel="stylesheet" type="text/css" href="../_static/graphviz.css" />
@@ -38,7 +38,7 @@
         <li class="right" >
           <a href="../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../sidebar.html">xonsh 0.9.8 documentation</a> &#187;</li>
+    <li><a href="../sidebar.html">xonsh 0.9.9.dev34 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -89,8 +89,6 @@
     <span class="k">return</span> <span class="nb">compile</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="n">filename</span><span class="p">,</span> <span class="n">mode</span><span class="p">,</span> <span class="n">PyCF_ONLY_AST</span><span class="p">)</span>
 
 
-<span class="n">_NUM_TYPES</span> <span class="o">=</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">complex</span><span class="p">)</span>
-
 <span class="k">def</span> <span class="nf">literal_eval</span><span class="p">(</span><span class="n">node_or_string</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Safely evaluate an expression node or a string containing a Python</span>
@@ -102,6 +100,21 @@
         <span class="n">node_or_string</span> <span class="o">=</span> <span class="n">parse</span><span class="p">(</span><span class="n">node_or_string</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;eval&#39;</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node_or_string</span><span class="p">,</span> <span class="n">Expression</span><span class="p">):</span>
         <span class="n">node_or_string</span> <span class="o">=</span> <span class="n">node_or_string</span><span class="o">.</span><span class="n">body</span>
+    <span class="k">def</span> <span class="nf">_convert_num</span><span class="p">(</span><span class="n">node</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">Constant</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">complex</span><span class="p">)):</span>
+                <span class="k">return</span> <span class="n">node</span><span class="o">.</span><span class="n">value</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">Num</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">node</span><span class="o">.</span><span class="n">n</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s1">&#39;malformed node or string: &#39;</span> <span class="o">+</span> <span class="nb">repr</span><span class="p">(</span><span class="n">node</span><span class="p">))</span>
+    <span class="k">def</span> <span class="nf">_convert_signed_num</span><span class="p">(</span><span class="n">node</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">UnaryOp</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">op</span><span class="p">,</span> <span class="p">(</span><span class="n">UAdd</span><span class="p">,</span> <span class="n">USub</span><span class="p">)):</span>
+            <span class="n">operand</span> <span class="o">=</span> <span class="n">_convert_num</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">operand</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">op</span><span class="p">,</span> <span class="n">UAdd</span><span class="p">):</span>
+                <span class="k">return</span> <span class="o">+</span> <span class="n">operand</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">return</span> <span class="o">-</span> <span class="n">operand</span>
+        <span class="k">return</span> <span class="n">_convert_num</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
     <span class="k">def</span> <span class="nf">_convert</span><span class="p">(</span><span class="n">node</span><span class="p">):</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">Constant</span><span class="p">):</span>
             <span class="k">return</span> <span class="n">node</span><span class="o">.</span><span class="n">value</span>
@@ -116,26 +129,19 @@
         <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">Set</span><span class="p">):</span>
             <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="n">_convert</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">elts</span><span class="p">))</span>
         <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">Dict</span><span class="p">):</span>
-            <span class="k">return</span> <span class="nb">dict</span><span class="p">((</span><span class="n">_convert</span><span class="p">(</span><span class="n">k</span><span class="p">),</span> <span class="n">_convert</span><span class="p">(</span><span class="n">v</span><span class="p">))</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span>
-                        <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">keys</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">values</span><span class="p">))</span>
+            <span class="k">return</span> <span class="nb">dict</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="n">_convert</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">keys</span><span class="p">),</span>
+                            <span class="nb">map</span><span class="p">(</span><span class="n">_convert</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">values</span><span class="p">)))</span>
         <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">NameConstant</span><span class="p">):</span>
             <span class="k">return</span> <span class="n">node</span><span class="o">.</span><span class="n">value</span>
-        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">UnaryOp</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">op</span><span class="p">,</span> <span class="p">(</span><span class="n">UAdd</span><span class="p">,</span> <span class="n">USub</span><span class="p">)):</span>
-            <span class="n">operand</span> <span class="o">=</span> <span class="n">_convert</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">operand</span><span class="p">)</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">operand</span><span class="p">,</span> <span class="n">_NUM_TYPES</span><span class="p">):</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">op</span><span class="p">,</span> <span class="n">UAdd</span><span class="p">):</span>
-                    <span class="k">return</span> <span class="o">+</span> <span class="n">operand</span>
-                <span class="k">else</span><span class="p">:</span>
-                    <span class="k">return</span> <span class="o">-</span> <span class="n">operand</span>
         <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">BinOp</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">op</span><span class="p">,</span> <span class="p">(</span><span class="n">Add</span><span class="p">,</span> <span class="n">Sub</span><span class="p">)):</span>
-            <span class="n">left</span> <span class="o">=</span> <span class="n">_convert</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">left</span><span class="p">)</span>
-            <span class="n">right</span> <span class="o">=</span> <span class="n">_convert</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">right</span><span class="p">)</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">left</span><span class="p">,</span> <span class="n">_NUM_TYPES</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">right</span><span class="p">,</span> <span class="n">_NUM_TYPES</span><span class="p">):</span>
+            <span class="n">left</span> <span class="o">=</span> <span class="n">_convert_signed_num</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">left</span><span class="p">)</span>
+            <span class="n">right</span> <span class="o">=</span> <span class="n">_convert_num</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">right</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">left</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">))</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">right</span><span class="p">,</span> <span class="nb">complex</span><span class="p">):</span>
                 <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">op</span><span class="p">,</span> <span class="n">Add</span><span class="p">):</span>
                     <span class="k">return</span> <span class="n">left</span> <span class="o">+</span> <span class="n">right</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="k">return</span> <span class="n">left</span> <span class="o">-</span> <span class="n">right</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s1">&#39;malformed node or string: &#39;</span> <span class="o">+</span> <span class="nb">repr</span><span class="p">(</span><span class="n">node</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">_convert_signed_num</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">_convert</span><span class="p">(</span><span class="n">node_or_string</span><span class="p">)</span>
 
 
@@ -248,18 +254,21 @@
 <span class="sd">    Return the docstring for the given node or None if no docstring can</span>
 <span class="sd">    be found.  If the node provided does not have docstrings a TypeError</span>
 <span class="sd">    will be raised.</span>
+
+<span class="sd">    If *clean* is `True`, all tabs are expanded to spaces and any whitespace</span>
+<span class="sd">    that can be uniformly removed from the second line onwards is removed.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="p">(</span><span class="n">AsyncFunctionDef</span><span class="p">,</span> <span class="n">FunctionDef</span><span class="p">,</span> <span class="n">ClassDef</span><span class="p">,</span> <span class="n">Module</span><span class="p">)):</span>
         <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%r</span><span class="s2"> can&#39;t have docstrings&quot;</span> <span class="o">%</span> <span class="n">node</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">body</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">body</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">Expr</span><span class="p">)):</span>
-        <span class="k">return</span>
+        <span class="k">return</span> <span class="kc">None</span>
     <span class="n">node</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">body</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">value</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">Str</span><span class="p">):</span>
         <span class="n">text</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">s</span>
     <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">Constant</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
         <span class="n">text</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">value</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="k">return</span>
+        <span class="k">return</span> <span class="kc">None</span>
     <span class="k">if</span> <span class="n">clean</span><span class="p">:</span>
         <span class="kn">import</span> <span class="nn">inspect</span>
         <span class="n">text</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">cleandoc</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
@@ -426,7 +435,7 @@
         <li class="right" >
           <a href="../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../sidebar.html">xonsh 0.9.8 documentation</a> &#187;</li>
+    <li><a href="../sidebar.html">xonsh 0.9.9.dev34 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="index.html" >Module code</a> &#187;</li> 
       </ul>
