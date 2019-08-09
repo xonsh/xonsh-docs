@@ -358,17 +358,6 @@
     
 
     
-        /*==========================================================================
-         * auto determine when admonition should have inline / block title
-         * under this mode, the css will default to styling everything like a block,
-         * so we just mark everything that shouldn't be blocked out.
-         *==========================================================================*/
-        $(function () {
-            $("div.body div.admonition:not(.inline-title):not(.block-title)" +
-                ":not(.danger):not(.error)" +
-                ":has(p.first + p.last)").addClass("inline-title");
-        });
-    
 
     /*==========================================================================
      * patch sphinx search code to try to and prevent rest markup from showing up
