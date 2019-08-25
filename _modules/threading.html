@@ -6,7 +6,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
   <head>
     <meta charset="utf-8" />
-    <title>threading &#8212; xonsh 0.9.10 documentation</title>
+    <title>threading &#8212; xonsh 0.9.11.dev21 documentation</title>
     <link rel="stylesheet" href="../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
     <link rel="stylesheet" type="text/css" href="../_static/graphviz.css" />
@@ -39,7 +39,7 @@
         <li class="right" >
           <a href="../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../sidebar.html">xonsh 0.9.10 documentation</a> &#187;</li>
+    <li><a href="../sidebar.html">xonsh 0.9.11.dev21 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -55,6 +55,7 @@
   <h1>Source code for threading</h1><div class="highlight"><pre>
 <span></span><span class="sd">&quot;&quot;&quot;Thread module emulating a subset of Java&#39;s threading model.&quot;&quot;&quot;</span>
 
+<span class="kn">import</span> <span class="nn">os</span> <span class="k">as</span> <span class="nn">_os</span>
 <span class="kn">import</span> <span class="nn">sys</span> <span class="k">as</span> <span class="nn">_sys</span>
 <span class="kn">import</span> <span class="nn">_thread</span>
 
@@ -622,8 +623,8 @@
     <span class="sd">&quot;&quot;&quot;Implements a Barrier.</span>
 
 <span class="sd">    Useful for synchronizing a fixed number of threads at known synchronization</span>
-<span class="sd">    points.  Threads block on &#39;wait()&#39; and are simultaneously once they have all</span>
-<span class="sd">    made that call.</span>
+<span class="sd">    points.  Threads block on &#39;wait()&#39; and are simultaneously awoken once they</span>
+<span class="sd">    have all made that call.</span>
 
 <span class="sd">    &quot;&quot;&quot;</span>
 
@@ -632,7 +633,7 @@
 
 <span class="sd">        &#39;action&#39; is a callable which, when supplied, will be called by one of</span>
 <span class="sd">        the threads after they have all entered the barrier and just prior to</span>
-<span class="sd">        releasing them all. If a &#39;timeout&#39; is provided, it is uses as the</span>
+<span class="sd">        releasing them all. If a &#39;timeout&#39; is provided, it is used as the</span>
 <span class="sd">        default for all subsequent &#39;wait()&#39; calls.</span>
 
 <span class="sd">        &quot;&quot;&quot;</span>
@@ -998,6 +999,7 @@
                                     <span class="n">exc_tb</span><span class="o">.</span><span class="n">tb_frame</span><span class="o">.</span><span class="n">f_code</span><span class="o">.</span><span class="n">co_name</span><span class="p">)),</span> <span class="n">file</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_stderr</span><span class="p">)</span>
                             <span class="n">exc_tb</span> <span class="o">=</span> <span class="n">exc_tb</span><span class="o">.</span><span class="n">tb_next</span>
                         <span class="nb">print</span><span class="p">((</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">)),</span> <span class="n">file</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_stderr</span><span class="p">)</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_stderr</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
                     <span class="c1"># Make sure that exc_tb gets deleted since it is a memory</span>
                     <span class="c1"># hog; deleting everything else is just for thoroughness</span>
                     <span class="k">finally</span><span class="p">:</span>
@@ -1043,38 +1045,12 @@
 
     <span class="k">def</span> <span class="nf">_delete</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="s2">&quot;Remove current thread from the dict of currently running threads.&quot;</span>
-
-        <span class="c1"># Notes about running with _dummy_thread:</span>
-        <span class="c1">#</span>
-        <span class="c1"># Must take care to not raise an exception if _dummy_thread is being</span>
-        <span class="c1"># used (and thus this module is being used as an instance of</span>
-        <span class="c1"># dummy_threading).  _dummy_thread.get_ident() always returns -1 since</span>
-        <span class="c1"># there is only one thread if _dummy_thread is being used.  Thus</span>
-        <span class="c1"># len(_active) is always &lt;= 1 here, and any Thread instance created</span>
-        <span class="c1"># overwrites the (if any) thread currently registered in _active.</span>
-        <span class="c1">#</span>
-        <span class="c1"># An instance of _MainThread is always created by &#39;threading&#39;.  This</span>
-        <span class="c1"># gets overwritten the instant an instance of Thread is created; both</span>
-        <span class="c1"># threads return -1 from _dummy_thread.get_ident() and thus have the</span>
-        <span class="c1"># same key in the dict.  So when the _MainThread instance created by</span>
-        <span class="c1"># &#39;threading&#39; tries to clean itself up when atexit calls this method</span>
-        <span class="c1"># it gets a KeyError if another Thread instance was created.</span>
-        <span class="c1">#</span>
-        <span class="c1"># This all means that KeyError from trying to delete something from</span>
-        <span class="c1"># _active if dummy_threading is being used is a red herring.  But</span>
-        <span class="c1"># since it isn&#39;t if dummy_threading is *not* being used then don&#39;t</span>
-        <span class="c1"># hide the exception.</span>
-
-        <span class="k">try</span><span class="p">:</span>
-            <span class="k">with</span> <span class="n">_active_limbo_lock</span><span class="p">:</span>
-                <span class="k">del</span> <span class="n">_active</span><span class="p">[</span><span class="n">get_ident</span><span class="p">()]</span>
-                <span class="c1"># There must not be any python code between the previous line</span>
-                <span class="c1"># and after the lock is released.  Otherwise a tracing function</span>
-                <span class="c1"># could try to acquire the lock again in the same thread, (in</span>
-                <span class="c1"># current_thread()), and would block.</span>
-        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
-            <span class="k">if</span> <span class="s1">&#39;dummy_threading&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_sys</span><span class="o">.</span><span class="n">modules</span><span class="p">:</span>
-                <span class="k">raise</span>
+        <span class="k">with</span> <span class="n">_active_limbo_lock</span><span class="p">:</span>
+            <span class="k">del</span> <span class="n">_active</span><span class="p">[</span><span class="n">get_ident</span><span class="p">()]</span>
+            <span class="c1"># There must not be any python code between the previous line</span>
+            <span class="c1"># and after the lock is released.  Otherwise a tracing function</span>
+            <span class="c1"># could try to acquire the lock again in the same thread, (in</span>
+            <span class="c1"># current_thread()), and would block.</span>
 
     <span class="k">def</span> <span class="nf">join</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Wait until the thread terminates.</span>
@@ -1086,7 +1062,7 @@
 <span class="sd">        When the timeout argument is present and not None, it should be a</span>
 <span class="sd">        floating point number specifying a timeout for the operation in seconds</span>
 <span class="sd">        (or fractions thereof). As join() always returns None, you must call</span>
-<span class="sd">        isAlive() after join() to decide whether a timeout happened -- if the</span>
+<span class="sd">        is_alive() after join() to decide whether a timeout happened -- if the</span>
 <span class="sd">        thread is still alive, the join() call timed out.</span>
 
 <span class="sd">        When the timeout argument is not present or None, the operation will</span>
@@ -1170,7 +1146,15 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_wait_for_tstate_lock</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
         <span class="k">return</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_stopped</span>
 
-    <span class="n">isAlive</span> <span class="o">=</span> <span class="n">is_alive</span>
+    <span class="k">def</span> <span class="nf">isAlive</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Return whether the thread is alive.</span>
+
+<span class="sd">        This method is deprecated, use is_alive() instead.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span> <span class="nn">warnings</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s1">&#39;isAlive() is deprecated, use is_alive() instead&#39;</span><span class="p">,</span>
+                      <span class="ne">PendingDeprecationWarning</span><span class="p">,</span> <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_alive</span><span class="p">()</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span> <span class="nf">daemon</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -1337,6 +1321,9 @@
     <span class="c1"># the main thread&#39;s tstate_lock - that won&#39;t happen until the interpreter</span>
     <span class="c1"># is nearly dead.  So we release it here.  Note that just calling _stop()</span>
     <span class="c1"># isn&#39;t enough:  other threads may already be waiting on _tstate_lock.</span>
+    <span class="k">if</span> <span class="n">_main_thread</span><span class="o">.</span><span class="n">_is_stopped</span><span class="p">:</span>
+        <span class="c1"># _shutdown() was already called</span>
+        <span class="k">return</span>
     <span class="n">tlock</span> <span class="o">=</span> <span class="n">_main_thread</span><span class="o">.</span><span class="n">_tstate_lock</span>
     <span class="c1"># The main thread isn&#39;t finished yet, so its thread state lock can&#39;t have</span>
     <span class="c1"># been released.</span>
@@ -1373,10 +1360,9 @@
 
 
 <span class="k">def</span> <span class="nf">_after_fork</span><span class="p">():</span>
-    <span class="c1"># This function is called by Python/ceval.c:PyEval_ReInitThreads which</span>
-    <span class="c1"># is called from PyOS_AfterFork.  Here we cleanup threading module state</span>
-    <span class="c1"># that should not exist after a fork.</span>
-
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Cleanup threading module state that should not exist after a fork.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># Reset _active_limbo_lock, in case we forked while the lock was held</span>
     <span class="c1"># by another (non-forked) thread.  http://bugs.python.org/issue874900</span>
     <span class="k">global</span> <span class="n">_active_limbo_lock</span><span class="p">,</span> <span class="n">_main_thread</span>
@@ -1410,6 +1396,10 @@
         <span class="n">_active</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
         <span class="n">_active</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">new_active</span><span class="p">)</span>
         <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">_active</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+
+
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">_os</span><span class="p">,</span> <span class="s2">&quot;register_at_fork&quot;</span><span class="p">):</span>
+    <span class="n">_os</span><span class="o">.</span><span class="n">register_at_fork</span><span class="p">(</span><span class="n">after_in_child</span><span class="o">=</span><span class="n">_after_fork</span><span class="p">)</span>
 </pre></div>
 
           </div>
@@ -1462,7 +1452,7 @@
         <li class="right" >
           <a href="../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../sidebar.html">xonsh 0.9.10 documentation</a> &#187;</li>
+    <li><a href="../sidebar.html">xonsh 0.9.11.dev21 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="index.html" >Module code</a> &#187;</li> 
       </ul>
