@@ -510,6 +510,26 @@
     
 
     /*==========================================================================
+     * field definition markup
+     * XXX: could try to do this via an extension
+     *==========================================================================*/
+    $(function () {
+        // sphinx2 doesn't distinguish classmethod/staticmethod, so add helper class for styling.
+        $("dl.method").each(function (){
+            var $item = $(this),
+                type = $item.find("> dt > em.property:first-child").text().trim();
+            if(type){
+                $item.attr("subtype", type);
+            }
+        });
+
+        // detect which ones end w/ headerlink, to adjust markup
+        // NOTE: .classmethod & .staticmethod can be removed when sphinx 1.x is dropped.
+        $("dl.object, dl.data, dl.function, dl.method, dl.attribute, dl.class , dl.exception, dl.classmethod, dl.staticmethod")
+            .filter(":has(> dt > a.headerlink:last-child)").addClass("has-headerlink");
+    });
+
+    /*==========================================================================
      * eof
      *==========================================================================*/
 
