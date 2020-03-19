@@ -6,20 +6,35 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
   <head>
     <meta charset="utf-8" />
-    <title>xonsh.history.sqlite &#8212; xonsh 0.9.12.dev70 documentation</title>
+    <title>xonsh.history.sqlite &#8212; xonsh 0.9.15 documentation</title>
     <link rel="stylesheet" href="../../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
-    <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
-    <script type="text/javascript" id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
-    <script type="text/javascript" src="../../../_static/jquery.js"></script>
-    <script type="text/javascript" src="../../../_static/underscore.js"></script>
-    <script type="text/javascript" src="../../../_static/doctools.js"></script>
-    <script type="text/javascript" src="../../../_static/language_data.js"></script>
-    <script type="text/javascript" src="../../../_static/jquery.cookie.js"></script>
-    <script type="text/javascript" src="../../../_static/cloud.base.js"></script>
-    <script type="text/javascript" src="../../../_static/cloud.js"></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
+    
+    <script id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+    <script src="../../../_static/jquery.js"></script>
+    <script src="../../../_static/underscore.js"></script>
+    <script src="../../../_static/doctools.js"></script>
+    <script src="../../../_static/language_data.js"></script>
+
+    
+    
+     
+        <script src="../../../_static/jquery.cookie.js"></script>
+    
+
+    
+     
+        <script src="../../../_static/cloud.base.js"></script>
+    
+
+    
+     
+        <script src="../../../_static/cloud.js"></script>
+    
+
     <link rel="shortcut icon" href="../../../_static/magic_conch.ico"/>
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
@@ -39,7 +54,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../sidebar.html">xonsh 0.9.12.dev70 documentation</a> &#187;</li>
+    <li><a href="../../../sidebar.html">xonsh 0.9.15 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -64,8 +79,12 @@
 <span class="kn">import</span> <span class="nn">threading</span>
 <span class="kn">import</span> <span class="nn">time</span>
 
-<span class="kn">from</span> <span class="nn">xonsh.history.base</span> <span class="k">import</span> <span class="n">History</span>
+<span class="kn">from</span> <span class="nn">xonsh.history.base</span> <span class="kn">import</span> <span class="n">History</span>
 <span class="kn">import</span> <span class="nn">xonsh.tools</span> <span class="k">as</span> <span class="nn">xt</span>
+
+<span class="n">XH_SQLITE_CACHE</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">local</span><span class="p">()</span>
+<span class="n">XH_SQLITE_TABLE_NAME</span> <span class="o">=</span> <span class="s2">&quot;xonsh_history&quot;</span>
+<span class="n">XH_SQLITE_CREATED_SQL_TBL</span> <span class="o">=</span> <span class="s2">&quot;CREATED_SQL_TABLE&quot;</span>
 
 
 <span class="k">def</span> <span class="nf">_xh_sqlite_get_file_name</span><span class="p">():</span>
@@ -88,35 +107,84 @@
 
 <span class="sd">    Columns:</span>
 <span class="sd">        info - JSON formatted, reserved for future extension.</span>
+<span class="sd">        frequency - in case of HISTCONTROL=erasedups,</span>
+<span class="sd">        it tracks the frequency of the inputs. helps in sorting autocompletion</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">XH_SQLITE_CACHE</span><span class="p">,</span> <span class="n">XH_SQLITE_CREATED_SQL_TBL</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+        <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
+            <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">            CREATE TABLE IF NOT EXISTS {}</span>
+<span class="sd">                 (inp TEXT,</span>
+<span class="sd">                  rtn INTEGER,</span>
+<span class="sd">                  tsb REAL,</span>
+<span class="sd">                  tse REAL,</span>
+<span class="sd">                  sessionid TEXT,</span>
+<span class="sd">                  out TEXT,</span>
+<span class="sd">                  info TEXT,</span>
+<span class="sd">                  frequency INTEGER default 1</span>
+<span class="sd">                 )</span>
+<span class="sd">        &quot;&quot;&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+                <span class="n">XH_SQLITE_TABLE_NAME</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+        <span class="c1"># add frequency column if not exists for backward compatibility</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
+                <span class="s2">&quot;ALTER TABLE &quot;</span>
+                <span class="o">+</span> <span class="n">XH_SQLITE_TABLE_NAME</span>
+                <span class="o">+</span> <span class="s2">&quot; ADD COLUMN frequency INTEGER default 1&quot;</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">OperationalError</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+        <span class="c1"># mark that this function ran for this session</span>
+        <span class="nb">setattr</span><span class="p">(</span><span class="n">XH_SQLITE_CACHE</span><span class="p">,</span> <span class="n">XH_SQLITE_CREATED_SQL_TBL</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_xh_sqlite_get_frequency</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="nb">input</span><span class="p">):</span>
+    <span class="c1"># type: (sqlite3.Cursor, str) -&gt; int</span>
+    <span class="n">sql</span> <span class="o">=</span> <span class="s2">&quot;SELECT sum(frequency) FROM </span><span class="si">{}</span><span class="s2"> WHERE inp=?&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">XH_SQLITE_TABLE_NAME</span><span class="p">)</span>
+    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="p">(</span><span class="nb">input</span><span class="p">,))</span>
+    <span class="k">return</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">or</span> <span class="mi">0</span>
+
+
+<span class="k">def</span> <span class="nf">_xh_sqlite_erase_dups</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="nb">input</span><span class="p">):</span>
+    <span class="n">freq</span> <span class="o">=</span> <span class="n">_xh_sqlite_get_frequency</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="nb">input</span><span class="p">)</span>
+    <span class="n">sql</span> <span class="o">=</span> <span class="s2">&quot;DELETE FROM </span><span class="si">{}</span><span class="s2"> WHERE inp=?&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">XH_SQLITE_TABLE_NAME</span><span class="p">)</span>
+    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="p">(</span><span class="nb">input</span><span class="p">,))</span>
+    <span class="k">return</span> <span class="n">freq</span>
+
+
+<span class="k">def</span> <span class="nf">_sql_insert</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">values</span><span class="p">):</span>
+    <span class="c1"># type: (sqlite3.Cursor, dict) -&gt; None</span>
+    <span class="sd">&quot;&quot;&quot;handy function to run insert query&quot;&quot;&quot;</span>
+    <span class="n">sql</span> <span class="o">=</span> <span class="s2">&quot;INSERT INTO </span><span class="si">{}</span><span class="s2"> (</span><span class="si">{}</span><span class="s2">) VALUES (</span><span class="si">{}</span><span class="s2">);&quot;</span>
+    <span class="n">fields</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
+    <span class="n">marks</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="s2">&quot;?&quot;</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">values</span><span class="p">))</span>
     <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
-        <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        CREATE TABLE IF NOT EXISTS xonsh_history</span>
-<span class="sd">             (inp TEXT,</span>
-<span class="sd">              rtn INTEGER,</span>
-<span class="sd">              tsb REAL,</span>
-<span class="sd">              tse REAL,</span>
-<span class="sd">              sessionid TEXT,</span>
-<span class="sd">              out TEXT,</span>
-<span class="sd">              info TEXT</span>
-<span class="sd">             )</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+        <span class="n">sql</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">XH_SQLITE_TABLE_NAME</span><span class="p">,</span> <span class="n">fields</span><span class="p">,</span> <span class="n">marks</span><span class="p">),</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">values</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
     <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_xh_sqlite_insert_command</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">sessionid</span><span class="p">,</span> <span class="n">store_stdout</span><span class="p">):</span>
-    <span class="n">sql</span> <span class="o">=</span> <span class="s2">&quot;INSERT INTO xonsh_history (inp, rtn, tsb, tse, sessionid&quot;</span>
+<span class="k">def</span> <span class="nf">_xh_sqlite_insert_command</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">sessionid</span><span class="p">,</span> <span class="n">store_stdout</span><span class="p">,</span> <span class="n">remove_duplicates</span><span class="p">):</span>
     <span class="n">tss</span> <span class="o">=</span> <span class="n">cmd</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;ts&quot;</span><span class="p">,</span> <span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">])</span>
-    <span class="n">params</span> <span class="o">=</span> <span class="p">[</span><span class="n">cmd</span><span class="p">[</span><span class="s2">&quot;inp&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(),</span> <span class="n">cmd</span><span class="p">[</span><span class="s2">&quot;rtn&quot;</span><span class="p">],</span> <span class="n">tss</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">tss</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">sessionid</span><span class="p">]</span>
+    <span class="n">values</span> <span class="o">=</span> <span class="n">collections</span><span class="o">.</span><span class="n">OrderedDict</span><span class="p">(</span>
+        <span class="p">[</span>
+            <span class="p">(</span><span class="s2">&quot;inp&quot;</span><span class="p">,</span> <span class="n">cmd</span><span class="p">[</span><span class="s2">&quot;inp&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()),</span>
+            <span class="p">(</span><span class="s2">&quot;rtn&quot;</span><span class="p">,</span> <span class="n">cmd</span><span class="p">[</span><span class="s2">&quot;rtn&quot;</span><span class="p">]),</span>
+            <span class="p">(</span><span class="s2">&quot;tsb&quot;</span><span class="p">,</span> <span class="n">tss</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
+            <span class="p">(</span><span class="s2">&quot;tse&quot;</span><span class="p">,</span> <span class="n">tss</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>
+            <span class="p">(</span><span class="s2">&quot;sessionid&quot;</span><span class="p">,</span> <span class="n">sessionid</span><span class="p">),</span>
+        <span class="p">]</span>
+    <span class="p">)</span>
     <span class="k">if</span> <span class="n">store_stdout</span> <span class="ow">and</span> <span class="s2">&quot;out&quot;</span> <span class="ow">in</span> <span class="n">cmd</span><span class="p">:</span>
-        <span class="n">sql</span> <span class="o">+=</span> <span class="s2">&quot;, out&quot;</span>
-        <span class="n">params</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cmd</span><span class="p">[</span><span class="s2">&quot;out&quot;</span><span class="p">])</span>
+        <span class="n">values</span><span class="p">[</span><span class="s2">&quot;out&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">cmd</span><span class="p">[</span><span class="s2">&quot;out&quot;</span><span class="p">]</span>
     <span class="k">if</span> <span class="s2">&quot;info&quot;</span> <span class="ow">in</span> <span class="n">cmd</span><span class="p">:</span>
-        <span class="n">sql</span> <span class="o">+=</span> <span class="s2">&quot;, info&quot;</span>
         <span class="n">info</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">cmd</span><span class="p">[</span><span class="s2">&quot;info&quot;</span><span class="p">])</span>
-        <span class="n">params</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">info</span><span class="p">)</span>
-    <span class="n">sql</span> <span class="o">+=</span> <span class="s2">&quot;) VALUES (&quot;</span> <span class="o">+</span> <span class="p">(</span><span class="s2">&quot;?, &quot;</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">params</span><span class="p">))</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;, &quot;</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;)&quot;</span>
-    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">params</span><span class="p">))</span>
+        <span class="n">values</span><span class="p">[</span><span class="s2">&quot;info&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">info</span>
+    <span class="k">if</span> <span class="n">remove_duplicates</span><span class="p">:</span>
+        <span class="n">values</span><span class="p">[</span><span class="s2">&quot;frequency&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_xh_sqlite_erase_dups</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">values</span><span class="p">[</span><span class="s2">&quot;inp&quot;</span><span class="p">])</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="n">_sql_insert</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span>
 
 
 <span class="k">def</span> <span class="nf">_xh_sqlite_get_count</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">sessionid</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
@@ -130,7 +198,7 @@
 
 
 <span class="k">def</span> <span class="nf">_xh_sqlite_get_records</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">sessionid</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">newest_first</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
-    <span class="n">sql</span> <span class="o">=</span> <span class="s2">&quot;SELECT inp, tsb, rtn FROM xonsh_history &quot;</span>
+    <span class="n">sql</span> <span class="o">=</span> <span class="s2">&quot;SELECT inp, tsb, rtn, frequency FROM xonsh_history &quot;</span>
     <span class="n">params</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">if</span> <span class="n">sessionid</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">sql</span> <span class="o">+=</span> <span class="s2">&quot;WHERE sessionid = ? &quot;</span>
@@ -158,11 +226,13 @@
     <span class="k">return</span> <span class="n">result</span><span class="o">.</span><span class="n">rowcount</span>
 
 
-<span class="k">def</span> <span class="nf">xh_sqlite_append_history</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">sessionid</span><span class="p">,</span> <span class="n">store_stdout</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="k">def</span> <span class="nf">xh_sqlite_append_history</span><span class="p">(</span>
+    <span class="n">cmd</span><span class="p">,</span> <span class="n">sessionid</span><span class="p">,</span> <span class="n">store_stdout</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">remove_duplicates</span><span class="o">=</span><span class="kc">False</span>
+<span class="p">):</span>
     <span class="k">with</span> <span class="n">_xh_sqlite_get_conn</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
         <span class="n">c</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
         <span class="n">_xh_sqlite_create_history_table</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
-        <span class="n">_xh_sqlite_insert_command</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">sessionid</span><span class="p">,</span> <span class="n">store_stdout</span><span class="p">)</span>
+        <span class="n">_xh_sqlite_insert_command</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">sessionid</span><span class="p">,</span> <span class="n">store_stdout</span><span class="p">,</span> <span class="n">remove_duplicates</span><span class="p">)</span>
         <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
 
 
@@ -189,7 +259,7 @@
 <div class="viewcode-block" id="SqliteHistoryGC"><a class="viewcode-back" href="../../../api/history/sqlite.html#xonsh.history.sqlite.SqliteHistoryGC">[docs]</a><span class="k">class</span> <span class="nc">SqliteHistoryGC</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Shell history garbage collection.&quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wait_for_shell</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wait_for_shell</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Thread responsible for garbage collecting old history.</span>
 
 <span class="sd">        May wait for shell (and for xonshrc to have been loaded) to start work.</span>
@@ -224,7 +294,7 @@
 <div class="viewcode-block" id="SqliteHistory"><a class="viewcode-back" href="../../../api/history/sqlite.html#xonsh.history.sqlite.SqliteHistory">[docs]</a><span class="k">class</span> <span class="nc">SqliteHistory</span><span class="p">(</span><span class="n">History</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Xonsh history backend implemented with sqlite3.&quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gc</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gc</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">filename</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">filename</span> <span class="o">=</span> <span class="n">_xh_sqlite_get_file_name</span><span class="p">()</span>
@@ -236,9 +306,11 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">outs</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">tss</span> <span class="o">=</span> <span class="p">[]</span>
 
+        <span class="c1"># during init rerun create command</span>
+        <span class="nb">setattr</span><span class="p">(</span><span class="n">XH_SQLITE_CACHE</span><span class="p">,</span> <span class="n">XH_SQLITE_CREATED_SQL_TBL</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+
 <div class="viewcode-block" id="SqliteHistory.append"><a class="viewcode-back" href="../../../api/history/sqlite.html#xonsh.history.sqlite.SqliteHistory.append">[docs]</a>    <span class="k">def</span> <span class="nf">append</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cmd</span><span class="p">):</span>
         <span class="n">envs</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
-        <span class="n">opts</span> <span class="o">=</span> <span class="n">envs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;HISTCONTROL&quot;</span><span class="p">)</span>
         <span class="n">inp</span> <span class="o">=</span> <span class="n">cmd</span><span class="p">[</span><span class="s2">&quot;inp&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">inps</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
         <span class="n">store_stdout</span> <span class="o">=</span> <span class="n">envs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_STORE_STDOUT&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
@@ -258,22 +330,23 @@
             <span class="k">return</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_hist_inp</span> <span class="o">=</span> <span class="n">inp</span>
         <span class="n">xh_sqlite_append_history</span><span class="p">(</span>
-            <span class="n">cmd</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sessionid</span><span class="p">),</span> <span class="n">store_stdout</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span>
+            <span class="n">cmd</span><span class="p">,</span>
+            <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sessionid</span><span class="p">),</span>
+            <span class="n">store_stdout</span><span class="p">,</span>
+            <span class="n">filename</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">,</span>
+            <span class="n">remove_duplicates</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;erasedups&quot;</span> <span class="ow">in</span> <span class="n">opts</span><span class="p">),</span>
         <span class="p">)</span></div>
 
-<div class="viewcode-block" id="SqliteHistory.all_items"><a class="viewcode-back" href="../../../api/history/sqlite.html#xonsh.history.sqlite.SqliteHistory.all_items">[docs]</a>    <span class="k">def</span> <span class="nf">all_items</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">newest_first</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<div class="viewcode-block" id="SqliteHistory.all_items"><a class="viewcode-back" href="../../../api/history/sqlite.html#xonsh.history.sqlite.SqliteHistory.all_items">[docs]</a>    <span class="k">def</span> <span class="nf">all_items</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">newest_first</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">session_id</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Display all history items.&quot;&quot;&quot;</span>
-        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">xh_sqlite_items</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">,</span> <span class="n">newest_first</span><span class="o">=</span><span class="n">newest_first</span><span class="p">):</span>
-            <span class="k">yield</span> <span class="p">{</span><span class="s2">&quot;inp&quot;</span><span class="p">:</span> <span class="n">item</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="s2">&quot;ts&quot;</span><span class="p">:</span> <span class="n">item</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="s2">&quot;rtn&quot;</span><span class="p">:</span> <span class="n">item</span><span class="p">[</span><span class="mi">2</span><span class="p">]}</span></div>
+        <span class="k">for</span> <span class="n">inp</span><span class="p">,</span> <span class="n">ts</span><span class="p">,</span> <span class="n">rtn</span><span class="p">,</span> <span class="n">freq</span> <span class="ow">in</span> <span class="n">xh_sqlite_items</span><span class="p">(</span>
+            <span class="n">filename</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">,</span> <span class="n">newest_first</span><span class="o">=</span><span class="n">newest_first</span><span class="p">,</span> <span class="n">sessionid</span><span class="o">=</span><span class="n">session_id</span>
+        <span class="p">):</span>
+            <span class="k">yield</span> <span class="p">{</span><span class="s2">&quot;inp&quot;</span><span class="p">:</span> <span class="n">inp</span><span class="p">,</span> <span class="s2">&quot;ts&quot;</span><span class="p">:</span> <span class="n">ts</span><span class="p">,</span> <span class="s2">&quot;rtn&quot;</span><span class="p">:</span> <span class="n">rtn</span><span class="p">,</span> <span class="s2">&quot;frequency&quot;</span><span class="p">:</span> <span class="n">freq</span><span class="p">}</span></div>
 
 <div class="viewcode-block" id="SqliteHistory.items"><a class="viewcode-back" href="../../../api/history/sqlite.html#xonsh.history.sqlite.SqliteHistory.items">[docs]</a>    <span class="k">def</span> <span class="nf">items</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">newest_first</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Display history items of current session.&quot;&quot;&quot;</span>
-        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">xh_sqlite_items</span><span class="p">(</span>
-            <span class="n">sessionid</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sessionid</span><span class="p">),</span>
-            <span class="n">filename</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">,</span>
-            <span class="n">newest_first</span><span class="o">=</span><span class="n">newest_first</span><span class="p">,</span>
-        <span class="p">):</span>
-            <span class="k">yield</span> <span class="p">{</span><span class="s2">&quot;inp&quot;</span><span class="p">:</span> <span class="n">item</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="s2">&quot;ts&quot;</span><span class="p">:</span> <span class="n">item</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="s2">&quot;rtn&quot;</span><span class="p">:</span> <span class="n">item</span><span class="p">[</span><span class="mi">2</span><span class="p">]}</span></div>
+        <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">all_items</span><span class="p">(</span><span class="n">newest_first</span><span class="p">,</span> <span class="n">session_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sessionid</span><span class="p">))</span></div>
 
 <div class="viewcode-block" id="SqliteHistory.info"><a class="viewcode-back" href="../../../api/history/sqlite.html#xonsh.history.sqlite.SqliteHistory.info">[docs]</a>    <span class="k">def</span> <span class="nf">info</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="n">data</span> <span class="o">=</span> <span class="n">collections</span><span class="o">.</span><span class="n">OrderedDict</span><span class="p">()</span>
@@ -312,7 +385,7 @@
     </form>
     </div>
 </div>
-<script type="text/javascript">$('#searchbox').show(0);</script>
+<script>$('#searchbox').show(0);</script>
         </div>
       </div>
     
@@ -345,7 +418,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../sidebar.html">xonsh 0.9.12.dev70 documentation</a> &#187;</li>
+    <li><a href="../../../sidebar.html">xonsh 0.9.15 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li> 
       </ul>
@@ -354,7 +427,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 2.2.0.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 2.4.4.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>
