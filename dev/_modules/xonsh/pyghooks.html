@@ -6,7 +6,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
   <head>
     <meta charset="utf-8" />
-    <title>xonsh.pyghooks &#8212; xonsh 0.9.18.dev48 documentation</title>
+    <title>xonsh.pyghooks &#8212; xonsh 0.9.18.dev75 documentation</title>
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css" />
@@ -55,7 +55,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../sidebar.html">xonsh 0.9.18.dev48 documentation</a> &#187;</li>
+    <li><a href="../../sidebar.html">xonsh 0.9.18.dev75 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -79,6 +79,7 @@
 <span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">ChainMap</span>
 <span class="kn">from</span> <span class="nn">collections.abc</span> <span class="kn">import</span> <span class="n">MutableMapping</span>
 <span class="kn">from</span> <span class="nn">keyword</span> <span class="kn">import</span> <span class="n">iskeyword</span>
+<span class="kn">from</span> <span class="nn">xonsh.lazyimps</span> <span class="kn">import</span> <span class="n">os_listxattr</span>
 
 <span class="kn">from</span> <span class="nn">pygments.lexer</span> <span class="kn">import</span> <span class="n">inherit</span><span class="p">,</span> <span class="n">bygroups</span><span class="p">,</span> <span class="n">include</span>
 <span class="kn">from</span> <span class="nn">pygments.lexers.agile</span> <span class="kn">import</span> <span class="n">Python3Lexer</span>
@@ -1427,15 +1428,16 @@
 <span class="n">events</span><span class="o">.</span><span class="n">on_lscolors_change</span><span class="p">(</span><span class="n">on_lscolors_change</span><span class="p">)</span>
 
 
-<div class="viewcode-block" id="color_file"><a class="viewcode-back" href="../../api/pyghooks.html#xonsh.pyghooks.color_file">[docs]</a><span class="k">def</span> <span class="nf">color_file</span><span class="p">(</span><span class="n">file_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">mode</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">(</span><span class="n">Color</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;Determine color to use for file as ls -c would, given stat() results and its name.</span>
+<div class="viewcode-block" id="color_file"><a class="viewcode-back" href="../../api/pyghooks.html#xonsh.pyghooks.color_file">[docs]</a><span class="k">def</span> <span class="nf">color_file</span><span class="p">(</span><span class="n">file_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">path_stat</span><span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">stat_result</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">(</span><span class="n">Color</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Determine color to use for file *approximately* as ls --color would,</span>
+<span class="sd">       given lstat() results and its path.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
-<span class="sd">    file_path : string</span>
+<span class="sd">    file_path:</span>
 <span class="sd">        relative path of file (as user typed it).</span>
-<span class="sd">    mode : int</span>
-<span class="sd">        stat() results for file_path.</span>
+<span class="sd">    path_stat:</span>
+<span class="sd">        lstat() results for file_path.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
@@ -1444,54 +1446,80 @@
 <span class="sd">    Notes</span>
 <span class="sd">    -----</span>
 
-<span class="sd">    * doesn&#39;t handle CA (capability)</span>
-<span class="sd">    * doesn&#39;t handle LS TARGET mapping</span>
-
+<span class="sd">    * implementation follows one authority:</span>
+<span class="sd">      https://github.com/coreutils/coreutils/blob/master/src/ls.c#L4879</span>
+<span class="sd">    * except:</span>
+<span class="sd">    1. does not return &#39;mi&#39;.  That&#39;s the color ls uses to show the (missing) *target* of a symlink</span>
+<span class="sd">       (in ls -l, not ls).</span>
+<span class="sd">    2. in dircolors, setting type code to &#39;0 or &#39;00&#39; bypasses that test and proceeds to others.</span>
+<span class="sd">       In our implementation, setting code to &#39;00&#39; paints the file with no color.</span>
+<span class="sd">       This is arguably a bug.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">lsc</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;LS_COLORS&quot;</span><span class="p">]</span>
-    <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;rs&quot;</span>
+    <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;fi&quot;</span>
 
-    <span class="k">if</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISLNK</span><span class="p">(</span><span class="n">mode</span><span class="p">):</span>  <span class="c1"># must test link before S_ISREG (esp execute)</span>
-        <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;ln&quot;</span>
+    <span class="c1"># if symlink, get info on (final) target</span>
+    <span class="k">if</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISLNK</span><span class="p">(</span><span class="n">path_stat</span><span class="o">.</span><span class="n">st_mode</span><span class="p">):</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">os</span><span class="o">.</span><span class="n">stat</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>
-        <span class="k">except</span> <span class="ne">FileNotFoundError</span><span class="p">:</span>
-            <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;or&quot;</span>
-    <span class="k">elif</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISREG</span><span class="p">(</span><span class="n">mode</span><span class="p">):</span>
-        <span class="k">if</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_IMODE</span><span class="p">(</span><span class="n">mode</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">stat</span><span class="o">.</span><span class="n">S_IXUSR</span> <span class="o">+</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_IXGRP</span> <span class="o">+</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_IXOTH</span><span class="p">):</span>
-            <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;ex&quot;</span>
-        <span class="k">elif</span> <span class="p">(</span>
-            <span class="n">mode</span> <span class="o">&amp;</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISUID</span>
-        <span class="p">):</span>  <span class="c1"># too many tests before we get to the common case -- restructure?</span>
+            <span class="n">tar_path_stat</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">stat</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>  <span class="c1"># and work with its properties</span>
+            <span class="k">if</span> <span class="n">lsc</span><span class="o">.</span><span class="n">is_target</span><span class="p">(</span><span class="s2">&quot;ln&quot;</span><span class="p">):</span>  <span class="c1"># if ln=target</span>
+                <span class="n">path_stat</span> <span class="o">=</span> <span class="n">tar_path_stat</span>
+        <span class="k">except</span> <span class="ne">FileNotFoundError</span><span class="p">:</span>  <span class="c1"># bug always color broken link &#39;or&#39;</span>
+            <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;or&quot;</span>  <span class="c1"># early exit</span>
+            <span class="n">ret_color_token</span> <span class="o">=</span> <span class="n">file_color_tokens</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">color_key</span><span class="p">,</span> <span class="n">Text</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">ret_color_token</span><span class="p">,</span> <span class="n">color_key</span>
+
+    <span class="n">mode</span> <span class="o">=</span> <span class="n">path_stat</span><span class="o">.</span><span class="n">st_mode</span>
+
+    <span class="k">if</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISREG</span><span class="p">(</span><span class="n">mode</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">mode</span> <span class="o">&amp;</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISUID</span><span class="p">:</span>
             <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;su&quot;</span>
         <span class="k">elif</span> <span class="n">mode</span> <span class="o">&amp;</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISGID</span><span class="p">:</span>
             <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;sg&quot;</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">match</span> <span class="o">=</span> <span class="n">color_file_extension_RE</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">match</span><span class="p">:</span>
-                <span class="n">ext</span> <span class="o">=</span> <span class="s2">&quot;*&quot;</span> <span class="o">+</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># look for *.&lt;fileExtension&gt; coloring</span>
-                <span class="k">if</span> <span class="n">ext</span> <span class="ow">in</span> <span class="n">lsc</span><span class="p">:</span>
-                    <span class="n">color_key</span> <span class="o">=</span> <span class="n">ext</span>
-                <span class="k">else</span><span class="p">:</span>
-                    <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;rs&quot;</span>
+            <span class="n">cap</span> <span class="o">=</span> <span class="n">os_listxattr</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="n">follow_symlinks</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">cap</span> <span class="ow">and</span> <span class="s2">&quot;security.capability&quot;</span> <span class="ow">in</span> <span class="n">cap</span><span class="p">:</span>  <span class="c1"># protect None return on some OS?</span>
+                <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;ca&quot;</span>
+            <span class="k">elif</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_IMODE</span><span class="p">(</span><span class="n">mode</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">stat</span><span class="o">.</span><span class="n">S_IXUSR</span> <span class="o">+</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_IXGRP</span> <span class="o">+</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_IXOTH</span><span class="p">):</span>
+                <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;ex&quot;</span>
+            <span class="k">elif</span> <span class="n">path_stat</span><span class="o">.</span><span class="n">st_nlink</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;mh&quot;</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;rs&quot;</span>
-    <span class="k">elif</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISDIR</span><span class="p">(</span><span class="n">mode</span><span class="p">):</span>  <span class="c1"># ls -c doesn&#39;t colorize sticky or ow if not dirs...</span>
-        <span class="n">color_key</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;di&quot;</span><span class="p">,</span> <span class="s2">&quot;ow&quot;</span><span class="p">,</span> <span class="s2">&quot;st&quot;</span><span class="p">,</span> <span class="s2">&quot;tw&quot;</span><span class="p">)[</span>
-            <span class="p">(</span><span class="n">mode</span> <span class="o">&amp;</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISVTX</span> <span class="o">==</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISVTX</span><span class="p">)</span> <span class="o">*</span> <span class="mi">2</span>
-            <span class="o">+</span> <span class="p">(</span><span class="n">mode</span> <span class="o">&amp;</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_IWOTH</span> <span class="o">==</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_IWOTH</span><span class="p">)</span>
-        <span class="p">]</span>
-    <span class="k">elif</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISCHR</span><span class="p">(</span><span class="n">mode</span><span class="p">):</span>
-        <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;cd&quot;</span>
-    <span class="k">elif</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISBLK</span><span class="p">(</span><span class="n">mode</span><span class="p">):</span>
-        <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;bd&quot;</span>
+                <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;fi&quot;</span>
+    <span class="k">elif</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISDIR</span><span class="p">(</span><span class="n">mode</span><span class="p">):</span>  <span class="c1"># ls --color doesn&#39;t colorize sticky or ow if not dirs...</span>
+        <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;di&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">ON_WINDOWS</span><span class="p">):</span>  <span class="c1"># on Windows, these do not mean what you think they mean.</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">mode</span> <span class="o">&amp;</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISVTX</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="n">mode</span> <span class="o">&amp;</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_IWOTH</span><span class="p">):</span>
+                <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;tw&quot;</span>
+            <span class="k">elif</span> <span class="n">mode</span> <span class="o">&amp;</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_IWOTH</span><span class="p">:</span>
+                <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;ow&quot;</span>
+            <span class="k">elif</span> <span class="n">mode</span> <span class="o">&amp;</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISVTX</span><span class="p">:</span>
+                <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;st&quot;</span>
+    <span class="k">elif</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISLNK</span><span class="p">(</span><span class="n">mode</span><span class="p">):</span>
+        <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;ln&quot;</span>
     <span class="k">elif</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISFIFO</span><span class="p">(</span><span class="n">mode</span><span class="p">):</span>
         <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;pi&quot;</span>
     <span class="k">elif</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISSOCK</span><span class="p">(</span><span class="n">mode</span><span class="p">):</span>
         <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;so&quot;</span>
+    <span class="k">elif</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISBLK</span><span class="p">(</span><span class="n">mode</span><span class="p">):</span>
+        <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;bd&quot;</span>
+    <span class="k">elif</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISCHR</span><span class="p">(</span><span class="n">mode</span><span class="p">):</span>
+        <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;cd&quot;</span>
     <span class="k">elif</span> <span class="n">stat</span><span class="o">.</span><span class="n">S_ISDOOR</span><span class="p">(</span><span class="n">mode</span><span class="p">):</span>
-        <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;do&quot;</span>  <span class="c1"># bug missing mapping for FMT based PORT and WHITEOUT ??</span>
+        <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;do&quot;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">color_key</span> <span class="o">=</span> <span class="s2">&quot;or&quot;</span>  <span class="c1"># any other type --&gt; orphan</span>
+
+    <span class="c1"># if still normal file -- try color by file extension.</span>
+    <span class="c1"># note: symlink to *.&lt;ext&gt; will be colored &#39;fi&#39; unless the symlink itself</span>
+    <span class="c1"># ends with .&lt;ext&gt;. `ls` does the same.  Bug-for-bug compatibility!</span>
+    <span class="k">if</span> <span class="n">color_key</span> <span class="o">==</span> <span class="s2">&quot;fi&quot;</span><span class="p">:</span>
+        <span class="n">match</span> <span class="o">=</span> <span class="n">color_file_extension_RE</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">match</span><span class="p">:</span>
+            <span class="n">ext</span> <span class="o">=</span> <span class="s2">&quot;*&quot;</span> <span class="o">+</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># look for *.&lt;fileExtension&gt; coloring</span>
+            <span class="k">if</span> <span class="n">ext</span> <span class="ow">in</span> <span class="n">lsc</span><span class="p">:</span>
+                <span class="n">color_key</span> <span class="o">=</span> <span class="n">ext</span>
 
     <span class="n">ret_color_token</span> <span class="o">=</span> <span class="n">file_color_tokens</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">color_key</span><span class="p">,</span> <span class="n">Text</span><span class="p">)</span>
 
@@ -1535,8 +1563,8 @@
     <span class="n">yieldVal</span> <span class="o">=</span> <span class="n">Text</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="n">path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
-        <span class="n">mode</span> <span class="o">=</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">lstat</span><span class="p">(</span><span class="n">path</span><span class="p">))</span><span class="o">.</span><span class="n">st_mode</span>  <span class="c1"># lstat() will raise FNF if not a real file</span>
-        <span class="n">yieldVal</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">color_file</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">mode</span><span class="p">)</span>
+        <span class="n">path_stat</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">lstat</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>  <span class="c1"># lstat() will raise FNF if not a real file</span>
+        <span class="n">yieldVal</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">color_file</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">path_stat</span><span class="p">)</span>
     <span class="k">except</span> <span class="p">(</span><span class="ne">FileNotFoundError</span><span class="p">,</span> <span class="ne">OSError</span><span class="p">):</span>
         <span class="k">pass</span>
 
@@ -1727,7 +1755,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../sidebar.html">xonsh 0.9.18.dev48 documentation</a> &#187;</li>
+    <li><a href="../../sidebar.html">xonsh 0.9.18.dev75 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
       </ul>
