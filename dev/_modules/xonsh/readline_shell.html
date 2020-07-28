@@ -6,7 +6,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
   <head>
     <meta charset="utf-8" />
-    <title>xonsh.readline_shell &#8212; xonsh 0.9.18.dev100 documentation</title>
+    <title>xonsh.readline_shell &#8212; xonsh 0.9.18.dev108 documentation</title>
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css" />
@@ -55,7 +55,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../sidebar.html">xonsh 0.9.18.dev100 documentation</a> &#187;</li>
+    <li><a href="../../sidebar.html">xonsh 0.9.18.dev108 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
       </ul>
@@ -92,6 +92,7 @@
 <span class="kn">import</span> <span class="nn">subprocess</span>
 <span class="kn">import</span> <span class="nn">collections</span>
 
+<span class="kn">import</span> <span class="nn">xonsh.completers.tools</span> <span class="k">as</span> <span class="nn">xct</span>
 <span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="kn">import</span> <span class="n">LazyObject</span><span class="p">,</span> <span class="n">lazyobject</span>
 <span class="kn">from</span> <span class="nn">xonsh.base_shell</span> <span class="kn">import</span> <span class="n">BaseShell</span>
 <span class="kn">from</span> <span class="nn">xonsh.ansi_colors</span> <span class="kn">import</span> <span class="p">(</span>
@@ -352,6 +353,27 @@
     <span class="k">return</span> <span class="n">inserter</span>
 
 
+<span class="k">def</span> <span class="nf">_render_completions</span><span class="p">(</span><span class="n">completions</span><span class="p">,</span> <span class="n">prefix</span><span class="p">,</span> <span class="n">prefix_len</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Render the completions according to the required prefix_len.</span>
+
+<span class="sd">    Readline will replace the current prefix with the chosen rendered completion.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">chopped</span> <span class="o">=</span> <span class="n">prefix</span><span class="p">[:</span><span class="o">-</span><span class="n">prefix_len</span><span class="p">]</span> <span class="k">if</span> <span class="n">prefix_len</span> <span class="k">else</span> <span class="n">prefix</span>
+
+    <span class="n">rendered_completions</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="n">completions</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="n">xct</span><span class="o">.</span><span class="n">RichCompletion</span><span class="p">)</span> <span class="ow">and</span> <span class="n">comp</span><span class="o">.</span><span class="n">prefix_len</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">comp</span><span class="o">.</span><span class="n">prefix_len</span><span class="p">:</span>
+                <span class="n">comp</span> <span class="o">=</span> <span class="n">prefix</span><span class="p">[:</span> <span class="o">-</span><span class="n">comp</span><span class="o">.</span><span class="n">prefix_len</span><span class="p">]</span> <span class="o">+</span> <span class="n">comp</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">comp</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="n">comp</span>
+        <span class="k">elif</span> <span class="n">chopped</span><span class="p">:</span>
+            <span class="n">comp</span> <span class="o">=</span> <span class="n">chopped</span> <span class="o">+</span> <span class="n">comp</span>
+        <span class="n">rendered_completions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">comp</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">rendered_completions</span>
+
+
 <span class="n">DEDENT_TOKENS</span> <span class="o">=</span> <span class="n">LazyObject</span><span class="p">(</span>
     <span class="k">lambda</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">([</span><span class="s2">&quot;raise&quot;</span><span class="p">,</span> <span class="s2">&quot;return&quot;</span><span class="p">,</span> <span class="s2">&quot;pass&quot;</span><span class="p">,</span> <span class="s2">&quot;break&quot;</span><span class="p">,</span> <span class="s2">&quot;continue&quot;</span><span class="p">]),</span>
     <span class="nb">globals</span><span class="p">(),</span>
@@ -483,11 +505,8 @@
         <span class="n">completions</span><span class="p">,</span> <span class="n">l</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">completer</span><span class="o">.</span><span class="n">complete</span><span class="p">(</span>
             <span class="n">prefix</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">begidx</span><span class="p">,</span> <span class="n">endidx</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ctx</span>
         <span class="p">)</span>
-        <span class="n">chopped</span> <span class="o">=</span> <span class="n">prefix</span><span class="p">[:</span><span class="o">-</span><span class="n">l</span><span class="p">]</span>
-        <span class="k">if</span> <span class="n">chopped</span><span class="p">:</span>
-            <span class="n">rtn_completions</span> <span class="o">=</span> <span class="p">[</span><span class="n">chopped</span> <span class="o">+</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">completions</span><span class="p">]</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">rtn_completions</span> <span class="o">=</span> <span class="n">completions</span>
+        <span class="n">rtn_completions</span> <span class="o">=</span> <span class="n">_render_completions</span><span class="p">(</span><span class="n">completions</span><span class="p">,</span> <span class="n">prefix</span><span class="p">,</span> <span class="n">l</span><span class="p">)</span>
+
         <span class="n">rtn</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="n">prefix_begs_quote</span> <span class="o">=</span> <span class="n">prefix</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;&#39;&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">prefix</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;&quot;&#39;</span><span class="p">)</span>
         <span class="n">prefix_ends_quote</span> <span class="o">=</span> <span class="n">prefix</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;&#39;&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">prefix</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s1">&#39;&quot;&#39;</span><span class="p">)</span>
@@ -808,7 +827,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../sidebar.html">xonsh 0.9.18.dev100 documentation</a> &#187;</li>
+    <li><a href="../../sidebar.html">xonsh 0.9.18.dev108 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
       </ul>
