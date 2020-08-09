@@ -3,10 +3,11 @@
 
 <!DOCTYPE html>
 
-<html xmlns="http://www.w3.org/1999/xhtml">
+<html>
   <head>
     <meta charset="utf-8" />
-    <title>xonsh.history.main &#8212; xonsh 0.9.18 documentation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>xonsh.history.main &#8212; xonsh 0.9.19 documentation</title>
     <link rel="stylesheet" href="../../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css" />
@@ -55,9 +56,10 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../sidebar.html">xonsh 0.9.18 documentation</a> &#187;</li>
+    <li><a href="../../../sidebar.html">xonsh 0.9.19 documentation</a> &#187;</li>
 
-          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li> 
+          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">xonsh.history.main</a></li> 
       </ul>
     </div>
     </div>
@@ -78,6 +80,7 @@
 <span class="kn">import</span> <span class="nn">json</span>
 <span class="kn">import</span> <span class="nn">os</span>
 <span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">threading</span>
 
 <span class="kn">from</span> <span class="nn">xonsh.history.base</span> <span class="kn">import</span> <span class="n">History</span>
 <span class="kn">from</span> <span class="nn">xonsh.history.dummy</span> <span class="kn">import</span> <span class="n">DummyHistory</span>
@@ -294,7 +297,7 @@
     <span class="p">}</span>
 
 
-<span class="n">_XH_MAIN_ACTIONS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;show&quot;</span><span class="p">,</span> <span class="s2">&quot;id&quot;</span><span class="p">,</span> <span class="s2">&quot;file&quot;</span><span class="p">,</span> <span class="s2">&quot;info&quot;</span><span class="p">,</span> <span class="s2">&quot;diff&quot;</span><span class="p">,</span> <span class="s2">&quot;gc&quot;</span><span class="p">}</span>
+<span class="n">_XH_MAIN_ACTIONS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;show&quot;</span><span class="p">,</span> <span class="s2">&quot;id&quot;</span><span class="p">,</span> <span class="s2">&quot;file&quot;</span><span class="p">,</span> <span class="s2">&quot;info&quot;</span><span class="p">,</span> <span class="s2">&quot;diff&quot;</span><span class="p">,</span> <span class="s2">&quot;gc&quot;</span><span class="p">,</span> <span class="s2">&quot;flush&quot;</span><span class="p">}</span>
 
 
 <span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">()</span>
@@ -393,6 +396,13 @@
             <span class="s1">&#39;units; e.g. &quot;--size 8128 commands&quot;&#39;</span>
         <span class="p">),</span>
     <span class="p">)</span>
+    <span class="n">gcp</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">&quot;--force&quot;</span><span class="p">,</span>
+        <span class="n">dest</span><span class="o">=</span><span class="s2">&quot;force_gc&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;perform garbage collection even if history much bigger than configured limit&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
     <span class="n">bgcp</span> <span class="o">=</span> <span class="n">gcp</span><span class="o">.</span><span class="n">add_mutually_exclusive_group</span><span class="p">()</span>
     <span class="n">bgcp</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
         <span class="s2">&quot;--blocking&quot;</span><span class="p">,</span>
@@ -414,11 +424,8 @@
         <span class="n">diff</span> <span class="o">=</span> <span class="n">subp</span><span class="o">.</span><span class="n">add_parser</span><span class="p">(</span><span class="s2">&quot;diff&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;diff two xonsh history files&quot;</span><span class="p">)</span>
         <span class="n">xdh</span><span class="o">.</span><span class="n">dh_create_parser</span><span class="p">(</span><span class="n">p</span><span class="o">=</span><span class="n">diff</span><span class="p">)</span>
 
-        <span class="kn">import</span> <span class="nn">xonsh.replay</span> <span class="k">as</span> <span class="nn">xrp</span>
-
-        <span class="n">replay</span> <span class="o">=</span> <span class="n">subp</span><span class="o">.</span><span class="n">add_parser</span><span class="p">(</span><span class="s2">&quot;replay&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;replay a xonsh history file&quot;</span><span class="p">)</span>
-        <span class="n">xrp</span><span class="o">.</span><span class="n">replay_create_parser</span><span class="p">(</span><span class="n">p</span><span class="o">=</span><span class="n">replay</span><span class="p">)</span>
-        <span class="n">_XH_MAIN_ACTIONS</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s2">&quot;replay&quot;</span><span class="p">)</span>
+    <span class="c1"># &#39;flush&#39; subcommand</span>
+    <span class="n">subp</span><span class="o">.</span><span class="n">add_parser</span><span class="p">(</span><span class="s2">&quot;flush&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;flush the current history to disk&quot;</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">p</span>
 
@@ -475,19 +482,19 @@
             <span class="k">return</span>
         <span class="nb">print</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">hist</span><span class="o">.</span><span class="n">filename</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
     <span class="k">elif</span> <span class="n">ns</span><span class="o">.</span><span class="n">action</span> <span class="o">==</span> <span class="s2">&quot;gc&quot;</span><span class="p">:</span>
-        <span class="n">hist</span><span class="o">.</span><span class="n">run_gc</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="n">ns</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">blocking</span><span class="o">=</span><span class="n">ns</span><span class="o">.</span><span class="n">blocking</span><span class="p">)</span>
+        <span class="n">hist</span><span class="o">.</span><span class="n">run_gc</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="n">ns</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">blocking</span><span class="o">=</span><span class="n">ns</span><span class="o">.</span><span class="n">blocking</span><span class="p">,</span> <span class="n">force</span><span class="o">=</span><span class="n">ns</span><span class="o">.</span><span class="n">force_gc</span><span class="p">)</span>
     <span class="k">elif</span> <span class="n">ns</span><span class="o">.</span><span class="n">action</span> <span class="o">==</span> <span class="s2">&quot;diff&quot;</span><span class="p">:</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">hist</span><span class="p">,</span> <span class="n">JsonHistory</span><span class="p">):</span>
             <span class="n">xdh</span><span class="o">.</span><span class="n">dh_main_action</span><span class="p">(</span><span class="n">ns</span><span class="p">)</span>
-    <span class="k">elif</span> <span class="n">ns</span><span class="o">.</span><span class="n">action</span> <span class="o">==</span> <span class="s2">&quot;replay&quot;</span><span class="p">:</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">hist</span><span class="p">,</span> <span class="n">JsonHistory</span><span class="p">):</span>
-            <span class="kn">import</span> <span class="nn">xonsh.replay</span> <span class="k">as</span> <span class="nn">xrp</span>
-
-            <span class="n">xrp</span><span class="o">.</span><span class="n">replay_main_action</span><span class="p">(</span><span class="n">hist</span><span class="p">,</span> <span class="n">ns</span><span class="p">,</span> <span class="n">stdout</span><span class="o">=</span><span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">stderr</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">ns</span><span class="o">.</span><span class="n">action</span> <span class="o">==</span> <span class="s2">&quot;flush&quot;</span><span class="p">:</span>
+        <span class="n">hf</span> <span class="o">=</span> <span class="n">hist</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">hf</span><span class="p">,</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">):</span>
+            <span class="n">hf</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Unknown history action </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">ns</span><span class="o">.</span><span class="n">action</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span></div>
 </pre></div>
 
+            <div class="clearer"></div>
           </div>
         </div>
       </div>
@@ -538,16 +545,17 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../sidebar.html">xonsh 0.9.18 documentation</a> &#187;</li>
+    <li><a href="../../../sidebar.html">xonsh 0.9.19 documentation</a> &#187;</li>
 
-          <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li> 
+          <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">xonsh.history.main</a></li> 
       </ul>
     </div>
     </div>
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 2.4.4.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.2.0.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>
