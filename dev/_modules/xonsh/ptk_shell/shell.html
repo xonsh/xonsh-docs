@@ -7,7 +7,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xonsh.ptk_shell.shell &#8212; xonsh 0.9.22.dev32.dev32 documentation</title>
+    <title>xonsh.ptk_shell.shell &#8212; xonsh 0.9.22.dev37.dev37 documentation</title>
     <link rel="stylesheet" href="../../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css" />
@@ -56,7 +56,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../contents.html">xonsh 0.9.22.dev32.dev32 documentation</a> &#187;</li>
+    <li><a href="../../../contents.html">xonsh 0.9.22.dev37.dev37 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.ptk_shell.shell</a></li> 
@@ -74,6 +74,7 @@
 <span></span><span class="c1"># -*- coding: utf-8 -*-</span>
 <span class="sd">&quot;&quot;&quot;The prompt_toolkit based xonsh shell.&quot;&quot;&quot;</span>
 <span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
 <span class="kn">import</span> <span class="nn">sys</span>
 <span class="kn">import</span> <span class="nn">builtins</span>
 <span class="kn">from</span> <span class="nn">types</span> <span class="kn">import</span> <span class="n">MethodType</span>
@@ -110,6 +111,7 @@
 <span class="p">)</span>
 
 
+<span class="n">ANSI_OSC_PATTERN</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\x1b</span><span class="s2">].*?</span><span class="se">\007</span><span class="s2">&quot;</span><span class="p">)</span>
 <span class="n">Token</span> <span class="o">=</span> <span class="n">_TokenType</span><span class="p">()</span>
 
 <span class="n">events</span><span class="o">.</span><span class="n">transmogrify</span><span class="p">(</span><span class="s2">&quot;on_ptk_create&quot;</span><span class="p">,</span> <span class="s2">&quot;LoadEvent&quot;</span><span class="p">)</span>
@@ -147,6 +149,19 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="n">ansi_tokens</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">style</span><span class="p">,</span> <span class="n">text</span><span class="p">))</span>
     <span class="k">return</span> <span class="n">ansi_tokens</span></div>
+
+
+<div class="viewcode-block" id="remove_ansi_osc"><a class="viewcode-back" href="../../../api/ptk_shell/shell.html#xonsh.ptk_shell.shell.remove_ansi_osc">[docs]</a><span class="k">def</span> <span class="nf">remove_ansi_osc</span><span class="p">(</span><span class="n">prompt</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Removes the ANSI OSC escape codes - ``prompt_toolkit`` does not support them.</span>
+<span class="sd">    Some terminal emulators - like iTerm2 - uses them for various things.</span>
+
+<span class="sd">    See: https://www.iterm2.com/documentation-escape-codes.html</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">osc_tokens</span> <span class="o">=</span> <span class="n">ANSI_OSC_PATTERN</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span>
+    <span class="n">prompt</span> <span class="o">=</span> <span class="n">ANSI_OSC_PATTERN</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">prompt</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">prompt</span><span class="p">,</span> <span class="n">osc_tokens</span></div>
 
 
 <div class="viewcode-block" id="PromptToolkitShell"><a class="viewcode-back" href="../../../api/ptk_shell/shell.html#xonsh.ptk_shell.shell.PromptToolkitShell">[docs]</a><span class="k">class</span> <span class="nc">PromptToolkitShell</span><span class="p">(</span><span class="n">BaseShell</span><span class="p">):</span>
@@ -323,10 +338,21 @@
             <span class="n">p</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">prompt_formatter</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>  <span class="c1"># pylint: disable=broad-except</span>
             <span class="n">print_exception</span><span class="p">()</span>
+
+        <span class="n">p</span><span class="p">,</span> <span class="n">osc_tokens</span> <span class="o">=</span> <span class="n">remove_ansi_osc</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+
         <span class="n">toks</span> <span class="o">=</span> <span class="n">partial_color_tokenize</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_first_prompt</span><span class="p">:</span>
             <span class="n">carriage_return</span><span class="p">()</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_first_prompt</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="c1"># handle OSC tokens</span>
+        <span class="k">for</span> <span class="n">osc</span> <span class="ow">in</span> <span class="n">osc_tokens</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">osc</span><span class="p">[</span><span class="mi">2</span><span class="p">:</span><span class="mi">4</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;0;&quot;</span><span class="p">:</span>
+                <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;TITLE&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">osc</span><span class="p">[</span><span class="mi">4</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="n">osc</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">__stdout__</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
         <span class="bp">self</span><span class="o">.</span><span class="n">settitle</span><span class="p">()</span>
         <span class="k">return</span> <span class="n">tokenize_ansi</span><span class="p">(</span><span class="n">PygmentsTokens</span><span class="p">(</span><span class="n">toks</span><span class="p">))</span></div>
 
@@ -533,7 +559,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../contents.html">xonsh 0.9.22.dev32.dev32 documentation</a> &#187;</li>
+    <li><a href="../../../contents.html">xonsh 0.9.22.dev37.dev37 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.ptk_shell.shell</a></li> 
