@@ -7,7 +7,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xonsh.prompt.vc &#8212; xonsh 0.9.22.dev103.dev103 documentation</title>
+    <title>xonsh.prompt.vc &#8212; xonsh 0.9.22.dev105.dev105 documentation</title>
     <link rel="stylesheet" href="../../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css" />
@@ -56,7 +56,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../contents.html">xonsh 0.9.22.dev103.dev103 documentation</a> &#187;</li>
+    <li><a href="../../../contents.html">xonsh 0.9.22.dev105.dev105 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.prompt.vc</a></li> 
@@ -236,11 +236,17 @@
     <span class="k">return</span> <span class="n">branch</span> <span class="ow">or</span> <span class="kc">None</span></div>
 
 
-<span class="k">def</span> <span class="nf">_git_dirty_working_directory</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">include_untracked</span><span class="p">):</span>
+<span class="k">def</span> <span class="nf">_get_exit_code</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot; Run a command and return its exit code &quot;&quot;&quot;</span>
     <span class="n">denv</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">detype</span><span class="p">()</span>
+    <span class="n">child</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">denv</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">child</span><span class="o">.</span><span class="n">returncode</span>
+
+
+<span class="k">def</span> <span class="nf">_git_dirty_working_directory</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">include_untracked</span><span class="p">):</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="c1"># Borrowed from this conversation</span>
-        <span class="c1"># https://github.com/sindresorhus/pure/issues/115</span>
+        <span class="c1"># https://gist.github.com/sindresorhus/3898739</span>
         <span class="k">if</span> <span class="n">include_untracked</span><span class="p">:</span>
             <span class="n">cmd</span> <span class="o">=</span> <span class="p">[</span>
                 <span class="s2">&quot;git&quot;</span><span class="p">,</span>
@@ -249,15 +255,19 @@
                 <span class="s2">&quot;--quiet&quot;</span><span class="p">,</span>
                 <span class="s2">&quot;--untracked-files=normal&quot;</span><span class="p">,</span>
             <span class="p">]</span>
+            <span class="n">exitcode</span> <span class="o">=</span> <span class="n">_get_exit_code</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">unindexed</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;diff&quot;</span><span class="p">,</span> <span class="s2">&quot;--no-ext-diff&quot;</span><span class="p">,</span> <span class="s2">&quot;--quiet&quot;</span><span class="p">]</span>
-            <span class="n">indexed</span> <span class="o">=</span> <span class="n">unindexed</span> <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;--cached&quot;</span><span class="p">,</span> <span class="s2">&quot;HEAD&quot;</span><span class="p">]</span>
-            <span class="n">cmd</span> <span class="o">=</span> <span class="n">unindexed</span> <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;||&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">indexed</span>
-        <span class="n">child</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">denv</span><span class="p">)</span>
+            <span class="c1"># checking unindexed files is faster, so try that first</span>
+            <span class="n">unindexed</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;diff-files&quot;</span><span class="p">,</span> <span class="s2">&quot;--quiet&quot;</span><span class="p">]</span>
+            <span class="n">exitcode</span> <span class="o">=</span> <span class="n">_get_exit_code</span><span class="p">(</span><span class="n">unindexed</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">exitcode</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="c1"># then, check indexed files</span>
+                <span class="n">indexed</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;diff-index&quot;</span><span class="p">,</span> <span class="s2">&quot;--quiet&quot;</span><span class="p">,</span> <span class="s2">&quot;--cached&quot;</span><span class="p">,</span> <span class="s2">&quot;HEAD&quot;</span><span class="p">]</span>
+                <span class="n">exitcode</span> <span class="o">=</span> <span class="n">_get_exit_code</span><span class="p">(</span><span class="n">indexed</span><span class="p">)</span>
         <span class="c1"># &quot;--quiet&quot; git commands imply &quot;--exit-code&quot;, which returns:</span>
         <span class="c1"># 1 if there are differences</span>
         <span class="c1"># 0 if there are no differences</span>
-        <span class="n">dwd</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">child</span><span class="o">.</span><span class="n">returncode</span><span class="p">)</span>
+        <span class="n">dwd</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">exitcode</span><span class="p">)</span>
     <span class="k">except</span> <span class="p">(</span><span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">,</span> <span class="ne">OSError</span><span class="p">,</span> <span class="ne">FileNotFoundError</span><span class="p">):</span>
         <span class="n">q</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
@@ -402,7 +412,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../contents.html">xonsh 0.9.22.dev103.dev103 documentation</a> &#187;</li>
+    <li><a href="../../../contents.html">xonsh 0.9.22.dev105.dev105 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.prompt.vc</a></li> 
