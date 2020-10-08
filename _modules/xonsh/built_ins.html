@@ -7,7 +7,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xonsh.built_ins &#8212; xonsh 0.9.22.dev238 documentation</title>
+    <title>xonsh.built_ins &#8212; xonsh 0.9.23.dev241.dev241 documentation</title>
     <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css" />
@@ -56,7 +56,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.9.22.dev238 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.9.23.dev241.dev241 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.built_ins</a></li> 
@@ -100,7 +100,7 @@
 <span class="kn">from</span> <span class="nn">xonsh.aliases</span> <span class="kn">import</span> <span class="n">Aliases</span><span class="p">,</span> <span class="n">make_default_aliases</span>
 <span class="kn">from</span> <span class="nn">xonsh.environ</span> <span class="kn">import</span> <span class="n">Env</span><span class="p">,</span> <span class="n">default_env</span><span class="p">,</span> <span class="n">locate_binary</span>
 <span class="kn">from</span> <span class="nn">xonsh.jobs</span> <span class="kn">import</span> <span class="n">add_job</span>
-<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="kn">import</span> <span class="n">ON_POSIX</span><span class="p">,</span> <span class="n">ON_WINDOWS</span><span class="p">,</span> <span class="n">ON_WSL</span>
+<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="kn">import</span> <span class="n">ON_POSIX</span><span class="p">,</span> <span class="n">ON_WINDOWS</span><span class="p">,</span> <span class="n">ON_WSL</span><span class="p">,</span> <span class="n">ON_CYGWIN</span>
 <span class="kn">from</span> <span class="nn">xonsh.proc</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">PopenThread</span><span class="p">,</span>
     <span class="n">ProcProxyThread</span><span class="p">,</span>
@@ -117,6 +117,7 @@
     <span class="n">globpath</span><span class="p">,</span>
     <span class="n">XonshError</span><span class="p">,</span>
     <span class="n">XonshCalledProcessError</span><span class="p">,</span>
+    <span class="n">print_color</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">xonsh.lazyimps</span> <span class="kn">import</span> <span class="n">pty</span><span class="p">,</span> <span class="n">termios</span><span class="p">,</span> <span class="n">fcntl</span>
 <span class="kn">from</span> <span class="nn">xonsh.commands_cache</span> <span class="kn">import</span> <span class="n">CommandsCache</span>
@@ -252,16 +253,30 @@
 <span class="n">RE_SHEBANG</span> <span class="o">=</span> <span class="n">LazyObject</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;#![ \t]*(.+?)$&quot;</span><span class="p">),</span> <span class="nb">globals</span><span class="p">(),</span> <span class="s2">&quot;RE_SHEBANG&quot;</span><span class="p">)</span>
 
 
+<div class="viewcode-block" id="is_app_execution_alias"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.is_app_execution_alias">[docs]</a><span class="k">def</span> <span class="nf">is_app_execution_alias</span><span class="p">(</span><span class="n">fname</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot; App execution aliases behave strangly on windows and python.</span>
+<span class="sd">        Here try to detect if a file is an app execution alias</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">fname</span> <span class="o">=</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span>
+    <span class="k">return</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span> <span class="ow">and</span> <span class="n">fname</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="n">fname</span><span class="o">.</span><span class="n">parent</span><span class="p">)</span></div>
+
+
 <span class="k">def</span> <span class="nf">_is_binary</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">80</span><span class="p">):</span>
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">limit</span><span class="p">):</span>
-            <span class="n">char</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">char</span> <span class="o">==</span> <span class="sa">b</span><span class="s2">&quot;</span><span class="se">\0</span><span class="s2">&quot;</span><span class="p">:</span>
-                <span class="k">return</span> <span class="kc">True</span>
-            <span class="k">if</span> <span class="n">char</span> <span class="o">==</span> <span class="sa">b</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">:</span>
-                <span class="k">return</span> <span class="kc">False</span>
-            <span class="k">if</span> <span class="n">char</span> <span class="o">==</span> <span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="p">:</span>
-                <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">limit</span><span class="p">):</span>
+                <span class="n">char</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">char</span> <span class="o">==</span> <span class="sa">b</span><span class="s2">&quot;</span><span class="se">\0</span><span class="s2">&quot;</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="kc">True</span>
+                <span class="k">if</span> <span class="n">char</span> <span class="o">==</span> <span class="sa">b</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="kc">False</span>
+                <span class="k">if</span> <span class="n">char</span> <span class="o">==</span> <span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="p">:</span>
+                    <span class="k">return</span>
+    <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="n">is_app_execution_alias</span><span class="p">(</span><span class="n">fname</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">raise</span> <span class="n">e</span>
+
     <span class="k">return</span> <span class="kc">False</span>
 
 
@@ -285,7 +300,13 @@
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># make sure file is executable</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">access</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">X_OK</span><span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">PermissionError</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">ON_CYGWIN</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">PermissionError</span>
+        <span class="c1"># explicitly look at all PATH entries for cmd</span>
+        <span class="n">w_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;PATH&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)</span>
+        <span class="n">w_fpath</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="n">p</span> <span class="o">+</span> <span class="n">os</span><span class="o">.</span><span class="n">sep</span> <span class="o">+</span> <span class="n">fname</span><span class="p">,</span> <span class="n">w_path</span><span class="p">))</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">c</span><span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">access</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">X_OK</span><span class="p">),</span> <span class="n">w_fpath</span><span class="p">))):</span>
+            <span class="k">raise</span> <span class="ne">PermissionError</span>
     <span class="k">if</span> <span class="n">ON_POSIX</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">access</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">R_OK</span><span class="p">):</span>
         <span class="c1"># on some systems, some important programs (e.g. sudo) will have</span>
         <span class="c1"># execute permissions but not read/write permissions. This enables</span>
@@ -1438,9 +1459,7 @@
 
 
 <div class="viewcode-block" id="XonshSession"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.XonshSession">[docs]</a><span class="k">class</span> <span class="nc">XonshSession</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot;All components defining a xonsh session.</span>
-
-<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="sd">&quot;&quot;&quot;All components defining a xonsh session.&quot;&quot;&quot;</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">execer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;</span>
@@ -1518,6 +1537,8 @@
             <span class="s2">&quot;execx&quot;</span><span class="p">:</span> <span class="s2">&quot;__xonsh__.builtins.execx&quot;</span><span class="p">,</span>
             <span class="s2">&quot;compilex&quot;</span><span class="p">:</span> <span class="s2">&quot;__xonsh__.builtins.compilex&quot;</span><span class="p">,</span>
             <span class="s2">&quot;events&quot;</span><span class="p">:</span> <span class="s2">&quot;__xonsh__.builtins.events&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;print_color&quot;</span><span class="p">:</span> <span class="s2">&quot;__xonsh__.builtins.print_color&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;printx&quot;</span><span class="p">:</span> <span class="s2">&quot;__xonsh__.builtins.printx&quot;</span><span class="p">,</span>
         <span class="p">}</span>
         <span class="k">for</span> <span class="n">refname</span><span class="p">,</span> <span class="n">objname</span> <span class="ow">in</span> <span class="n">proxy_mapping</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="n">proxy</span> <span class="o">=</span> <span class="n">DynamicAccessProxy</span><span class="p">(</span><span class="n">refname</span><span class="p">,</span> <span class="n">objname</span><span class="p">)</span>
@@ -1540,6 +1561,8 @@
             <span class="s2">&quot;compilex&quot;</span><span class="p">,</span>
             <span class="s2">&quot;default_aliases&quot;</span><span class="p">,</span>
             <span class="s2">&quot;events&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;print_color&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;printx&quot;</span><span class="p">,</span>
         <span class="p">]</span>
 
         <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">:</span>
@@ -1556,6 +1579,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">execx</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">execer</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">execer</span><span class="o">.</span><span class="n">exec</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">compilex</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">execer</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">execer</span><span class="o">.</span><span class="n">compile</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">events</span> <span class="o">=</span> <span class="n">events</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">print_color</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">printx</span> <span class="o">=</span> <span class="n">print_color</span>
 
 
 <div class="viewcode-block" id="DynamicAccessProxy"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.DynamicAccessProxy">[docs]</a><span class="k">class</span> <span class="nc">DynamicAccessProxy</span><span class="p">:</span>
@@ -1660,7 +1684,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.9.22.dev238 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.9.23.dev241.dev241 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.built_ins</a></li> 
