@@ -1,0 +1,632 @@
+
+
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>xonsh.procs.posix &#8212; xonsh 0.9.24.dev35 documentation</title>
+    <link rel="stylesheet" href="../../../_static/numpy_friendly.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
+    
+    <script id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+    <script src="../../../_static/jquery.js"></script>
+    <script src="../../../_static/underscore.js"></script>
+    <script src="../../../_static/doctools.js"></script>
+    <script src="../../../_static/language_data.js"></script>
+    <script src="../../../_static/runthis-client.min.js"></script>
+
+    
+    
+     
+        <script src="../../../_static/jquery.cookie.js"></script>
+    
+
+    
+     
+        <script src="../../../_static/cloud.base.js"></script>
+    
+
+    
+     
+        <script src="../../../_static/cloud.js"></script>
+    
+
+    <link rel="shortcut icon" href="../../../_static/magic_conch.ico"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+     
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="canonical" href="http://xon.sh/_modules/xonsh/procs/posix.html"/>
+
+  </head><body>
+    <div class="relbar-top">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../contents.html">xonsh 0.9.24.dev35 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">xonsh.procs.posix</a></li> 
+      </ul>
+    </div>
+    </div>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for xonsh.procs.posix</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Interface for running subprocess-mode commands on posix systems.&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">io</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">array</span>
+<span class="kn">import</span> <span class="nn">signal</span>
+<span class="kn">import</span> <span class="nn">builtins</span>
+<span class="kn">import</span> <span class="nn">threading</span>
+<span class="kn">import</span> <span class="nn">subprocess</span>
+
+<span class="kn">import</span> <span class="nn">xonsh.lazyasd</span> <span class="k">as</span> <span class="nn">xl</span>
+<span class="kn">import</span> <span class="nn">xonsh.platform</span> <span class="k">as</span> <span class="nn">xp</span>
+<span class="kn">import</span> <span class="nn">xonsh.tools</span> <span class="k">as</span> <span class="nn">xt</span>
+<span class="kn">import</span> <span class="nn">xonsh.lazyimps</span> <span class="k">as</span> <span class="nn">xli</span>
+
+<span class="kn">from</span> <span class="nn">xonsh.procs.readers</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">BufferedFDParallelReader</span><span class="p">,</span>
+    <span class="n">NonBlockingFDReader</span><span class="p">,</span>
+    <span class="n">safe_fdclose</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="c1"># The following escape codes are xterm codes.</span>
+<span class="c1"># See http://rtfm.etla.org/xterm/ctlseq.html for more.</span>
+<span class="n">MODE_NUMS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;1049&quot;</span><span class="p">,</span> <span class="s2">&quot;47&quot;</span><span class="p">,</span> <span class="s2">&quot;1047&quot;</span><span class="p">)</span>
+
+
+<span class="nd">@xl</span><span class="o">.</span><span class="n">lazyobject</span>
+<span class="k">def</span> <span class="nf">START_ALTERNATE_MODE</span><span class="p">():</span>
+    <span class="k">return</span> <span class="nb">frozenset</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\x1b</span><span class="s2">[?</span><span class="si">{0}</span><span class="s2">h&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">()</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">MODE_NUMS</span><span class="p">)</span>
+
+
+<span class="nd">@xl</span><span class="o">.</span><span class="n">lazyobject</span>
+<span class="k">def</span> <span class="nf">END_ALTERNATE_MODE</span><span class="p">():</span>
+    <span class="k">return</span> <span class="nb">frozenset</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\x1b</span><span class="s2">[?</span><span class="si">{0}</span><span class="s2">l&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">()</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">MODE_NUMS</span><span class="p">)</span>
+
+
+<span class="nd">@xl</span><span class="o">.</span><span class="n">lazyobject</span>
+<span class="k">def</span> <span class="nf">ALTERNATE_MODE_FLAGS</span><span class="p">():</span>
+    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">START_ALTERNATE_MODE</span><span class="p">)</span> <span class="o">+</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">END_ALTERNATE_MODE</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="PopenThread"><a class="viewcode-back" href="../../../api/procs/posix.html#xonsh.procs.posix.PopenThread">[docs]</a><span class="k">class</span> <span class="nc">PopenThread</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A thread for running and managing subprocess. This allows reading</span>
+<span class="sd">    from the stdin, stdout, and stderr streams in a non-blocking fashion.</span>
+
+<span class="sd">    This takes the same arguments and keyword arguments as regular Popen.</span>
+<span class="sd">    This requires that the captured_stdout and captured_stderr attributes</span>
+<span class="sd">    to be set following instantiation.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">stdout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">RLock</span><span class="p">()</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
+        <span class="c1"># stdin setup</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">orig_stdin</span> <span class="o">=</span> <span class="n">stdin</span>
+        <span class="k">if</span> <span class="n">stdin</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stdin_fd</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stdin</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stdin_fd</span> <span class="o">=</span> <span class="n">stdin</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stdin_fd</span> <span class="o">=</span> <span class="n">stdin</span><span class="o">.</span><span class="n">fileno</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">store_stdin</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_STORE_STDIN&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_PROC_FREQUENCY&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">in_alt_mode</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stdin_mode</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tc_cc_vsusp</span> <span class="o">=</span> <span class="sa">b</span><span class="s2">&quot;</span><span class="se">\x1a</span><span class="s2">&quot;</span>  <span class="c1"># default is usually ^Z</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_disable_suspend_keybind</span><span class="p">()</span>
+        <span class="c1"># stdout setup</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">orig_stdout</span> <span class="o">=</span> <span class="n">stdout</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stdout_fd</span> <span class="o">=</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">stdout</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">stdout</span><span class="o">.</span><span class="n">fileno</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_set_pty_size</span><span class="p">()</span>
+        <span class="c1"># stderr setup</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">orig_stderr</span> <span class="o">=</span> <span class="n">stderr</span>
+        <span class="c1"># Set some signal handles, if we can. Must come before process</span>
+        <span class="c1"># is started to prevent deadlock on windows</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">proc</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># has to be here for closure for handles</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">old_int_handler</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_winch_handler</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">old_tstp_handler</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_quit_handler</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">xt</span><span class="o">.</span><span class="n">on_main_thread</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">old_int_handler</span> <span class="o">=</span> <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGINT</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal_int</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_POSIX</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">old_tstp_handler</span> <span class="o">=</span> <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGTSTP</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal_tstp</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">old_quit_handler</span> <span class="o">=</span> <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGQUIT</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal_quit</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">CAN_RESIZE_WINDOW</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">old_winch_handler</span> <span class="o">=</span> <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span>
+                    <span class="n">signal</span><span class="o">.</span><span class="n">SIGWINCH</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal_winch</span>
+                <span class="p">)</span>
+        <span class="c1"># start up process</span>
+        <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="n">stdout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">set_inheritable</span><span class="p">(</span><span class="n">stdout</span><span class="o">.</span><span class="n">fileno</span><span class="p">(),</span> <span class="kc">False</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">proc</span> <span class="o">=</span> <span class="n">proc</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">(</span>
+                <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="n">stdin</span><span class="p">,</span> <span class="n">stdout</span><span class="o">=</span><span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">stderr</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_clean_up</span><span class="p">()</span>
+            <span class="k">raise</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">pid</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">pid</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">universal_newlines</span> <span class="o">=</span> <span class="n">uninew</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">universal_newlines</span>
+        <span class="k">if</span> <span class="n">uninew</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">encoding</span> <span class="o">=</span> <span class="n">enc</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_ENCODING&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">encoding_errors</span> <span class="o">=</span> <span class="n">err</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_ENCODING_ERRORS&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stdin</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">()</span>  <span class="c1"># stdin is always bytes!</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">TextIOWrapper</span><span class="p">(</span><span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">(),</span> <span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">err</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">TextIOWrapper</span><span class="p">(</span><span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">(),</span> <span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">err</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">encoding</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">encoding_errors</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stdin</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">suspended</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">prevs_are_closed</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+<div class="viewcode-block" id="PopenThread.run"><a class="viewcode-back" href="../../../api/procs/posix.html#xonsh.procs.posix.PopenThread.run">[docs]</a>    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Runs the subprocess by performing a parallel read on stdin if allowed,</span>
+<span class="sd">        and copying bytes from captured_stdout to stdout and bytes from</span>
+<span class="sd">        captured_stderr to stderr.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">proc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">proc</span>
+        <span class="n">spec</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_wait_and_getattr</span><span class="p">(</span><span class="s2">&quot;spec&quot;</span><span class="p">)</span>
+        <span class="c1"># get stdin and apply parallel reader if needed.</span>
+        <span class="n">stdin</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stdin</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">orig_stdin</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">origin</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">elif</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_POSIX</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">store_stdin</span><span class="p">:</span>
+            <span class="n">origin</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">orig_stdin</span>
+            <span class="n">origfd</span> <span class="o">=</span> <span class="n">origin</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">origin</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="k">else</span> <span class="n">origin</span><span class="o">.</span><span class="n">fileno</span><span class="p">()</span>
+            <span class="n">origin</span> <span class="o">=</span> <span class="n">BufferedFDParallelReader</span><span class="p">(</span><span class="n">origfd</span><span class="p">,</span> <span class="n">buffer</span><span class="o">=</span><span class="n">stdin</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">origin</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="c1"># get non-blocking stdout</span>
+        <span class="n">stdout</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">buffer</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">universal_newlines</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span>
+        <span class="n">capout</span> <span class="o">=</span> <span class="n">spec</span><span class="o">.</span><span class="n">captured_stdout</span>
+        <span class="k">if</span> <span class="n">capout</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">procout</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">procout</span> <span class="o">=</span> <span class="n">NonBlockingFDReader</span><span class="p">(</span><span class="n">capout</span><span class="o">.</span><span class="n">fileno</span><span class="p">(),</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span>
+        <span class="c1"># get non-blocking stderr</span>
+        <span class="n">stderr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stderr</span><span class="o">.</span><span class="n">buffer</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">universal_newlines</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">stderr</span>
+        <span class="n">caperr</span> <span class="o">=</span> <span class="n">spec</span><span class="o">.</span><span class="n">captured_stderr</span>
+        <span class="k">if</span> <span class="n">caperr</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">procerr</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">procerr</span> <span class="o">=</span> <span class="n">NonBlockingFDReader</span><span class="p">(</span><span class="n">caperr</span><span class="o">.</span><span class="n">fileno</span><span class="p">(),</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span>
+        <span class="c1"># initial read from buffer</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_read_write</span><span class="p">(</span><span class="n">procout</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">__stdout__</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_read_write</span><span class="p">(</span><span class="n">procerr</span><span class="p">,</span> <span class="n">stderr</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">__stderr__</span><span class="p">)</span>
+        <span class="c1"># loop over reads while process is running.</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="n">j</span> <span class="o">=</span> <span class="n">cnt</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="k">while</span> <span class="n">proc</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># this is here for CPU performance reasons.</span>
+            <span class="k">if</span> <span class="n">i</span> <span class="o">+</span> <span class="n">j</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">cnt</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">cnt</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1000</span><span class="p">)</span>
+                <span class="n">tout</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span> <span class="o">*</span> <span class="n">cnt</span>
+                <span class="k">if</span> <span class="n">procout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">procout</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="n">tout</span>
+                <span class="k">if</span> <span class="n">procerr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">procerr</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="n">tout</span>
+            <span class="k">elif</span> <span class="n">cnt</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">pass</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">cnt</span> <span class="o">=</span> <span class="mi">1</span>
+                <span class="k">if</span> <span class="n">procout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">procout</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span>
+                <span class="k">if</span> <span class="n">procerr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">procerr</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span>
+            <span class="c1"># redirect some output!</span>
+            <span class="n">i</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_write</span><span class="p">(</span><span class="n">procout</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">__stdout__</span><span class="p">)</span>
+            <span class="n">j</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_write</span><span class="p">(</span><span class="n">procerr</span><span class="p">,</span> <span class="n">stderr</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">__stderr__</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">suspended</span><span class="p">:</span>
+                <span class="k">break</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">suspended</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="c1"># close files to send EOF to non-blocking reader.</span>
+        <span class="c1"># capout &amp; caperr seem to be needed only by Windows, while</span>
+        <span class="c1"># orig_stdout &amp; orig_stderr are need by posix and Windows.</span>
+        <span class="c1"># Also, order seems to matter here,</span>
+        <span class="c1"># with orig_* needed to be closed before cap*</span>
+        <span class="n">safe_fdclose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">orig_stdout</span><span class="p">)</span>
+        <span class="n">safe_fdclose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">orig_stderr</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
+            <span class="n">safe_fdclose</span><span class="p">(</span><span class="n">capout</span><span class="p">)</span>
+            <span class="n">safe_fdclose</span><span class="p">(</span><span class="n">caperr</span><span class="p">)</span>
+        <span class="c1"># read in the remaining data in a blocking fashion.</span>
+        <span class="k">while</span> <span class="p">(</span><span class="n">procout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">procout</span><span class="o">.</span><span class="n">is_fully_read</span><span class="p">())</span> <span class="ow">or</span> <span class="p">(</span>
+            <span class="n">procerr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">procerr</span><span class="o">.</span><span class="n">is_fully_read</span><span class="p">()</span>
+        <span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_read_write</span><span class="p">(</span><span class="n">procout</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">__stdout__</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_read_write</span><span class="p">(</span><span class="n">procerr</span><span class="p">,</span> <span class="n">stderr</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">__stderr__</span><span class="p">)</span>
+        <span class="c1"># kill the process if it is still alive. Happens when piping.</span>
+        <span class="k">if</span> <span class="n">proc</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">proc</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span></div>
+
+    <span class="k">def</span> <span class="nf">_wait_and_getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;make sure the instance has a certain attr, and return it.&quot;&quot;&quot;</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1e-7</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_read_write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reader</span><span class="p">,</span> <span class="n">writer</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Reads a chunk of bytes from a buffer and write into memory or back</span>
+<span class="sd">        down to the standard buffer, as appropriate. Returns the number of</span>
+<span class="sd">        successful reads.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">reader</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">chunk</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">reader</span><span class="o">.</span><span class="n">read_queue</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="p">)):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_alt_mode_switch</span><span class="p">(</span><span class="n">chunk</span><span class="p">,</span> <span class="n">writer</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">i</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">writer</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+            <span class="n">stdbuf</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span>
+
+    <span class="k">def</span> <span class="nf">_alt_mode_switch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">chunk</span><span class="p">,</span> <span class="n">membuf</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Enables recursively switching between normal capturing mode</span>
+<span class="sd">        and &#39;alt&#39; mode, which passes through values to the standard</span>
+<span class="sd">        buffer. Pagers, text editors, curses applications, etc. use</span>
+<span class="sd">        alternate mode.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">i</span><span class="p">,</span> <span class="n">flag</span> <span class="o">=</span> <span class="n">xt</span><span class="o">.</span><span class="n">findfirst</span><span class="p">(</span><span class="n">chunk</span><span class="p">,</span> <span class="n">ALTERNATE_MODE_FLAGS</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">flag</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_alt_mode_writer</span><span class="p">(</span><span class="n">chunk</span><span class="p">,</span> <span class="n">membuf</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># This code is executed when the child process switches the</span>
+            <span class="c1"># terminal into or out of alternate mode. The line below assumes</span>
+            <span class="c1"># that the user has opened vim, less, or similar, and writes writes</span>
+            <span class="c1"># to stdin.</span>
+            <span class="n">j</span> <span class="o">=</span> <span class="n">i</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">flag</span><span class="p">)</span>
+            <span class="c1"># write the first part of the chunk in the current mode.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_alt_mode_writer</span><span class="p">(</span><span class="n">chunk</span><span class="p">[:</span><span class="n">i</span><span class="p">],</span> <span class="n">membuf</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">)</span>
+            <span class="c1"># switch modes</span>
+            <span class="c1"># write the flag itself the current mode where alt mode is on</span>
+            <span class="c1"># so that it is streamed to the terminal ASAP.</span>
+            <span class="c1"># this is needed for terminal emulators to find the correct</span>
+            <span class="c1"># positions before and after alt mode.</span>
+            <span class="n">alt_mode</span> <span class="o">=</span> <span class="n">flag</span> <span class="ow">in</span> <span class="n">START_ALTERNATE_MODE</span>
+            <span class="k">if</span> <span class="n">alt_mode</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">in_alt_mode</span> <span class="o">=</span> <span class="n">alt_mode</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_alt_mode_writer</span><span class="p">(</span><span class="n">flag</span><span class="p">,</span> <span class="n">membuf</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_enable_cbreak_stdin</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_alt_mode_writer</span><span class="p">(</span><span class="n">flag</span><span class="p">,</span> <span class="n">membuf</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">in_alt_mode</span> <span class="o">=</span> <span class="n">alt_mode</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_disable_cbreak_stdin</span><span class="p">()</span>
+            <span class="c1"># recurse this function, but without the current flag.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_alt_mode_switch</span><span class="p">(</span><span class="n">chunk</span><span class="p">[</span><span class="n">j</span><span class="p">:],</span> <span class="n">membuf</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_alt_mode_writer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">chunk</span><span class="p">,</span> <span class="n">membuf</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Write bytes to the standard buffer if in alt mode or otherwise</span>
+<span class="sd">        to the in-memory buffer.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">chunk</span><span class="p">:</span>
+            <span class="k">pass</span>  <span class="c1"># don&#39;t write empty values</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_alt_mode</span><span class="p">:</span>
+            <span class="n">stdbuf</span><span class="o">.</span><span class="n">buffer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">lock</span><span class="p">:</span>
+                <span class="n">p</span> <span class="o">=</span> <span class="n">membuf</span><span class="o">.</span><span class="n">tell</span><span class="p">()</span>
+                <span class="n">membuf</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">io</span><span class="o">.</span><span class="n">SEEK_END</span><span class="p">)</span>
+                <span class="n">membuf</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span>
+                <span class="n">membuf</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+
+    <span class="c1">#</span>
+    <span class="c1"># Window resize handlers</span>
+    <span class="c1">#</span>
+
+    <span class="k">def</span> <span class="nf">_signal_winch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">signum</span><span class="p">,</span> <span class="n">frame</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Signal handler for SIGWINCH - window size has changed.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGWINCH</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_set_pty_size</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_set_pty_size</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Sets the window size of the child pty based on the window size of</span>
+<span class="sd">        our own controlling terminal.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">isatty</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stdout_fd</span><span class="p">):</span>
+            <span class="k">return</span>
+        <span class="c1"># Get the terminal size of the real terminal, set it on the</span>
+        <span class="c1">#       pseudoterminal.</span>
+        <span class="n">buf</span> <span class="o">=</span> <span class="n">array</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="s2">&quot;h&quot;</span><span class="p">,</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
+        <span class="c1"># 1 = stdout here</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">xli</span><span class="o">.</span><span class="n">fcntl</span><span class="o">.</span><span class="n">ioctl</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">TIOCGWINSZ</span><span class="p">,</span> <span class="n">buf</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+            <span class="n">xli</span><span class="o">.</span><span class="n">fcntl</span><span class="o">.</span><span class="n">ioctl</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stdout_fd</span><span class="p">,</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">TIOCSWINSZ</span><span class="p">,</span> <span class="n">buf</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+    <span class="c1">#</span>
+    <span class="c1"># SIGINT handler</span>
+    <span class="c1">#</span>
+
+    <span class="k">def</span> <span class="nf">_signal_int</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">signum</span><span class="p">,</span> <span class="n">frame</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Signal handler for SIGINT - Ctrl+C may have been pressed.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">CTRL_C_EVENT</span> <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="k">else</span> <span class="n">signum</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">proc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigint</span><span class="p">(</span><span class="n">frame</span><span class="o">=</span><span class="n">frame</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">xt</span><span class="o">.</span><span class="n">on_main_thread</span><span class="p">()</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
+            <span class="n">signal</span><span class="o">.</span><span class="n">pthread_kill</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">get_ident</span><span class="p">(),</span> <span class="n">signal</span><span class="o">.</span><span class="n">SIGINT</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_restore_sigint</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">frame</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">old</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_int_handler</span>
+        <span class="k">if</span> <span class="n">old</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">xt</span><span class="o">.</span><span class="n">on_main_thread</span><span class="p">():</span>
+                <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGINT</span><span class="p">,</span> <span class="n">old</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">old_int_handler</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">frame</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_disable_cbreak_stdin</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">old</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">old</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal_int</span><span class="p">:</span>
+                <span class="n">old</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGINT</span><span class="p">,</span> <span class="n">frame</span><span class="p">)</span>
+
+    <span class="c1">#</span>
+    <span class="c1"># SIGTSTP handler</span>
+    <span class="c1">#</span>
+
+    <span class="k">def</span> <span class="nf">_signal_tstp</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">signum</span><span class="p">,</span> <span class="n">frame</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Signal handler for suspending SIGTSTP - Ctrl+Z may have been pressed.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">suspended</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_signal</span><span class="p">(</span><span class="n">signum</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigtstp</span><span class="p">(</span><span class="n">frame</span><span class="o">=</span><span class="n">frame</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_restore_sigtstp</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">frame</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">old</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_tstp_handler</span>
+        <span class="k">if</span> <span class="n">old</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">xt</span><span class="o">.</span><span class="n">on_main_thread</span><span class="p">():</span>
+                <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGTSTP</span><span class="p">,</span> <span class="n">old</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">old_tstp_handler</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">frame</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_disable_cbreak_stdin</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_restore_suspend_keybind</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_disable_suspend_keybind</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">mode</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">tcgetattr</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>  <span class="c1"># only makes sense for stdin</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tc_cc_vsusp</span> <span class="o">=</span> <span class="n">mode</span><span class="p">[</span><span class="n">xp</span><span class="o">.</span><span class="n">CC</span><span class="p">][</span><span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">VSUSP</span><span class="p">]</span>
+            <span class="n">mode</span><span class="p">[</span><span class="n">xp</span><span class="o">.</span><span class="n">CC</span><span class="p">][</span><span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">VSUSP</span><span class="p">]</span> <span class="o">=</span> <span class="sa">b</span><span class="s2">&quot;</span><span class="se">\x00</span><span class="s2">&quot;</span>  <span class="c1"># set ^Z (ie SIGSTOP) to undefined</span>
+            <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">tcsetattr</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">TCSANOW</span><span class="p">,</span> <span class="n">mode</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">error</span><span class="p">:</span>
+            <span class="k">return</span>
+
+    <span class="k">def</span> <span class="nf">_restore_suspend_keybind</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">mode</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">tcgetattr</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>  <span class="c1"># only makes sense for stdin</span>
+            <span class="n">mode</span><span class="p">[</span><span class="n">xp</span><span class="o">.</span><span class="n">CC</span><span class="p">][</span>
+                <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">VSUSP</span>
+            <span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tc_cc_vsusp</span>  <span class="c1"># set ^Z (ie SIGSTOP) to original</span>
+            <span class="c1"># this usually doesn&#39;t work in interactive mode,</span>
+            <span class="c1"># but we should try it anyway.</span>
+            <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">tcsetattr</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">TCSANOW</span><span class="p">,</span> <span class="n">mode</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">error</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+    <span class="c1">#</span>
+    <span class="c1"># SIGQUIT handler</span>
+    <span class="c1">#</span>
+
+    <span class="k">def</span> <span class="nf">_signal_quit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">signum</span><span class="p">,</span> <span class="n">frame</span><span class="p">):</span>
+        <span class="sa">r</span><span class="sd">&quot;&quot;&quot;Signal handler for quiting SIGQUIT - Ctrl+\ may have been pressed.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">send_signal</span><span class="p">(</span><span class="n">signum</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigquit</span><span class="p">(</span><span class="n">frame</span><span class="o">=</span><span class="n">frame</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_restore_sigquit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">frame</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">old</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_quit_handler</span>
+        <span class="k">if</span> <span class="n">old</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">xt</span><span class="o">.</span><span class="n">on_main_thread</span><span class="p">():</span>
+                <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGQUIT</span><span class="p">,</span> <span class="n">old</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">old_quit_handler</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">frame</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_disable_cbreak_stdin</span><span class="p">()</span>
+
+    <span class="c1">#</span>
+    <span class="c1"># cbreak mode handlers</span>
+    <span class="c1">#</span>
+
+    <span class="k">def</span> <span class="nf">_enable_cbreak_stdin</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_POSIX</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stdin_mode</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">tcgetattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stdin_fd</span><span class="p">)[:]</span>
+        <span class="k">except</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">error</span><span class="p">:</span>
+            <span class="c1"># this can happen for cases where another process is controlling</span>
+            <span class="c1"># xonsh&#39;s tty device, such as in testing.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stdin_mode</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">return</span>
+        <span class="n">new</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stdin_mode</span><span class="p">[:]</span>
+        <span class="n">new</span><span class="p">[</span><span class="n">xp</span><span class="o">.</span><span class="n">LFLAG</span><span class="p">]</span> <span class="o">&amp;=</span> <span class="o">~</span><span class="p">(</span><span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">ECHO</span> <span class="o">|</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">ICANON</span><span class="p">)</span>
+        <span class="n">new</span><span class="p">[</span><span class="n">xp</span><span class="o">.</span><span class="n">CC</span><span class="p">][</span><span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">VMIN</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="n">new</span><span class="p">[</span><span class="n">xp</span><span class="o">.</span><span class="n">CC</span><span class="p">][</span><span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">VTIME</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># termios.TCSAFLUSH may be less reliable than termios.TCSANOW</span>
+            <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">tcsetattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stdin_fd</span><span class="p">,</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">TCSANOW</span><span class="p">,</span> <span class="n">new</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">error</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_disable_cbreak_stdin</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_disable_cbreak_stdin</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_POSIX</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">stdin_mode</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">new</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stdin_mode</span><span class="p">[:]</span>
+        <span class="n">new</span><span class="p">[</span><span class="n">xp</span><span class="o">.</span><span class="n">LFLAG</span><span class="p">]</span> <span class="o">|=</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">ECHO</span> <span class="o">|</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">ICANON</span>
+        <span class="n">new</span><span class="p">[</span><span class="n">xp</span><span class="o">.</span><span class="n">CC</span><span class="p">][</span><span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">VMIN</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="n">new</span><span class="p">[</span><span class="n">xp</span><span class="o">.</span><span class="n">CC</span><span class="p">][</span><span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">VTIME</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">tcsetattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stdin_fd</span><span class="p">,</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">TCSANOW</span><span class="p">,</span> <span class="n">new</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">error</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+    <span class="c1">#</span>
+    <span class="c1"># Dispatch methods</span>
+    <span class="c1">#</span>
+
+<div class="viewcode-block" id="PopenThread.poll"><a class="viewcode-back" href="../../../api/procs/posix.html#xonsh.procs.posix.PopenThread.poll">[docs]</a>    <span class="k">def</span> <span class="nf">poll</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Dispatches to Popen.returncode.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">returncode</span></div>
+
+<div class="viewcode-block" id="PopenThread.wait"><a class="viewcode-back" href="../../../api/procs/posix.html#xonsh.procs.posix.PopenThread.wait">[docs]</a>    <span class="k">def</span> <span class="nf">wait</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Dispatches to Popen.wait(), but also does process cleanup such as</span>
+<span class="sd">        joining this thread and replacing the original window size signal</span>
+<span class="sd">        handler.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_disable_cbreak_stdin</span><span class="p">()</span>
+        <span class="n">rtn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+        <span class="c1"># need to replace the old signal handlers somewhere...</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_winch_handler</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">xt</span><span class="o">.</span><span class="n">on_main_thread</span><span class="p">():</span>
+            <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGWINCH</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_winch_handler</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">old_winch_handler</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_clean_up</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">rtn</span></div>
+
+    <span class="k">def</span> <span class="nf">_clean_up</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigint</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigtstp</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigquit</span><span class="p">()</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">returncode</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Process return code.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">returncode</span>
+
+    <span class="nd">@returncode</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">returncode</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Process return code.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">returncode</span> <span class="o">=</span> <span class="n">value</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">signal</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Process signal, or None.&quot;&quot;&quot;</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="p">,</span> <span class="s2">&quot;signal&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">s</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">rtn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">returncode</span>
+            <span class="k">if</span> <span class="n">rtn</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">rtn</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">s</span> <span class="o">=</span> <span class="p">(</span><span class="o">-</span><span class="mi">1</span> <span class="o">*</span> <span class="n">rtn</span><span class="p">,</span> <span class="n">rtn</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="k">else</span> <span class="n">os</span><span class="o">.</span><span class="n">WCOREDUMP</span><span class="p">(</span><span class="n">rtn</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">s</span>
+
+    <span class="nd">@signal</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">signal</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Process signal, or None.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">signal</span> <span class="o">=</span> <span class="n">value</span>
+
+<div class="viewcode-block" id="PopenThread.send_signal"><a class="viewcode-back" href="../../../api/procs/posix.html#xonsh.procs.posix.PopenThread.send_signal">[docs]</a>    <span class="k">def</span> <span class="nf">send_signal</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">signal</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Dispatches to Popen.send_signal().&quot;&quot;&quot;</span>
+        <span class="n">dt</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">proc</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">dt</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">:</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1e-7</span><span class="p">)</span>
+            <span class="n">dt</span> <span class="o">+=</span> <span class="mf">1e-7</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">proc</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">rtn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">send_signal</span><span class="p">(</span><span class="n">signal</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ProcessLookupError</span><span class="p">:</span>
+            <span class="c1"># This can happen in the case of !(cmd) when the command has ended</span>
+            <span class="n">rtn</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="n">rtn</span></div>
+
+<div class="viewcode-block" id="PopenThread.terminate"><a class="viewcode-back" href="../../../api/procs/posix.html#xonsh.procs.posix.PopenThread.terminate">[docs]</a>    <span class="k">def</span> <span class="nf">terminate</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Dispatches to Popen.terminate().&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">terminate</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="PopenThread.kill"><a class="viewcode-back" href="../../../api/procs/posix.html#xonsh.procs.posix.PopenThread.kill">[docs]</a>    <span class="k">def</span> <span class="nf">kill</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Dispatches to Popen.kill().&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">kill</span><span class="p">()</span></div></div>
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+        <p class="logo"><a href="../../../contents.html" title="contents">
+          <img class="logo" src="../../../_static/ascii_conch_part_transparent_tight.png" alt="Logo"/>
+        </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+        </div>
+      </div>
+    
+    
+        <div class="sidebar-toggle-group no-js">
+            
+            <button class="sidebar-toggle" id="sidebar-hide" title="Hide the sidebar menu">
+                 «
+                <span class="show-for-small">hide menu</span>
+                
+            </button>
+            <button class="sidebar-toggle" id="sidebar-show" title="Show the sidebar menu">
+                
+                <span class="show-for-small">menu</span>
+                <span class="hide-for-small">sidebar</span>
+                 »
+            </button>
+        </div>
+    
+      <div class="clearer"></div>
+    </div>
+    <div class="relbar-bottom">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../contents.html">xonsh 0.9.24.dev35 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">xonsh.procs.posix</a></li> 
+      </ul>
+    </div>
+    </div>
+
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2015, Anthony Scopatz.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.2.1.
+    </div>
+    <!-- cloud_sptheme 1.4 -->
+  </body>
+</html>
