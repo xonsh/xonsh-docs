@@ -18,7 +18,6 @@
     <script src="../_static/jquery.js"></script>
     <script src="../_static/underscore.js"></script>
     <script src="../_static/doctools.js"></script>
-    <script src="../_static/language_data.js"></script>
     <script src="../_static/runthis-client.min.js"></script>
 
     
@@ -73,11 +72,11 @@
   <h1>Source code for threading</h1><div class="highlight"><pre>
 <span></span><span class="sd">&quot;&quot;&quot;Thread module emulating a subset of Java&#39;s threading model.&quot;&quot;&quot;</span>
 
+<span class="kn">import</span> <span class="nn">os</span> <span class="k">as</span> <span class="nn">_os</span>
 <span class="kn">import</span> <span class="nn">sys</span> <span class="k">as</span> <span class="nn">_sys</span>
 <span class="kn">import</span> <span class="nn">_thread</span>
 
 <span class="kn">from</span> <span class="nn">time</span> <span class="kn">import</span> <span class="n">monotonic</span> <span class="k">as</span> <span class="n">_time</span>
-<span class="kn">from</span> <span class="nn">traceback</span> <span class="kn">import</span> <span class="n">format_exc</span> <span class="k">as</span> <span class="n">_format_exc</span>
 <span class="kn">from</span> <span class="nn">_weakrefset</span> <span class="kn">import</span> <span class="n">WeakSet</span>
 <span class="kn">from</span> <span class="nn">itertools</span> <span class="kn">import</span> <span class="n">islice</span> <span class="k">as</span> <span class="n">_islice</span><span class="p">,</span> <span class="n">count</span> <span class="k">as</span> <span class="n">_count</span>
 <span class="k">try</span><span class="p">:</span>
@@ -99,13 +98,20 @@
            <span class="s1">&#39;enumerate&#39;</span><span class="p">,</span> <span class="s1">&#39;main_thread&#39;</span><span class="p">,</span> <span class="s1">&#39;TIMEOUT_MAX&#39;</span><span class="p">,</span>
            <span class="s1">&#39;Event&#39;</span><span class="p">,</span> <span class="s1">&#39;Lock&#39;</span><span class="p">,</span> <span class="s1">&#39;RLock&#39;</span><span class="p">,</span> <span class="s1">&#39;Semaphore&#39;</span><span class="p">,</span> <span class="s1">&#39;BoundedSemaphore&#39;</span><span class="p">,</span> <span class="s1">&#39;Thread&#39;</span><span class="p">,</span>
            <span class="s1">&#39;Barrier&#39;</span><span class="p">,</span> <span class="s1">&#39;BrokenBarrierError&#39;</span><span class="p">,</span> <span class="s1">&#39;Timer&#39;</span><span class="p">,</span> <span class="s1">&#39;ThreadError&#39;</span><span class="p">,</span>
-           <span class="s1">&#39;setprofile&#39;</span><span class="p">,</span> <span class="s1">&#39;settrace&#39;</span><span class="p">,</span> <span class="s1">&#39;local&#39;</span><span class="p">,</span> <span class="s1">&#39;stack_size&#39;</span><span class="p">]</span>
+           <span class="s1">&#39;setprofile&#39;</span><span class="p">,</span> <span class="s1">&#39;settrace&#39;</span><span class="p">,</span> <span class="s1">&#39;local&#39;</span><span class="p">,</span> <span class="s1">&#39;stack_size&#39;</span><span class="p">,</span>
+           <span class="s1">&#39;excepthook&#39;</span><span class="p">,</span> <span class="s1">&#39;ExceptHookArgs&#39;</span><span class="p">]</span>
 
 <span class="c1"># Rename some stuff so &quot;from threading import *&quot; is safe</span>
 <span class="n">_start_new_thread</span> <span class="o">=</span> <span class="n">_thread</span><span class="o">.</span><span class="n">start_new_thread</span>
 <span class="n">_allocate_lock</span> <span class="o">=</span> <span class="n">_thread</span><span class="o">.</span><span class="n">allocate_lock</span>
 <span class="n">_set_sentinel</span> <span class="o">=</span> <span class="n">_thread</span><span class="o">.</span><span class="n">_set_sentinel</span>
 <span class="n">get_ident</span> <span class="o">=</span> <span class="n">_thread</span><span class="o">.</span><span class="n">get_ident</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="n">get_native_id</span> <span class="o">=</span> <span class="n">_thread</span><span class="o">.</span><span class="n">get_native_id</span>
+    <span class="n">_HAVE_THREAD_NATIVE_ID</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">__all__</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;get_native_id&#39;</span><span class="p">)</span>
+<span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+    <span class="n">_HAVE_THREAD_NATIVE_ID</span> <span class="o">=</span> <span class="kc">False</span>
 <span class="n">ThreadError</span> <span class="o">=</span> <span class="n">_thread</span><span class="o">.</span><span class="n">error</span>
 <span class="k">try</span><span class="p">:</span>
     <span class="n">_CRLock</span> <span class="o">=</span> <span class="n">_thread</span><span class="o">.</span><span class="n">RLock</span>
@@ -640,8 +646,8 @@
     <span class="sd">&quot;&quot;&quot;Implements a Barrier.</span>
 
 <span class="sd">    Useful for synchronizing a fixed number of threads at known synchronization</span>
-<span class="sd">    points.  Threads block on &#39;wait()&#39; and are simultaneously once they have all</span>
-<span class="sd">    made that call.</span>
+<span class="sd">    points.  Threads block on &#39;wait()&#39; and are simultaneously awoken once they</span>
+<span class="sd">    have all made that call.</span>
 
 <span class="sd">    &quot;&quot;&quot;</span>
 
@@ -650,7 +656,7 @@
 
 <span class="sd">        &#39;action&#39; is a callable which, when supplied, will be called by one of</span>
 <span class="sd">        the threads after they have all entered the barrier and just prior to</span>
-<span class="sd">        releasing them all. If a &#39;timeout&#39; is provided, it is uses as the</span>
+<span class="sd">        releasing them all. If a &#39;timeout&#39; is provided, it is used as the</span>
 <span class="sd">        default for all subsequent &#39;wait()&#39; calls.</span>
 
 <span class="sd">        &quot;&quot;&quot;</span>
@@ -805,6 +811,11 @@
 <span class="n">_active</span> <span class="o">=</span> <span class="p">{}</span>    <span class="c1"># maps thread id to Thread object</span>
 <span class="n">_limbo</span> <span class="o">=</span> <span class="p">{}</span>
 <span class="n">_dangling</span> <span class="o">=</span> <span class="n">WeakSet</span><span class="p">()</span>
+<span class="c1"># Set of Thread._tstate_lock locks of non-daemon threads used by _shutdown()</span>
+<span class="c1"># to wait until all Python thread states get deleted:</span>
+<span class="c1"># see Thread._set_tstate_lock().</span>
+<span class="n">_shutdown_locks_lock</span> <span class="o">=</span> <span class="n">_allocate_lock</span><span class="p">()</span>
+<span class="n">_shutdown_locks</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
 
 <span class="c1"># Main class for threads</span>
 
@@ -818,14 +829,6 @@
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">_initialized</span> <span class="o">=</span> <span class="kc">False</span>
-    <span class="c1"># Need to store a reference to sys.exc_info for printing</span>
-    <span class="c1"># out exceptions when a thread tries to use a global var. during interp.</span>
-    <span class="c1"># shutdown and thus raises an exception about trying to perform some</span>
-    <span class="c1"># operation on/with a NoneType</span>
-    <span class="n">_exc_info</span> <span class="o">=</span> <span class="n">_sys</span><span class="o">.</span><span class="n">exc_info</span>
-    <span class="c1"># Keep sys.exc_clear too to clear the exception just before</span>
-    <span class="c1"># allowing .join() to return.</span>
-    <span class="c1">#XXX __exc_clear = _sys.exc_clear</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                  <span class="n">args</span><span class="o">=</span><span class="p">(),</span> <span class="n">kwargs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">daemon</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
@@ -862,13 +865,15 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_daemonic</span> <span class="o">=</span> <span class="n">current_thread</span><span class="p">()</span><span class="o">.</span><span class="n">daemon</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_ident</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">_HAVE_THREAD_NATIVE_ID</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_native_id</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tstate_lock</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_started</span> <span class="o">=</span> <span class="n">Event</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_is_stopped</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_initialized</span> <span class="o">=</span> <span class="kc">True</span>
-        <span class="c1"># sys.stderr is not stored in the class like</span>
-        <span class="c1"># sys.exc_info since it can be changed between instances</span>
+        <span class="c1"># Copy of sys.stderr used by self._invoke_excepthook()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_stderr</span> <span class="o">=</span> <span class="n">_sys</span><span class="o">.</span><span class="n">stderr</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_invoke_excepthook</span> <span class="o">=</span> <span class="n">_make_invoke_excepthook</span><span class="p">()</span>
         <span class="c1"># For debugging and _after_fork()</span>
         <span class="n">_dangling</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
 
@@ -963,6 +968,10 @@
     <span class="k">def</span> <span class="nf">_set_ident</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_ident</span> <span class="o">=</span> <span class="n">get_ident</span><span class="p">()</span>
 
+    <span class="k">if</span> <span class="n">_HAVE_THREAD_NATIVE_ID</span><span class="p">:</span>
+        <span class="k">def</span> <span class="nf">_set_native_id</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_native_id</span> <span class="o">=</span> <span class="n">get_native_id</span><span class="p">()</span>
+
     <span class="k">def</span> <span class="nf">_set_tstate_lock</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Set a lock object which will be released by the interpreter when</span>
@@ -971,10 +980,16 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_tstate_lock</span> <span class="o">=</span> <span class="n">_set_sentinel</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tstate_lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span>
 
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">daemon</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">_shutdown_locks_lock</span><span class="p">:</span>
+                <span class="n">_shutdown_locks</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tstate_lock</span><span class="p">)</span>
+
     <span class="k">def</span> <span class="nf">_bootstrap_inner</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_set_ident</span><span class="p">()</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_set_tstate_lock</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">_HAVE_THREAD_NATIVE_ID</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_set_native_id</span><span class="p">()</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_started</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
             <span class="k">with</span> <span class="n">_active_limbo_lock</span><span class="p">:</span>
                 <span class="n">_active</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_ident</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span>
@@ -987,46 +1002,8 @@
 
             <span class="k">try</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
-            <span class="k">except</span> <span class="ne">SystemExit</span><span class="p">:</span>
-                <span class="k">pass</span>
             <span class="k">except</span><span class="p">:</span>
-                <span class="c1"># If sys.stderr is no more (most likely from interpreter</span>
-                <span class="c1"># shutdown) use self._stderr.  Otherwise still use sys (as in</span>
-                <span class="c1"># _sys) in case sys.stderr was redefined since the creation of</span>
-                <span class="c1"># self.</span>
-                <span class="k">if</span> <span class="n">_sys</span> <span class="ow">and</span> <span class="n">_sys</span><span class="o">.</span><span class="n">stderr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Exception in thread </span><span class="si">%s</span><span class="s2">:</span><span class="se">\n</span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span>
-                          <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">_format_exc</span><span class="p">()),</span> <span class="n">file</span><span class="o">=</span><span class="n">_sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
-                <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stderr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="c1"># Do the best job possible w/o a huge amt. of code to</span>
-                    <span class="c1"># approximate a traceback (code ideas from</span>
-                    <span class="c1"># Lib/traceback.py)</span>
-                    <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">exc_tb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_exc_info</span><span class="p">()</span>
-                    <span class="k">try</span><span class="p">:</span>
-                        <span class="nb">print</span><span class="p">((</span>
-                            <span class="s2">&quot;Exception in thread &quot;</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">+</span>
-                            <span class="s2">&quot; (most likely raised during interpreter shutdown):&quot;</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_stderr</span><span class="p">)</span>
-                        <span class="nb">print</span><span class="p">((</span>
-                            <span class="s2">&quot;Traceback (most recent call last):&quot;</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_stderr</span><span class="p">)</span>
-                        <span class="k">while</span> <span class="n">exc_tb</span><span class="p">:</span>
-                            <span class="nb">print</span><span class="p">((</span>
-                                <span class="s1">&#39;  File &quot;</span><span class="si">%s</span><span class="s1">&quot;, line </span><span class="si">%s</span><span class="s1">, in </span><span class="si">%s</span><span class="s1">&#39;</span> <span class="o">%</span>
-                                <span class="p">(</span><span class="n">exc_tb</span><span class="o">.</span><span class="n">tb_frame</span><span class="o">.</span><span class="n">f_code</span><span class="o">.</span><span class="n">co_filename</span><span class="p">,</span>
-                                    <span class="n">exc_tb</span><span class="o">.</span><span class="n">tb_lineno</span><span class="p">,</span>
-                                    <span class="n">exc_tb</span><span class="o">.</span><span class="n">tb_frame</span><span class="o">.</span><span class="n">f_code</span><span class="o">.</span><span class="n">co_name</span><span class="p">)),</span> <span class="n">file</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_stderr</span><span class="p">)</span>
-                            <span class="n">exc_tb</span> <span class="o">=</span> <span class="n">exc_tb</span><span class="o">.</span><span class="n">tb_next</span>
-                        <span class="nb">print</span><span class="p">((</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">)),</span> <span class="n">file</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_stderr</span><span class="p">)</span>
-                    <span class="c1"># Make sure that exc_tb gets deleted since it is a memory</span>
-                    <span class="c1"># hog; deleting everything else is just for thoroughness</span>
-                    <span class="k">finally</span><span class="p">:</span>
-                        <span class="k">del</span> <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">exc_tb</span>
-            <span class="k">finally</span><span class="p">:</span>
-                <span class="c1"># Prevent a race in</span>
-                <span class="c1"># test_threading.test_no_refcycle_through_target when</span>
-                <span class="c1"># the exception keeps the target alive past when we</span>
-                <span class="c1"># assert that it&#39;s dead.</span>
-                <span class="c1">#XXX self._exc_clear()</span>
-                <span class="k">pass</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_invoke_excepthook</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
         <span class="k">finally</span><span class="p">:</span>
             <span class="k">with</span> <span class="n">_active_limbo_lock</span><span class="p">:</span>
                 <span class="k">try</span><span class="p">:</span>
@@ -1058,41 +1035,18 @@
             <span class="k">assert</span> <span class="ow">not</span> <span class="n">lock</span><span class="o">.</span><span class="n">locked</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_is_stopped</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_tstate_lock</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">daemon</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">_shutdown_locks_lock</span><span class="p">:</span>
+                <span class="n">_shutdown_locks</span><span class="o">.</span><span class="n">discard</span><span class="p">(</span><span class="n">lock</span><span class="p">)</span>
 
     <span class="k">def</span> <span class="nf">_delete</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="s2">&quot;Remove current thread from the dict of currently running threads.&quot;</span>
-
-        <span class="c1"># Notes about running with _dummy_thread:</span>
-        <span class="c1">#</span>
-        <span class="c1"># Must take care to not raise an exception if _dummy_thread is being</span>
-        <span class="c1"># used (and thus this module is being used as an instance of</span>
-        <span class="c1"># dummy_threading).  _dummy_thread.get_ident() always returns -1 since</span>
-        <span class="c1"># there is only one thread if _dummy_thread is being used.  Thus</span>
-        <span class="c1"># len(_active) is always &lt;= 1 here, and any Thread instance created</span>
-        <span class="c1"># overwrites the (if any) thread currently registered in _active.</span>
-        <span class="c1">#</span>
-        <span class="c1"># An instance of _MainThread is always created by &#39;threading&#39;.  This</span>
-        <span class="c1"># gets overwritten the instant an instance of Thread is created; both</span>
-        <span class="c1"># threads return -1 from _dummy_thread.get_ident() and thus have the</span>
-        <span class="c1"># same key in the dict.  So when the _MainThread instance created by</span>
-        <span class="c1"># &#39;threading&#39; tries to clean itself up when atexit calls this method</span>
-        <span class="c1"># it gets a KeyError if another Thread instance was created.</span>
-        <span class="c1">#</span>
-        <span class="c1"># This all means that KeyError from trying to delete something from</span>
-        <span class="c1"># _active if dummy_threading is being used is a red herring.  But</span>
-        <span class="c1"># since it isn&#39;t if dummy_threading is *not* being used then don&#39;t</span>
-        <span class="c1"># hide the exception.</span>
-
-        <span class="k">try</span><span class="p">:</span>
-            <span class="k">with</span> <span class="n">_active_limbo_lock</span><span class="p">:</span>
-                <span class="k">del</span> <span class="n">_active</span><span class="p">[</span><span class="n">get_ident</span><span class="p">()]</span>
-                <span class="c1"># There must not be any python code between the previous line</span>
-                <span class="c1"># and after the lock is released.  Otherwise a tracing function</span>
-                <span class="c1"># could try to acquire the lock again in the same thread, (in</span>
-                <span class="c1"># current_thread()), and would block.</span>
-        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
-            <span class="k">if</span> <span class="s1">&#39;dummy_threading&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_sys</span><span class="o">.</span><span class="n">modules</span><span class="p">:</span>
-                <span class="k">raise</span>
+        <span class="k">with</span> <span class="n">_active_limbo_lock</span><span class="p">:</span>
+            <span class="k">del</span> <span class="n">_active</span><span class="p">[</span><span class="n">get_ident</span><span class="p">()]</span>
+            <span class="c1"># There must not be any python code between the previous line</span>
+            <span class="c1"># and after the lock is released.  Otherwise a tracing function</span>
+            <span class="c1"># could try to acquire the lock again in the same thread, (in</span>
+            <span class="c1"># current_thread()), and would block.</span>
 
     <span class="k">def</span> <span class="nf">join</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Wait until the thread terminates.</span>
@@ -1104,7 +1058,7 @@
 <span class="sd">        When the timeout argument is present and not None, it should be a</span>
 <span class="sd">        floating point number specifying a timeout for the operation in seconds</span>
 <span class="sd">        (or fractions thereof). As join() always returns None, you must call</span>
-<span class="sd">        isAlive() after join() to decide whether a timeout happened -- if the</span>
+<span class="sd">        is_alive() after join() to decide whether a timeout happened -- if the</span>
 <span class="sd">        thread is still alive, the join() call timed out.</span>
 
 <span class="sd">        When the timeout argument is not present or None, the operation will</span>
@@ -1174,6 +1128,18 @@
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_initialized</span><span class="p">,</span> <span class="s2">&quot;Thread.__init__() not called&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ident</span>
 
+    <span class="k">if</span> <span class="n">_HAVE_THREAD_NATIVE_ID</span><span class="p">:</span>
+        <span class="nd">@property</span>
+        <span class="k">def</span> <span class="nf">native_id</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;Native integral thread ID of this thread, or None if it has not been started.</span>
+
+<span class="sd">            This is a non-negative integer. See the get_native_id() function.</span>
+<span class="sd">            This represents the Thread ID as reported by the kernel.</span>
+
+<span class="sd">            &quot;&quot;&quot;</span>
+            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_initialized</span><span class="p">,</span> <span class="s2">&quot;Thread.__init__() not called&quot;</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_native_id</span>
+
     <span class="k">def</span> <span class="nf">is_alive</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Return whether the thread is alive.</span>
 
@@ -1188,7 +1154,15 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_wait_for_tstate_lock</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
         <span class="k">return</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_stopped</span>
 
-    <span class="n">isAlive</span> <span class="o">=</span> <span class="n">is_alive</span>
+    <span class="k">def</span> <span class="nf">isAlive</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Return whether the thread is alive.</span>
+
+<span class="sd">        This method is deprecated, use is_alive() instead.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span> <span class="nn">warnings</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s1">&#39;isAlive() is deprecated, use is_alive() instead&#39;</span><span class="p">,</span>
+                      <span class="ne">DeprecationWarning</span><span class="p">,</span> <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_alive</span><span class="p">()</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span> <span class="nf">daemon</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -1199,8 +1173,7 @@
 <span class="sd">        main thread is not a daemon thread and therefore all threads created in</span>
 <span class="sd">        the main thread default to daemon = False.</span>
 
-<span class="sd">        The entire Python program exits when no alive non-daemon threads are</span>
-<span class="sd">        left.</span>
+<span class="sd">        The entire Python program exits when only daemon threads are left.</span>
 
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_initialized</span><span class="p">,</span> <span class="s2">&quot;Thread.__init__() not called&quot;</span>
@@ -1225,6 +1198,104 @@
 
     <span class="k">def</span> <span class="nf">setName</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">_thread</span> <span class="kn">import</span> <span class="p">(</span><span class="n">_excepthook</span> <span class="k">as</span> <span class="n">excepthook</span><span class="p">,</span>
+                         <span class="n">_ExceptHookArgs</span> <span class="k">as</span> <span class="n">ExceptHookArgs</span><span class="p">)</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="c1"># Simple Python implementation if _thread._excepthook() is not available</span>
+    <span class="kn">from</span> <span class="nn">traceback</span> <span class="kn">import</span> <span class="n">print_exception</span> <span class="k">as</span> <span class="n">_print_exception</span>
+    <span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">namedtuple</span>
+
+    <span class="n">_ExceptHookArgs</span> <span class="o">=</span> <span class="n">namedtuple</span><span class="p">(</span>
+        <span class="s1">&#39;ExceptHookArgs&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;exc_type exc_value exc_traceback thread&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">ExceptHookArgs</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">_ExceptHookArgs</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">excepthook</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="o">/</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Handle uncaught Thread.run() exception.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">exc_type</span> <span class="o">==</span> <span class="ne">SystemExit</span><span class="p">:</span>
+            <span class="c1"># silently ignore SystemExit</span>
+            <span class="k">return</span>
+
+        <span class="k">if</span> <span class="n">_sys</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">_sys</span><span class="o">.</span><span class="n">stderr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">stderr</span> <span class="o">=</span> <span class="n">_sys</span><span class="o">.</span><span class="n">stderr</span>
+        <span class="k">elif</span> <span class="n">args</span><span class="o">.</span><span class="n">thread</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">stderr</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">thread</span><span class="o">.</span><span class="n">_stderr</span>
+            <span class="k">if</span> <span class="n">stderr</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># do nothing if sys.stderr is None and sys.stderr was None</span>
+                <span class="c1"># when the thread was created</span>
+                <span class="k">return</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># do nothing if sys.stderr is None and args.thread is None</span>
+            <span class="k">return</span>
+
+        <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">thread</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">thread</span><span class="o">.</span><span class="n">name</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="n">get_ident</span><span class="p">()</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Exception in thread </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">:&quot;</span><span class="p">,</span>
+              <span class="n">file</span><span class="o">=</span><span class="n">stderr</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">_print_exception</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">exc_type</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">exc_value</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">exc_traceback</span><span class="p">,</span>
+                         <span class="n">file</span><span class="o">=</span><span class="n">stderr</span><span class="p">)</span>
+        <span class="n">stderr</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+
+
+<span class="k">def</span> <span class="nf">_make_invoke_excepthook</span><span class="p">():</span>
+    <span class="c1"># Create a local namespace to ensure that variables remain alive</span>
+    <span class="c1"># when _invoke_excepthook() is called, even if it is called late during</span>
+    <span class="c1"># Python shutdown. It is mostly needed for daemon threads.</span>
+
+    <span class="n">old_excepthook</span> <span class="o">=</span> <span class="n">excepthook</span>
+    <span class="n">old_sys_excepthook</span> <span class="o">=</span> <span class="n">_sys</span><span class="o">.</span><span class="n">excepthook</span>
+    <span class="k">if</span> <span class="n">old_excepthook</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;threading.excepthook is None&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">old_sys_excepthook</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;sys.excepthook is None&quot;</span><span class="p">)</span>
+
+    <span class="n">sys_exc_info</span> <span class="o">=</span> <span class="n">_sys</span><span class="o">.</span><span class="n">exc_info</span>
+    <span class="n">local_print</span> <span class="o">=</span> <span class="nb">print</span>
+    <span class="n">local_sys</span> <span class="o">=</span> <span class="n">_sys</span>
+
+    <span class="k">def</span> <span class="nf">invoke_excepthook</span><span class="p">(</span><span class="n">thread</span><span class="p">):</span>
+        <span class="k">global</span> <span class="n">excepthook</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">hook</span> <span class="o">=</span> <span class="n">excepthook</span>
+            <span class="k">if</span> <span class="n">hook</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">hook</span> <span class="o">=</span> <span class="n">old_excepthook</span>
+
+            <span class="n">args</span> <span class="o">=</span> <span class="n">ExceptHookArgs</span><span class="p">([</span><span class="o">*</span><span class="n">sys_exc_info</span><span class="p">(),</span> <span class="n">thread</span><span class="p">])</span>
+
+            <span class="n">hook</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">exc</span><span class="o">.</span><span class="n">__suppress_context__</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">del</span> <span class="n">exc</span>
+
+            <span class="k">if</span> <span class="n">local_sys</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">local_sys</span><span class="o">.</span><span class="n">stderr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">stderr</span> <span class="o">=</span> <span class="n">local_sys</span><span class="o">.</span><span class="n">stderr</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">stderr</span> <span class="o">=</span> <span class="n">thread</span><span class="o">.</span><span class="n">_stderr</span>
+
+            <span class="n">local_print</span><span class="p">(</span><span class="s2">&quot;Exception in threading.excepthook:&quot;</span><span class="p">,</span>
+                        <span class="n">file</span><span class="o">=</span><span class="n">stderr</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">local_sys</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">local_sys</span><span class="o">.</span><span class="n">excepthook</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">sys_excepthook</span> <span class="o">=</span> <span class="n">local_sys</span><span class="o">.</span><span class="n">excepthook</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">sys_excepthook</span> <span class="o">=</span> <span class="n">old_sys_excepthook</span>
+
+            <span class="n">sys_excepthook</span><span class="p">(</span><span class="o">*</span><span class="n">sys_exc_info</span><span class="p">())</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="c1"># Break reference cycle (exception stored in a variable)</span>
+            <span class="n">args</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">return</span> <span class="n">invoke_excepthook</span>
+
 
 <span class="c1"># The timer class was contributed by Itamar Shtull-Trauring</span>
 
@@ -1265,6 +1336,8 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_set_tstate_lock</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_started</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_set_ident</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">_HAVE_THREAD_NATIVE_ID</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_set_native_id</span><span class="p">()</span>
         <span class="k">with</span> <span class="n">_active_limbo_lock</span><span class="p">:</span>
             <span class="n">_active</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_ident</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span>
 
@@ -1284,6 +1357,8 @@
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_started</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_set_ident</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">_HAVE_THREAD_NATIVE_ID</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_set_native_id</span><span class="p">()</span>
         <span class="k">with</span> <span class="n">_active_limbo_lock</span><span class="p">:</span>
             <span class="n">_active</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_ident</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span>
 
@@ -1350,11 +1425,19 @@
 <span class="n">_main_thread</span> <span class="o">=</span> <span class="n">_MainThread</span><span class="p">()</span>
 
 <span class="k">def</span> <span class="nf">_shutdown</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Wait until the Python thread state of all non-daemon threads get deleted.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># Obscure:  other threads may be waiting to join _main_thread.  That&#39;s</span>
     <span class="c1"># dubious, but some code does it.  We can&#39;t wait for C code to release</span>
     <span class="c1"># the main thread&#39;s tstate_lock - that won&#39;t happen until the interpreter</span>
     <span class="c1"># is nearly dead.  So we release it here.  Note that just calling _stop()</span>
     <span class="c1"># isn&#39;t enough:  other threads may already be waiting on _tstate_lock.</span>
+    <span class="k">if</span> <span class="n">_main_thread</span><span class="o">.</span><span class="n">_is_stopped</span><span class="p">:</span>
+        <span class="c1"># _shutdown() was already called</span>
+        <span class="k">return</span>
+
+    <span class="c1"># Main thread</span>
     <span class="n">tlock</span> <span class="o">=</span> <span class="n">_main_thread</span><span class="o">.</span><span class="n">_tstate_lock</span>
     <span class="c1"># The main thread isn&#39;t finished yet, so its thread state lock can&#39;t have</span>
     <span class="c1"># been released.</span>
@@ -1362,16 +1445,24 @@
     <span class="k">assert</span> <span class="n">tlock</span><span class="o">.</span><span class="n">locked</span><span class="p">()</span>
     <span class="n">tlock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
     <span class="n">_main_thread</span><span class="o">.</span><span class="n">_stop</span><span class="p">()</span>
-    <span class="n">t</span> <span class="o">=</span> <span class="n">_pickSomeNonDaemonThread</span><span class="p">()</span>
-    <span class="k">while</span> <span class="n">t</span><span class="p">:</span>
-        <span class="n">t</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
-        <span class="n">t</span> <span class="o">=</span> <span class="n">_pickSomeNonDaemonThread</span><span class="p">()</span>
 
-<span class="k">def</span> <span class="nf">_pickSomeNonDaemonThread</span><span class="p">():</span>
-    <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">():</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">t</span><span class="o">.</span><span class="n">daemon</span> <span class="ow">and</span> <span class="n">t</span><span class="o">.</span><span class="n">is_alive</span><span class="p">():</span>
-            <span class="k">return</span> <span class="n">t</span>
-    <span class="k">return</span> <span class="kc">None</span>
+    <span class="c1"># Join all non-deamon threads</span>
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="k">with</span> <span class="n">_shutdown_locks_lock</span><span class="p">:</span>
+            <span class="n">locks</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">_shutdown_locks</span><span class="p">)</span>
+            <span class="n">_shutdown_locks</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">locks</span><span class="p">:</span>
+            <span class="k">break</span>
+
+        <span class="k">for</span> <span class="n">lock</span> <span class="ow">in</span> <span class="n">locks</span><span class="p">:</span>
+            <span class="c1"># mimick Thread.join()</span>
+            <span class="n">lock</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span>
+            <span class="n">lock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+
+        <span class="c1"># new threads can be spawned while we were waiting for the other</span>
+        <span class="c1"># threads to complete</span>
+
 
 <span class="k">def</span> <span class="nf">main_thread</span><span class="p">():</span>
     <span class="sd">&quot;&quot;&quot;Return the main thread object.</span>
@@ -1391,19 +1482,32 @@
 
 
 <span class="k">def</span> <span class="nf">_after_fork</span><span class="p">():</span>
-    <span class="c1"># This function is called by Python/ceval.c:PyEval_ReInitThreads which</span>
-    <span class="c1"># is called from PyOS_AfterFork.  Here we cleanup threading module state</span>
-    <span class="c1"># that should not exist after a fork.</span>
-
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Cleanup threading module state that should not exist after a fork.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># Reset _active_limbo_lock, in case we forked while the lock was held</span>
     <span class="c1"># by another (non-forked) thread.  http://bugs.python.org/issue874900</span>
     <span class="k">global</span> <span class="n">_active_limbo_lock</span><span class="p">,</span> <span class="n">_main_thread</span>
+    <span class="k">global</span> <span class="n">_shutdown_locks_lock</span><span class="p">,</span> <span class="n">_shutdown_locks</span>
     <span class="n">_active_limbo_lock</span> <span class="o">=</span> <span class="n">_allocate_lock</span><span class="p">()</span>
 
     <span class="c1"># fork() only copied the current thread; clear references to others.</span>
     <span class="n">new_active</span> <span class="o">=</span> <span class="p">{}</span>
-    <span class="n">current</span> <span class="o">=</span> <span class="n">current_thread</span><span class="p">()</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">current</span> <span class="o">=</span> <span class="n">_active</span><span class="p">[</span><span class="n">get_ident</span><span class="p">()]</span>
+    <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+        <span class="c1"># fork() was called in a thread which was not spawned</span>
+        <span class="c1"># by threading.Thread. For example, a thread spawned</span>
+        <span class="c1"># by thread.start_new_thread().</span>
+        <span class="n">current</span> <span class="o">=</span> <span class="n">_MainThread</span><span class="p">()</span>
+
     <span class="n">_main_thread</span> <span class="o">=</span> <span class="n">current</span>
+
+    <span class="c1"># reset _shutdown() locks: threads re-register their _tstate_lock below</span>
+    <span class="n">_shutdown_locks_lock</span> <span class="o">=</span> <span class="n">_allocate_lock</span><span class="p">()</span>
+    <span class="n">_shutdown_locks</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+
     <span class="k">with</span> <span class="n">_active_limbo_lock</span><span class="p">:</span>
         <span class="c1"># Dangling thread instances must still have their locks reset,</span>
         <span class="c1"># because someone may join() them.</span>
@@ -1428,6 +1532,10 @@
         <span class="n">_active</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
         <span class="n">_active</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">new_active</span><span class="p">)</span>
         <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">_active</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+
+
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">_os</span><span class="p">,</span> <span class="s2">&quot;register_at_fork&quot;</span><span class="p">):</span>
+    <span class="n">_os</span><span class="o">.</span><span class="n">register_at_fork</span><span class="p">(</span><span class="n">after_in_child</span><span class="o">=</span><span class="n">_after_fork</span><span class="p">)</span>
 </pre></div>
 
             <div class="clearer"></div>
@@ -1491,7 +1599,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.3.1.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.4.2.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>
