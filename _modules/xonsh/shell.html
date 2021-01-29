@@ -6,9 +6,10 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>xonsh.shell &#8212; xonsh 0.9.18.dev21 documentation</title>
-    <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>xonsh.shell &#8212; xonsh 0.9.24 documentation</title>
     <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
@@ -17,7 +18,6 @@
     <script src="../../_static/jquery.js"></script>
     <script src="../../_static/underscore.js"></script>
     <script src="../../_static/doctools.js"></script>
-    <script src="../../_static/language_data.js"></script>
     <script src="../../_static/runthis-client.min.js"></script>
 
     
@@ -55,9 +55,10 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../sidebar.html">xonsh 0.9.18.dev21 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.9.24 documentation</a> &#187;</li>
 
-          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li> 
+          <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">xonsh.shell</a></li> 
       </ul>
     </div>
     </div>
@@ -72,7 +73,6 @@
 <span></span><span class="c1"># -*- coding: utf-8 -*-</span>
 <span class="sd">&quot;&quot;&quot;The xonsh shell&quot;&quot;&quot;</span>
 <span class="kn">import</span> <span class="nn">sys</span>
-<span class="kn">import</span> <span class="nn">random</span>
 <span class="kn">import</span> <span class="nn">time</span>
 <span class="kn">import</span> <span class="nn">difflib</span>
 <span class="kn">import</span> <span class="nn">builtins</span>
@@ -80,11 +80,12 @@
 
 <span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">best_shell_type</span><span class="p">,</span>
-    <span class="n">has_prompt_toolkit</span><span class="p">,</span>
     <span class="n">ptk_above_min_supported</span><span class="p">,</span>
+    <span class="n">use_vended_prompt_toolkit</span><span class="p">,</span>
+    <span class="n">has_prompt_toolkit</span><span class="p">,</span>
     <span class="n">minimum_required_ptk_version</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="n">XonshError</span><span class="p">,</span> <span class="n">print_exception</span>
+<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="n">XonshError</span><span class="p">,</span> <span class="n">print_exception</span><span class="p">,</span> <span class="n">simple_random_choice</span>
 <span class="kn">from</span> <span class="nn">xonsh.events</span> <span class="kn">import</span> <span class="n">events</span>
 <span class="kn">import</span> <span class="nn">xonsh.history.main</span> <span class="k">as</span> <span class="nn">xhm</span>
 
@@ -129,13 +130,23 @@
 <span class="p">)</span>
 
 <span class="n">events</span><span class="o">.</span><span class="n">doc</span><span class="p">(</span>
+    <span class="s2">&quot;on_pre_prompt_format&quot;</span><span class="p">,</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">on_pre_prompt_format() -&gt; None</span>
+
+<span class="sd">Fires before the prompt will be formatted</span>
+<span class="sd">&quot;&quot;&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">events</span><span class="o">.</span><span class="n">doc</span><span class="p">(</span>
     <span class="s2">&quot;on_pre_prompt&quot;</span><span class="p">,</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">on_pre_prompt() -&gt; None</span>
 
-<span class="sd">Fires just before the prompt is shown</span>
+<span class="sd">Fires just before showing the prompt</span>
 <span class="sd">&quot;&quot;&quot;</span><span class="p">,</span>
 <span class="p">)</span>
+
 
 <span class="n">events</span><span class="o">.</span><span class="n">doc</span><span class="p">(</span>
     <span class="s2">&quot;on_post_prompt&quot;</span><span class="p">,</span>
@@ -228,22 +239,18 @@
         <span class="k">elif</span> <span class="n">env</span> <span class="ow">and</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;TERM&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;dumb&quot;</span><span class="p">:</span>
             <span class="n">shell_type</span> <span class="o">=</span> <span class="s2">&quot;dumb&quot;</span>
         <span class="k">elif</span> <span class="n">shell_type</span> <span class="o">==</span> <span class="s2">&quot;random&quot;</span><span class="p">:</span>
-            <span class="n">shell_type</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">((</span><span class="s2">&quot;readline&quot;</span><span class="p">,</span> <span class="s2">&quot;prompt_toolkit&quot;</span><span class="p">))</span>
+            <span class="n">shell_type</span> <span class="o">=</span> <span class="n">simple_random_choice</span><span class="p">((</span><span class="s2">&quot;readline&quot;</span><span class="p">,</span> <span class="s2">&quot;prompt_toolkit&quot;</span><span class="p">))</span>
         <span class="k">if</span> <span class="n">shell_type</span> <span class="o">==</span> <span class="s2">&quot;prompt_toolkit&quot;</span><span class="p">:</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">has_prompt_toolkit</span><span class="p">():</span>
-                <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                    <span class="s2">&quot;prompt_toolkit is not available, using &quot;</span> <span class="s2">&quot;readline instead.&quot;</span>
-                <span class="p">)</span>
-                <span class="n">shell_type</span> <span class="o">=</span> <span class="s2">&quot;readline&quot;</span>
+                <span class="n">use_vended_prompt_toolkit</span><span class="p">()</span>
             <span class="k">elif</span> <span class="ow">not</span> <span class="n">ptk_above_min_supported</span><span class="p">():</span>
                 <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                    <span class="s2">&quot;prompt-toolkit version &lt; v</span><span class="si">{}</span><span class="s2">.</span><span class="si">{}</span><span class="s2">.0 is not &quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+                    <span class="s2">&quot;Installed prompt-toolkit version &lt; v</span><span class="si">{}</span><span class="s2">.</span><span class="si">{}</span><span class="s2">.</span><span class="si">{}</span><span class="s2"> is not &quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
                         <span class="o">*</span><span class="n">minimum_required_ptk_version</span>
                     <span class="p">)</span>
-                    <span class="o">+</span> <span class="s2">&quot;supported. Please update prompt-toolkit. Using &quot;</span>
-                    <span class="o">+</span> <span class="s2">&quot;readline instead.&quot;</span>
+                    <span class="o">+</span> <span class="s2">&quot;supported. Falling back to the builtin prompt-toolkit.&quot;</span>
                 <span class="p">)</span>
-                <span class="n">shell_type</span> <span class="o">=</span> <span class="s2">&quot;readline&quot;</span>
+                <span class="n">use_vended_prompt_toolkit</span><span class="p">()</span>
             <span class="k">if</span> <span class="n">init_shell_type</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;ptk1&quot;</span><span class="p">,</span> <span class="s2">&quot;prompt_toolkit1&quot;</span><span class="p">):</span>
                 <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
                     <span class="s2">&quot;$SHELL_TYPE=&#39;</span><span class="si">{}</span><span class="s2">&#39; now deprecated, please update your run control file&#39;&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
@@ -302,12 +309,13 @@
         <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shell</span><span class="p">,</span> <span class="n">attr</span><span class="p">)</span></div>
 </pre></div>
 
+            <div class="clearer"></div>
           </div>
         </div>
       </div>
       <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
         <div class="sphinxsidebarwrapper">
-        <p class="logo"><a href="../../sidebar.html" title="sidebar">
+        <p class="logo"><a href="../../contents.html" title="contents">
           <img class="logo" src="../../_static/ascii_conch_part_transparent_tight.png" alt="Logo"/>
         </a></p>
 <div id="searchbox" style="display: none" role="search">
@@ -352,16 +360,17 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../sidebar.html">xonsh 0.9.18.dev21 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.9.24 documentation</a> &#187;</li>
 
-          <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li> 
+          <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">xonsh.shell</a></li> 
       </ul>
     </div>
     </div>
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 3.0.3.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.4.3.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>

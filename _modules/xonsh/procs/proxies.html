@@ -1,0 +1,975 @@
+
+
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>xonsh.procs.proxies &#8212; xonsh 0.9.24 documentation</title>
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/numpy_friendly.css" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
+    
+    <script id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+    <script src="../../../_static/jquery.js"></script>
+    <script src="../../../_static/underscore.js"></script>
+    <script src="../../../_static/doctools.js"></script>
+    <script src="../../../_static/runthis-client.min.js"></script>
+
+    
+    
+     
+        <script src="../../../_static/jquery.cookie.js"></script>
+    
+
+    
+     
+        <script src="../../../_static/cloud.base.js"></script>
+    
+
+    
+     
+        <script src="../../../_static/cloud.js"></script>
+    
+
+    <link rel="shortcut icon" href="../../../_static/magic_conch.ico"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+     
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="canonical" href="http://xon.sh/_modules/xonsh/procs/proxies.html"/>
+
+  </head><body>
+    <div class="relbar-top">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../contents.html">xonsh 0.9.24 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">xonsh.procs.proxies</a></li> 
+      </ul>
+    </div>
+    </div>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for xonsh.procs.proxies</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Interface for running Python functions as subprocess-mode commands.</span>
+
+<span class="sd">Code for several helper methods in the `ProcProxy` class have been reproduced</span>
+<span class="sd">without modification from `subprocess.py` in the Python 3.4.2 standard library.</span>
+<span class="sd">The contents of `subprocess.py` (and, thus, the reproduced methods) are</span>
+<span class="sd">Copyright (c) 2003-2005 by Peter Astrand &lt;astrand@lysator.liu.se&gt; and were</span>
+<span class="sd">licensed to the Python Software foundation under a Contributor Agreement.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">io</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span> <span class="nn">signal</span>
+<span class="kn">import</span> <span class="nn">inspect</span>
+<span class="kn">import</span> <span class="nn">builtins</span>
+<span class="kn">import</span> <span class="nn">functools</span>
+<span class="kn">import</span> <span class="nn">threading</span>
+<span class="kn">import</span> <span class="nn">subprocess</span>
+<span class="kn">import</span> <span class="nn">collections.abc</span> <span class="k">as</span> <span class="nn">cabc</span>
+
+<span class="kn">import</span> <span class="nn">xonsh.tools</span> <span class="k">as</span> <span class="nn">xt</span>
+<span class="kn">import</span> <span class="nn">xonsh.platform</span> <span class="k">as</span> <span class="nn">xp</span>
+<span class="kn">import</span> <span class="nn">xonsh.lazyimps</span> <span class="k">as</span> <span class="nn">xli</span>
+
+<span class="kn">from</span> <span class="nn">xonsh.procs.readers</span> <span class="kn">import</span> <span class="n">safe_fdclose</span>
+
+
+<div class="viewcode-block" id="still_writable"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.still_writable">[docs]</a><span class="k">def</span> <span class="nf">still_writable</span><span class="p">(</span><span class="n">fd</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Determines whether a file descriptor is still writable by trying to</span>
+<span class="sd">    write an empty string and seeing if it fails.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">return</span> <span class="n">status</span></div>
+
+
+<div class="viewcode-block" id="safe_flush"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.safe_flush">[docs]</a><span class="k">def</span> <span class="nf">safe_flush</span><span class="p">(</span><span class="n">handle</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Attempts to safely flush a file handle, returns success bool.&quot;&quot;&quot;</span>
+    <span class="n">status</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">handle</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+    <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">return</span> <span class="n">status</span></div>
+
+
+<div class="viewcode-block" id="Handle"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.Handle">[docs]</a><span class="k">class</span> <span class="nc">Handle</span><span class="p">(</span><span class="nb">int</span><span class="p">):</span>
+    <span class="n">closed</span> <span class="o">=</span> <span class="kc">False</span>
+
+<div class="viewcode-block" id="Handle.Close"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.Handle.Close">[docs]</a>    <span class="k">def</span> <span class="nf">Close</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">CloseHandle</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">CloseHandle</span> <span class="o">=</span> <span class="n">CloseHandle</span> <span class="ow">or</span> <span class="n">xli</span><span class="o">.</span><span class="n">_winapi</span><span class="o">.</span><span class="n">CloseHandle</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">closed</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">closed</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">CloseHandle</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Handle.Detach"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.Handle.Detach">[docs]</a>    <span class="k">def</span> <span class="nf">Detach</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">closed</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">closed</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;already closed&quot;</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Handle(</span><span class="si">{</span><span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="si">}</span><span class="s2">)&quot;</span>
+
+    <span class="fm">__del__</span> <span class="o">=</span> <span class="n">Close</span>
+    <span class="fm">__str__</span> <span class="o">=</span> <span class="fm">__repr__</span></div>
+
+
+<div class="viewcode-block" id="FileThreadDispatcher"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.FileThreadDispatcher">[docs]</a><span class="k">class</span> <span class="nc">FileThreadDispatcher</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Dispatches to different file handles depending on the</span>
+<span class="sd">    current thread. Useful if you want file operation to go to different</span>
+<span class="sd">    places for different threads.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        default : file-like or None, optional</span>
+<span class="sd">            The file handle to write to if a thread cannot be found in</span>
+<span class="sd">            the registry. If None, a new in-memory instance.</span>
+
+<span class="sd">        Attributes</span>
+<span class="sd">        ----------</span>
+<span class="sd">        registry : dict</span>
+<span class="sd">            Maps thread idents to file handles.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">default</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">default</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">TextIOWrapper</span><span class="p">(</span><span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">default</span> <span class="o">=</span> <span class="n">default</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">registry</span> <span class="o">=</span> <span class="p">{}</span>
+
+<div class="viewcode-block" id="FileThreadDispatcher.register"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.FileThreadDispatcher.register">[docs]</a>    <span class="k">def</span> <span class="nf">register</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">handle</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Registers a file handle for the current thread. Returns self so</span>
+<span class="sd">        that this method can be used in a with-statement.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="bp">self</span><span class="p">:</span>
+            <span class="c1"># prevent weird recurssion errors</span>
+            <span class="k">return</span> <span class="bp">self</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">registry</span><span class="p">[</span><span class="n">threading</span><span class="o">.</span><span class="n">get_ident</span><span class="p">()]</span> <span class="o">=</span> <span class="n">handle</span>
+        <span class="k">return</span> <span class="bp">self</span></div>
+
+<div class="viewcode-block" id="FileThreadDispatcher.deregister"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.FileThreadDispatcher.deregister">[docs]</a>    <span class="k">def</span> <span class="nf">deregister</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Removes the current thread from the registry.&quot;&quot;&quot;</span>
+        <span class="n">ident</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">get_ident</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">ident</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">registry</span><span class="p">:</span>
+            <span class="c1"># don&#39;t remove if we have already been deregistered</span>
+            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">registry</span><span class="p">[</span><span class="n">threading</span><span class="o">.</span><span class="n">get_ident</span><span class="p">()]</span></div>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">available</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;True if the thread is available in the registry.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">threading</span><span class="o">.</span><span class="n">get_ident</span><span class="p">()</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">registry</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">handle</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Gets the current handle for the thread.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">registry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">get_ident</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">default</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">pass</span>
+
+    <span class="k">def</span> <span class="fm">__exit__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ex_type</span><span class="p">,</span> <span class="n">ex_value</span><span class="p">,</span> <span class="n">ex_traceback</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">deregister</span><span class="p">()</span>
+
+    <span class="c1">#</span>
+    <span class="c1"># io.TextIOBase interface</span>
+    <span class="c1">#</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">encoding</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Gets the encoding for this thread&#39;s handle.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">encoding</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">errors</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Gets the errors for this thread&#39;s handle.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">errors</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">newlines</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Gets the newlines for this thread&#39;s handle.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">newlines</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Gets the buffer for this thread&#39;s handle.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">buffer</span>
+
+<div class="viewcode-block" id="FileThreadDispatcher.detach"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.FileThreadDispatcher.detach">[docs]</a>    <span class="k">def</span> <span class="nf">detach</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Detaches the buffer for the current thread.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="FileThreadDispatcher.read"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.FileThreadDispatcher.read">[docs]</a>    <span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Reads from the handle for the current thread.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">size</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FileThreadDispatcher.readline"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.FileThreadDispatcher.readline">[docs]</a>    <span class="k">def</span> <span class="nf">readline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Reads a line from the handle for the current thread.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">readline</span><span class="p">(</span><span class="n">size</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FileThreadDispatcher.readlines"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.FileThreadDispatcher.readlines">[docs]</a>    <span class="k">def</span> <span class="nf">readlines</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hint</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Reads lines from the handle for the current thread.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">readlines</span><span class="p">(</span><span class="n">hint</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FileThreadDispatcher.seek"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.FileThreadDispatcher.seek">[docs]</a>    <span class="k">def</span> <span class="nf">seek</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">offset</span><span class="p">,</span> <span class="n">whence</span><span class="o">=</span><span class="n">io</span><span class="o">.</span><span class="n">SEEK_SET</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Seeks the current file.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="n">offset</span><span class="p">,</span> <span class="n">whence</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FileThreadDispatcher.tell"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.FileThreadDispatcher.tell">[docs]</a>    <span class="k">def</span> <span class="nf">tell</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Reports the current position in the handle for the current thread.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">tell</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="FileThreadDispatcher.write"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.FileThreadDispatcher.write">[docs]</a>    <span class="k">def</span> <span class="nf">write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">s</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Writes to this thread&#39;s handle. This also flushes, just to be</span>
+<span class="sd">        extra sure the string was written.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">h</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">r</span> <span class="o">=</span> <span class="n">h</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+            <span class="n">h</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+            <span class="n">r</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="n">r</span></div>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">line_buffering</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Gets if line buffering for this thread&#39;s handle enabled.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">line_buffering</span>
+
+    <span class="c1">#</span>
+    <span class="c1"># io.IOBase interface</span>
+    <span class="c1">#</span>
+
+<div class="viewcode-block" id="FileThreadDispatcher.close"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.FileThreadDispatcher.close">[docs]</a>    <span class="k">def</span> <span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Closes the current thread&#39;s handle.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">closed</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Is the thread&#39;s handle closed.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">closed</span>
+
+<div class="viewcode-block" id="FileThreadDispatcher.fileno"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.FileThreadDispatcher.fileno">[docs]</a>    <span class="k">def</span> <span class="nf">fileno</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns the file descriptor for the current thread.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">fileno</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="FileThreadDispatcher.flush"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.FileThreadDispatcher.flush">[docs]</a>    <span class="k">def</span> <span class="nf">flush</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Flushes the file descriptor for the current thread.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">safe_flush</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FileThreadDispatcher.isatty"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.FileThreadDispatcher.isatty">[docs]</a>    <span class="k">def</span> <span class="nf">isatty</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns if the file descriptor for the current thread is a tty.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">isatty</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="FileThreadDispatcher.readable"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.FileThreadDispatcher.readable">[docs]</a>    <span class="k">def</span> <span class="nf">readable</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns if file descriptor for the current thread is readable.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">readable</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="FileThreadDispatcher.seekable"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.FileThreadDispatcher.seekable">[docs]</a>    <span class="k">def</span> <span class="nf">seekable</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns if file descriptor for the current thread is seekable.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">seekable</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="FileThreadDispatcher.truncate"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.FileThreadDispatcher.truncate">[docs]</a>    <span class="k">def</span> <span class="nf">truncate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Truncates the file for for the current thread.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">truncate</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="FileThreadDispatcher.writable"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.FileThreadDispatcher.writable">[docs]</a>    <span class="k">def</span> <span class="nf">writable</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Returns if file descriptor for the current thread is writable.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">writable</span><span class="p">(</span><span class="n">size</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FileThreadDispatcher.writelines"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.FileThreadDispatcher.writelines">[docs]</a>    <span class="k">def</span> <span class="nf">writelines</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Writes lines for the file descriptor for the current thread.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle</span><span class="o">.</span><span class="n">writelines</span><span class="p">()</span></div></div>
+
+
+<span class="c1"># These should NOT be lazy since they *need* to get the true stdout from the</span>
+<span class="c1"># main thread. Also their creation time should be negligible.</span>
+<span class="n">STDOUT_DISPATCHER</span> <span class="o">=</span> <span class="n">FileThreadDispatcher</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+<span class="n">STDERR_DISPATCHER</span> <span class="o">=</span> <span class="n">FileThreadDispatcher</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="parse_proxy_return"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.parse_proxy_return">[docs]</a><span class="k">def</span> <span class="nf">parse_proxy_return</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Proxies may return a variety of outputs. This handles them generally.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    r : tuple, str, int, or None</span>
+<span class="sd">        Return from proxy function</span>
+<span class="sd">    stdout : file-like</span>
+<span class="sd">        Current stdout stream</span>
+<span class="sd">    stdout : file-like</span>
+<span class="sd">        Current stderr stream</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    cmd_result : int</span>
+<span class="sd">        The return code of the proxy</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cmd_result</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">r</span><span class="p">)</span>
+        <span class="n">stdout</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+        <span class="n">cmd_result</span> <span class="o">=</span> <span class="n">r</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Sequence</span><span class="p">):</span>
+        <span class="n">rlen</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">r</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">rlen</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">r</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+            <span class="n">stdout</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">rlen</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">stderr</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span>
+            <span class="n">stderr</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">rlen</span> <span class="o">&gt;</span> <span class="mi">2</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="nb">int</span><span class="p">):</span>
+            <span class="n">cmd_result</span> <span class="o">=</span> <span class="n">r</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+    <span class="k">elif</span> <span class="n">r</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># for the random object...</span>
+        <span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">r</span><span class="p">))</span>
+        <span class="n">stdout</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">cmd_result</span></div>
+
+
+<div class="viewcode-block" id="proxy_zero"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.proxy_zero">[docs]</a><span class="k">def</span> <span class="nf">proxy_zero</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">stack</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Calls a proxy function which takes no parameters.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">f</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="proxy_one"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.proxy_one">[docs]</a><span class="k">def</span> <span class="nf">proxy_one</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">stack</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Calls a proxy function which takes one parameter: args&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">f</span><span class="p">(</span><span class="n">args</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="proxy_two"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.proxy_two">[docs]</a><span class="k">def</span> <span class="nf">proxy_two</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">stack</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Calls a proxy function which takes two parameter: args and stdin.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">f</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="proxy_three"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.proxy_three">[docs]</a><span class="k">def</span> <span class="nf">proxy_three</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">stack</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Calls a proxy function which takes three parameter: args, stdin, stdout.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">f</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="p">,</span> <span class="n">stdout</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="proxy_four"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.proxy_four">[docs]</a><span class="k">def</span> <span class="nf">proxy_four</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">stack</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Calls a proxy function which takes four parameter: args, stdin, stdout,</span>
+<span class="sd">    and stderr.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">f</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="proxy_five"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.proxy_five">[docs]</a><span class="k">def</span> <span class="nf">proxy_five</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">stack</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Calls a proxy function which takes four parameter: args, stdin, stdout,</span>
+<span class="sd">    stderr, and spec.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">f</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="p">,</span> <span class="n">spec</span><span class="p">)</span></div>
+
+
+<span class="n">PROXIES</span> <span class="o">=</span> <span class="p">(</span><span class="n">proxy_zero</span><span class="p">,</span> <span class="n">proxy_one</span><span class="p">,</span> <span class="n">proxy_two</span><span class="p">,</span> <span class="n">proxy_three</span><span class="p">,</span> <span class="n">proxy_four</span><span class="p">,</span> <span class="n">proxy_five</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="partial_proxy"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.partial_proxy">[docs]</a><span class="k">def</span> <span class="nf">partial_proxy</span><span class="p">(</span><span class="n">f</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Dispatches the appropriate proxy function based on the number of args.&quot;&quot;&quot;</span>
+    <span class="n">numargs</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">inspect</span><span class="o">.</span><span class="n">signature</span><span class="p">(</span><span class="n">f</span><span class="p">)</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">param</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">param</span><span class="o">.</span><span class="n">POSITIONAL_ONLY</span>
+            <span class="ow">or</span> <span class="n">param</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">param</span><span class="o">.</span><span class="n">POSITIONAL_OR_KEYWORD</span>
+        <span class="p">):</span>
+            <span class="n">numargs</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">elif</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">xt</span><span class="o">.</span><span class="n">ALIAS_KWARG_NAMES</span> <span class="ow">and</span> <span class="n">param</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">param</span><span class="o">.</span><span class="n">KEYWORD_ONLY</span><span class="p">:</span>
+            <span class="n">numargs</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="n">numargs</span> <span class="o">&lt;</span> <span class="mi">6</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="n">PROXIES</span><span class="p">[</span><span class="n">numargs</span><span class="p">],</span> <span class="n">f</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">numargs</span> <span class="o">==</span> <span class="mi">6</span><span class="p">:</span>
+        <span class="c1"># don&#39;t need to partial.</span>
+        <span class="k">return</span> <span class="n">f</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">e</span> <span class="o">=</span> <span class="s2">&quot;Expected proxy with 6 or fewer arguments for </span><span class="si">{}</span><span class="s2">, not </span><span class="si">{}</span><span class="s2">&quot;</span>
+        <span class="k">raise</span> <span class="n">xt</span><span class="o">.</span><span class="n">XonshError</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">xt</span><span class="o">.</span><span class="n">ALIAS_KWARG_NAMES</span><span class="p">),</span> <span class="n">numargs</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="ProcProxyThread"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.ProcProxyThread">[docs]</a><span class="k">class</span> <span class="nc">ProcProxyThread</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Class representing a function to be run as a subprocess-mode command.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">f</span><span class="p">,</span>
+        <span class="n">args</span><span class="p">,</span>
+        <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">stdout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">stderr</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">universal_newlines</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">close_fds</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">env</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        f : function</span>
+<span class="sd">            The function to be executed.</span>
+<span class="sd">        args : list</span>
+<span class="sd">            A (possibly empty) list containing the arguments that were given on</span>
+<span class="sd">            the command line</span>
+<span class="sd">        stdin : file-like, optional</span>
+<span class="sd">            A file-like object representing stdin (input can be read from</span>
+<span class="sd">            here).  If `stdin` is not provided or if it is explicitly set to</span>
+<span class="sd">            `None`, then an instance of `io.StringIO` representing an empty</span>
+<span class="sd">            file is used.</span>
+<span class="sd">        stdout : file-like, optional</span>
+<span class="sd">            A file-like object representing stdout (normal output can be</span>
+<span class="sd">            written here).  If `stdout` is not provided or if it is explicitly</span>
+<span class="sd">            set to `None`, then `sys.stdout` is used.</span>
+<span class="sd">        stderr : file-like, optional</span>
+<span class="sd">            A file-like object representing stderr (error output can be</span>
+<span class="sd">            written here).  If `stderr` is not provided or if it is explicitly</span>
+<span class="sd">            set to `None`, then `sys.stderr` is used.</span>
+<span class="sd">        universal_newlines : bool, optional</span>
+<span class="sd">            Whether or not to use universal newlines.</span>
+<span class="sd">        close_fds : bool, optional</span>
+<span class="sd">            Whether or not to close file descriptors. This is here for Popen</span>
+<span class="sd">            compatability and currently does nothing.</span>
+<span class="sd">        env : Mapping, optional</span>
+<span class="sd">            Environment mapping.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">orig_f</span> <span class="o">=</span> <span class="n">f</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">f</span> <span class="o">=</span> <span class="n">partial_proxy</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">args</span> <span class="o">=</span> <span class="n">args</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pid</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">returncode</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_closed_handle_cache</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="n">handles</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_handles</span><span class="p">(</span><span class="n">stdin</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="p">)</span>
+        <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">p2cread</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">p2cwrite</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">c2pread</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">c2pwrite</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">errread</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">errwrite</span><span class="p">,</span>
+        <span class="p">)</span> <span class="o">=</span> <span class="n">handles</span>
+
+        <span class="c1"># default values</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stdin</span> <span class="o">=</span> <span class="n">stdin</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">stdout</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="n">stderr</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">close_fds</span> <span class="o">=</span> <span class="n">close_fds</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">env</span> <span class="o">=</span> <span class="n">env</span> <span class="ow">or</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_interrupted</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">p2cwrite</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">p2cwrite</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">msvcrt</span><span class="o">.</span><span class="n">open_osfhandle</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">p2cwrite</span><span class="o">.</span><span class="n">Detach</span><span class="p">(),</span> <span class="mi">0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">c2pread</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">c2pread</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">msvcrt</span><span class="o">.</span><span class="n">open_osfhandle</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">c2pread</span><span class="o">.</span><span class="n">Detach</span><span class="p">(),</span> <span class="mi">0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">errread</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">errread</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">msvcrt</span><span class="o">.</span><span class="n">open_osfhandle</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">errread</span><span class="o">.</span><span class="n">Detach</span><span class="p">(),</span> <span class="mi">0</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">p2cwrite</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stdin</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">p2cwrite</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">universal_newlines</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">stdin</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">TextIOWrapper</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">stdin</span><span class="p">,</span> <span class="n">write_through</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">line_buffering</span><span class="o">=</span><span class="kc">False</span>
+                <span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stdin</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">and</span> <span class="n">stdin</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stdin</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">stdin</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">c2pread</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">c2pread</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">universal_newlines</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">TextIOWrapper</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">errread</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">errread</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">universal_newlines</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">TextIOWrapper</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+
+        <span class="c1"># Set some signal handles, if we can. Must come before process</span>
+        <span class="c1"># is started to prevent deadlock on windows</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">old_int_handler</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">xt</span><span class="o">.</span><span class="n">on_main_thread</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">old_int_handler</span> <span class="o">=</span> <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGINT</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal_int</span><span class="p">)</span>
+        <span class="c1"># start up the proc</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="fm">__del__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigint</span><span class="p">()</span>
+
+<div class="viewcode-block" id="ProcProxyThread.run"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.ProcProxyThread.run">[docs]</a>    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Set up input/output streams and execute the child function in a new</span>
+<span class="sd">        thread.  This is part of the `threading.Thread` interface and should</span>
+<span class="sd">        not be called directly.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">f</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">spec</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_wait_and_getattr</span><span class="p">(</span><span class="s2">&quot;spec&quot;</span><span class="p">)</span>
+        <span class="n">last_in_pipeline</span> <span class="o">=</span> <span class="n">spec</span><span class="o">.</span><span class="n">last_in_pipeline</span>
+        <span class="k">if</span> <span class="n">last_in_pipeline</span><span class="p">:</span>
+            <span class="n">capout</span> <span class="o">=</span> <span class="n">spec</span><span class="o">.</span><span class="n">captured_stdout</span>  <span class="c1"># NOQA</span>
+            <span class="n">caperr</span> <span class="o">=</span> <span class="n">spec</span><span class="o">.</span><span class="n">captured_stderr</span>  <span class="c1"># NOQA</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
+        <span class="n">enc</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_ENCODING&quot;</span><span class="p">)</span>
+        <span class="n">err</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_ENCODING_ERRORS&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">p2cread</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">p2cread</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">msvcrt</span><span class="o">.</span><span class="n">open_osfhandle</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">p2cread</span><span class="o">.</span><span class="n">Detach</span><span class="p">(),</span> <span class="mi">0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">c2pwrite</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">c2pwrite</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">msvcrt</span><span class="o">.</span><span class="n">open_osfhandle</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">c2pwrite</span><span class="o">.</span><span class="n">Detach</span><span class="p">(),</span> <span class="mi">0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">errwrite</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">errwrite</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">msvcrt</span><span class="o">.</span><span class="n">open_osfhandle</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">errwrite</span><span class="o">.</span><span class="n">Detach</span><span class="p">(),</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="c1"># get stdin</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">stdin</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">sp_stdin</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">p2cread</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+            <span class="n">sp_stdin</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">TextIOWrapper</span><span class="p">(</span>
+                <span class="n">io</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">p2cread</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">err</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">sp_stdin</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdin</span>
+        <span class="c1"># stdout</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">c2pwrite</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+            <span class="n">sp_stdout</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">TextIOWrapper</span><span class="p">(</span>
+                <span class="n">io</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">c2pwrite</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">err</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">sp_stdout</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span>
+        <span class="c1"># stderr</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">errwrite</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">c2pwrite</span><span class="p">:</span>
+            <span class="n">sp_stderr</span> <span class="o">=</span> <span class="n">sp_stdout</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">errwrite</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+            <span class="n">sp_stderr</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">TextIOWrapper</span><span class="p">(</span>
+                <span class="n">io</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">errwrite</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">err</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">sp_stderr</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">stderr</span>
+        <span class="c1"># run the function itself</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">STDOUT_DISPATCHER</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">sp_stdout</span><span class="p">),</span> <span class="n">STDERR_DISPATCHER</span><span class="o">.</span><span class="n">register</span><span class="p">(</span>
+                <span class="n">sp_stderr</span>
+            <span class="p">),</span> <span class="n">xt</span><span class="o">.</span><span class="n">redirect_stdout</span><span class="p">(</span><span class="n">STDOUT_DISPATCHER</span><span class="p">),</span> <span class="n">xt</span><span class="o">.</span><span class="n">redirect_stderr</span><span class="p">(</span>
+                <span class="n">STDERR_DISPATCHER</span>
+            <span class="p">):</span>
+                <span class="n">r</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">f</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">args</span><span class="p">,</span> <span class="n">sp_stdin</span><span class="p">,</span> <span class="n">sp_stdout</span><span class="p">,</span> <span class="n">sp_stderr</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">spec</span><span class="o">.</span><span class="n">stack</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">SystemExit</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">r</span> <span class="o">=</span> <span class="n">e</span><span class="o">.</span><span class="n">code</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">code</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="k">else</span> <span class="nb">int</span><span class="p">(</span><span class="nb">bool</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">code</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+            <span class="n">status</span> <span class="o">=</span> <span class="n">still_writable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">c2pwrite</span><span class="p">)</span> <span class="ow">and</span> <span class="n">still_writable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">errwrite</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">status</span><span class="p">:</span>
+                <span class="c1"># stdout and stderr are still writable, so error must</span>
+                <span class="c1"># come from function itself.</span>
+                <span class="n">xt</span><span class="o">.</span><span class="n">print_exception</span><span class="p">()</span>
+                <span class="n">r</span> <span class="o">=</span> <span class="mi">1</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># stdout and stderr are no longer writable, so error must</span>
+                <span class="c1"># come from the fact that the next process in the pipeline</span>
+                <span class="c1"># has closed the other side of the pipe. The function then</span>
+                <span class="c1"># attempted to write to this side of the pipe anyway. This</span>
+                <span class="c1"># is not truly an error and we should exit gracefully.</span>
+                <span class="n">r</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="n">xt</span><span class="o">.</span><span class="n">print_exception</span><span class="p">()</span>
+            <span class="n">r</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="n">safe_flush</span><span class="p">(</span><span class="n">sp_stdout</span><span class="p">)</span>
+        <span class="n">safe_flush</span><span class="p">(</span><span class="n">sp_stderr</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">returncode</span> <span class="o">=</span> <span class="n">parse_proxy_return</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">sp_stdout</span><span class="p">,</span> <span class="n">sp_stderr</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">last_in_pipeline</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
+            <span class="c1"># mac requires us *not to* close the handles here while</span>
+            <span class="c1"># windows requires us *to* close the handles here</span>
+            <span class="k">return</span>
+        <span class="c1"># clean up</span>
+        <span class="c1"># scopz: not sure why this is needed, but stdin cannot go here</span>
+        <span class="c1"># and stdout &amp; stderr must.</span>
+        <span class="n">handles</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">stderr</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">handle</span> <span class="ow">in</span> <span class="n">handles</span><span class="p">:</span>
+            <span class="n">safe_fdclose</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="n">cache</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_closed_handle_cache</span><span class="p">)</span></div>
+
+    <span class="k">def</span> <span class="nf">_wait_and_getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;make sure the instance has a certain attr, and return it.&quot;&quot;&quot;</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1e-7</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+
+<div class="viewcode-block" id="ProcProxyThread.poll"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.ProcProxyThread.poll">[docs]</a>    <span class="k">def</span> <span class="nf">poll</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Check if the function has completed.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        None if the function is still executing, and the returncode otherwise</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">returncode</span></div>
+
+<div class="viewcode-block" id="ProcProxyThread.wait"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.ProcProxyThread.wait">[docs]</a>    <span class="k">def</span> <span class="nf">wait</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Waits for the process to finish and returns the return code.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigint</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">returncode</span></div>
+
+    <span class="c1">#</span>
+    <span class="c1"># SIGINT handler</span>
+    <span class="c1">#</span>
+
+    <span class="k">def</span> <span class="nf">_signal_int</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">signum</span><span class="p">,</span> <span class="n">frame</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Signal handler for SIGINT - Ctrl+C may have been pressed.&quot;&quot;&quot;</span>
+        <span class="c1"># Check if we have already been interrupted. This should prevent</span>
+        <span class="c1"># the possibility of infinite recursion.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interrupted</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_interrupted</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="c1"># close file handles here to stop an processes piped to us.</span>
+        <span class="n">handles</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">p2cread</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">p2cwrite</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">c2pread</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">c2pwrite</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">errread</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">errwrite</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">for</span> <span class="n">handle</span> <span class="ow">in</span> <span class="n">handles</span><span class="p">:</span>
+            <span class="n">safe_fdclose</span><span class="p">(</span><span class="n">handle</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigint</span><span class="p">(</span><span class="n">frame</span><span class="o">=</span><span class="n">frame</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">xt</span><span class="o">.</span><span class="n">on_main_thread</span><span class="p">()</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
+            <span class="n">signal</span><span class="o">.</span><span class="n">pthread_kill</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">get_ident</span><span class="p">(),</span> <span class="n">signal</span><span class="o">.</span><span class="n">SIGINT</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_restore_sigint</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">frame</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">old</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_int_handler</span>
+        <span class="k">if</span> <span class="n">old</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">xt</span><span class="o">.</span><span class="n">on_main_thread</span><span class="p">():</span>
+                <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGINT</span><span class="p">,</span> <span class="n">old</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">old_int_handler</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">frame</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">old</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">old</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal_int</span><span class="p">:</span>
+                <span class="n">old</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGINT</span><span class="p">,</span> <span class="n">frame</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interrupted</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">returncode</span> <span class="o">=</span> <span class="mi">1</span>
+
+    <span class="c1"># The code below (_get_devnull, _get_handles, and _make_inheritable) comes</span>
+    <span class="c1"># from subprocess.py in the Python 3.4.2 Standard Library</span>
+    <span class="k">def</span> <span class="nf">_get_devnull</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_devnull&quot;</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_devnull</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">devnull</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">O_RDWR</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_devnull</span>
+
+    <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
+
+        <span class="k">def</span> <span class="nf">_make_inheritable</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">handle</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;Return a duplicate of handle, which is inheritable&quot;&quot;&quot;</span>
+            <span class="n">h</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">_winapi</span><span class="o">.</span><span class="n">DuplicateHandle</span><span class="p">(</span>
+                <span class="n">xli</span><span class="o">.</span><span class="n">_winapi</span><span class="o">.</span><span class="n">GetCurrentProcess</span><span class="p">(),</span>
+                <span class="n">handle</span><span class="p">,</span>
+                <span class="n">xli</span><span class="o">.</span><span class="n">_winapi</span><span class="o">.</span><span class="n">GetCurrentProcess</span><span class="p">(),</span>
+                <span class="mi">0</span><span class="p">,</span>
+                <span class="mi">1</span><span class="p">,</span>
+                <span class="n">xli</span><span class="o">.</span><span class="n">_winapi</span><span class="o">.</span><span class="n">DUPLICATE_SAME_ACCESS</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">Handle</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
+
+        <span class="k">def</span> <span class="nf">_get_handles</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stdin</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;Construct and return tuple with IO objects:</span>
+<span class="sd">            p2cread, p2cwrite, c2pread, c2pwrite, errread, errwrite</span>
+<span class="sd">            &quot;&quot;&quot;</span>
+            <span class="k">if</span> <span class="n">stdin</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">stdout</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">stderr</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+            <span class="n">p2cread</span><span class="p">,</span> <span class="n">p2cwrite</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span>
+            <span class="n">c2pread</span><span class="p">,</span> <span class="n">c2pwrite</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span>
+            <span class="n">errread</span><span class="p">,</span> <span class="n">errwrite</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span>
+
+            <span class="k">if</span> <span class="n">stdin</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">p2cread</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">_winapi</span><span class="o">.</span><span class="n">GetStdHandle</span><span class="p">(</span><span class="n">xli</span><span class="o">.</span><span class="n">_winapi</span><span class="o">.</span><span class="n">STD_INPUT_HANDLE</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">p2cread</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">p2cread</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">_winapi</span><span class="o">.</span><span class="n">CreatePipe</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+                    <span class="n">p2cread</span> <span class="o">=</span> <span class="n">Handle</span><span class="p">(</span><span class="n">p2cread</span><span class="p">)</span>
+                    <span class="n">xli</span><span class="o">.</span><span class="n">_winapi</span><span class="o">.</span><span class="n">CloseHandle</span><span class="p">(</span><span class="n">_</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">stdin</span> <span class="o">==</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">:</span>
+                <span class="n">p2cread</span><span class="p">,</span> <span class="n">p2cwrite</span> <span class="o">=</span> <span class="n">Handle</span><span class="p">(</span><span class="n">p2cread</span><span class="p">),</span> <span class="n">Handle</span><span class="p">(</span><span class="n">p2cwrite</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">stdin</span> <span class="o">==</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">:</span>
+                <span class="n">p2cread</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">msvcrt</span><span class="o">.</span><span class="n">get_osfhandle</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_devnull</span><span class="p">())</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stdin</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                <span class="n">p2cread</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">msvcrt</span><span class="o">.</span><span class="n">get_osfhandle</span><span class="p">(</span><span class="n">stdin</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># Assuming file-like object</span>
+                <span class="n">p2cread</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">msvcrt</span><span class="o">.</span><span class="n">get_osfhandle</span><span class="p">(</span><span class="n">stdin</span><span class="o">.</span><span class="n">fileno</span><span class="p">())</span>
+            <span class="n">p2cread</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_make_inheritable</span><span class="p">(</span><span class="n">p2cread</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">stdout</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">c2pwrite</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">_winapi</span><span class="o">.</span><span class="n">GetStdHandle</span><span class="p">(</span><span class="n">xli</span><span class="o">.</span><span class="n">_winapi</span><span class="o">.</span><span class="n">STD_OUTPUT_HANDLE</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">c2pwrite</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">_</span><span class="p">,</span> <span class="n">c2pwrite</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">_winapi</span><span class="o">.</span><span class="n">CreatePipe</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+                    <span class="n">c2pwrite</span> <span class="o">=</span> <span class="n">Handle</span><span class="p">(</span><span class="n">c2pwrite</span><span class="p">)</span>
+                    <span class="n">xli</span><span class="o">.</span><span class="n">_winapi</span><span class="o">.</span><span class="n">CloseHandle</span><span class="p">(</span><span class="n">_</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">stdout</span> <span class="o">==</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">:</span>
+                <span class="n">c2pread</span><span class="p">,</span> <span class="n">c2pwrite</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">_winapi</span><span class="o">.</span><span class="n">CreatePipe</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+                <span class="n">c2pread</span><span class="p">,</span> <span class="n">c2pwrite</span> <span class="o">=</span> <span class="n">Handle</span><span class="p">(</span><span class="n">c2pread</span><span class="p">),</span> <span class="n">Handle</span><span class="p">(</span><span class="n">c2pwrite</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">stdout</span> <span class="o">==</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">:</span>
+                <span class="n">c2pwrite</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">msvcrt</span><span class="o">.</span><span class="n">get_osfhandle</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_devnull</span><span class="p">())</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stdout</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                <span class="n">c2pwrite</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">msvcrt</span><span class="o">.</span><span class="n">get_osfhandle</span><span class="p">(</span><span class="n">stdout</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># Assuming file-like object</span>
+                <span class="n">c2pwrite</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">msvcrt</span><span class="o">.</span><span class="n">get_osfhandle</span><span class="p">(</span><span class="n">stdout</span><span class="o">.</span><span class="n">fileno</span><span class="p">())</span>
+            <span class="n">c2pwrite</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_make_inheritable</span><span class="p">(</span><span class="n">c2pwrite</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">stderr</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">errwrite</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">_winapi</span><span class="o">.</span><span class="n">GetStdHandle</span><span class="p">(</span><span class="n">xli</span><span class="o">.</span><span class="n">_winapi</span><span class="o">.</span><span class="n">STD_ERROR_HANDLE</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">errwrite</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">_</span><span class="p">,</span> <span class="n">errwrite</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">_winapi</span><span class="o">.</span><span class="n">CreatePipe</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+                    <span class="n">errwrite</span> <span class="o">=</span> <span class="n">Handle</span><span class="p">(</span><span class="n">errwrite</span><span class="p">)</span>
+                    <span class="n">xli</span><span class="o">.</span><span class="n">_winapi</span><span class="o">.</span><span class="n">CloseHandle</span><span class="p">(</span><span class="n">_</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">stderr</span> <span class="o">==</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">:</span>
+                <span class="n">errread</span><span class="p">,</span> <span class="n">errwrite</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">_winapi</span><span class="o">.</span><span class="n">CreatePipe</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+                <span class="n">errread</span><span class="p">,</span> <span class="n">errwrite</span> <span class="o">=</span> <span class="n">Handle</span><span class="p">(</span><span class="n">errread</span><span class="p">),</span> <span class="n">Handle</span><span class="p">(</span><span class="n">errwrite</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">stderr</span> <span class="o">==</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">STDOUT</span><span class="p">:</span>
+                <span class="n">errwrite</span> <span class="o">=</span> <span class="n">c2pwrite</span>
+            <span class="k">elif</span> <span class="n">stderr</span> <span class="o">==</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">:</span>
+                <span class="n">errwrite</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">msvcrt</span><span class="o">.</span><span class="n">get_osfhandle</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_devnull</span><span class="p">())</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                <span class="n">errwrite</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">msvcrt</span><span class="o">.</span><span class="n">get_osfhandle</span><span class="p">(</span><span class="n">stderr</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># Assuming file-like object</span>
+                <span class="n">errwrite</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">msvcrt</span><span class="o">.</span><span class="n">get_osfhandle</span><span class="p">(</span><span class="n">stderr</span><span class="o">.</span><span class="n">fileno</span><span class="p">())</span>
+            <span class="n">errwrite</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_make_inheritable</span><span class="p">(</span><span class="n">errwrite</span><span class="p">)</span>
+
+            <span class="k">return</span> <span class="p">(</span><span class="n">p2cread</span><span class="p">,</span> <span class="n">p2cwrite</span><span class="p">,</span> <span class="n">c2pread</span><span class="p">,</span> <span class="n">c2pwrite</span><span class="p">,</span> <span class="n">errread</span><span class="p">,</span> <span class="n">errwrite</span><span class="p">)</span>
+
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># POSIX versions</span>
+        <span class="k">def</span> <span class="nf">_get_handles</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stdin</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;Construct and return tuple with IO objects:</span>
+<span class="sd">            p2cread, p2cwrite, c2pread, c2pwrite, errread, errwrite</span>
+<span class="sd">            &quot;&quot;&quot;</span>
+            <span class="n">p2cread</span><span class="p">,</span> <span class="n">p2cwrite</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span>
+            <span class="n">c2pread</span><span class="p">,</span> <span class="n">c2pwrite</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span>
+            <span class="n">errread</span><span class="p">,</span> <span class="n">errwrite</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span>
+
+            <span class="k">if</span> <span class="n">stdin</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">pass</span>
+            <span class="k">elif</span> <span class="n">stdin</span> <span class="o">==</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">:</span>
+                <span class="n">p2cread</span><span class="p">,</span> <span class="n">p2cwrite</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">pipe</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="n">stdin</span> <span class="o">==</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">:</span>
+                <span class="n">p2cread</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_devnull</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stdin</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                <span class="n">p2cread</span> <span class="o">=</span> <span class="n">stdin</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># Assuming file-like object</span>
+                <span class="n">p2cread</span> <span class="o">=</span> <span class="n">stdin</span><span class="o">.</span><span class="n">fileno</span><span class="p">()</span>
+
+            <span class="k">if</span> <span class="n">stdout</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">pass</span>
+            <span class="k">elif</span> <span class="n">stdout</span> <span class="o">==</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">:</span>
+                <span class="n">c2pread</span><span class="p">,</span> <span class="n">c2pwrite</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">pipe</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="n">stdout</span> <span class="o">==</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">:</span>
+                <span class="n">c2pwrite</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_devnull</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stdout</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                <span class="n">c2pwrite</span> <span class="o">=</span> <span class="n">stdout</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># Assuming file-like object</span>
+                <span class="n">c2pwrite</span> <span class="o">=</span> <span class="n">stdout</span><span class="o">.</span><span class="n">fileno</span><span class="p">()</span>
+
+            <span class="k">if</span> <span class="n">stderr</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">pass</span>
+            <span class="k">elif</span> <span class="n">stderr</span> <span class="o">==</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">:</span>
+                <span class="n">errread</span><span class="p">,</span> <span class="n">errwrite</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">pipe</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="n">stderr</span> <span class="o">==</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">STDOUT</span><span class="p">:</span>
+                <span class="n">errwrite</span> <span class="o">=</span> <span class="n">c2pwrite</span>
+            <span class="k">elif</span> <span class="n">stderr</span> <span class="o">==</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">:</span>
+                <span class="n">errwrite</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_devnull</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                <span class="n">errwrite</span> <span class="o">=</span> <span class="n">stderr</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># Assuming file-like object</span>
+                <span class="n">errwrite</span> <span class="o">=</span> <span class="n">stderr</span><span class="o">.</span><span class="n">fileno</span><span class="p">()</span>
+
+            <span class="k">return</span> <span class="p">(</span><span class="n">p2cread</span><span class="p">,</span> <span class="n">p2cwrite</span><span class="p">,</span> <span class="n">c2pread</span><span class="p">,</span> <span class="n">c2pwrite</span><span class="p">,</span> <span class="n">errread</span><span class="p">,</span> <span class="n">errwrite</span><span class="p">)</span></div>
+
+
+<span class="c1">#</span>
+<span class="c1"># Foreground Thread Process Proxies</span>
+<span class="c1">#</span>
+
+
+<div class="viewcode-block" id="ProcProxy"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.ProcProxy">[docs]</a><span class="k">class</span> <span class="nc">ProcProxy</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;This is process proxy class that runs its alias functions on the</span>
+<span class="sd">    same thread that it was called from, which is typically the main thread.</span>
+<span class="sd">    This prevents the process from running on a background thread, but enables</span>
+<span class="sd">    debugger and profiler tools (functions) be run on the same thread that they</span>
+<span class="sd">    are attempting to debug.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">f</span><span class="p">,</span>
+        <span class="n">args</span><span class="p">,</span>
+        <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">stdout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">stderr</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">universal_newlines</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">close_fds</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">env</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">orig_f</span> <span class="o">=</span> <span class="n">f</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">f</span> <span class="o">=</span> <span class="n">partial_proxy</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">args</span> <span class="o">=</span> <span class="n">args</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pid</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getpid</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">returncode</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stdin</span> <span class="o">=</span> <span class="n">stdin</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">stdout</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="n">stderr</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">universal_newlines</span> <span class="o">=</span> <span class="n">universal_newlines</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">close_fds</span> <span class="o">=</span> <span class="n">close_fds</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">env</span> <span class="o">=</span> <span class="n">env</span>
+
+<div class="viewcode-block" id="ProcProxy.poll"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.ProcProxy.poll">[docs]</a>    <span class="k">def</span> <span class="nf">poll</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Check if the function has completed via the returncode or None.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">returncode</span></div>
+
+<div class="viewcode-block" id="ProcProxy.wait"><a class="viewcode-back" href="../../../api/procs/proxies.html#xonsh.procs.proxies.ProcProxy.wait">[docs]</a>    <span class="k">def</span> <span class="nf">wait</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Runs the function and returns the result. Timeout argument only</span>
+<span class="sd">        present for API compatibility.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">f</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
+        <span class="n">enc</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_ENCODING&quot;</span><span class="p">)</span>
+        <span class="n">err</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_ENCODING_ERRORS&quot;</span><span class="p">)</span>
+        <span class="n">spec</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_wait_and_getattr</span><span class="p">(</span><span class="s2">&quot;spec&quot;</span><span class="p">)</span>
+        <span class="c1"># set file handles</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">stdin</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">stdin</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stdin</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                <span class="n">inbuf</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stdin</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">inbuf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stdin</span>
+            <span class="n">stdin</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">TextIOWrapper</span><span class="p">(</span><span class="n">inbuf</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">err</span><span class="p">)</span>
+        <span class="n">stdout</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pick_buf</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="n">enc</span><span class="p">,</span> <span class="n">err</span><span class="p">)</span>
+        <span class="n">stderr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pick_buf</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stderr</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">,</span> <span class="n">enc</span><span class="p">,</span> <span class="n">err</span><span class="p">)</span>
+        <span class="c1"># run the actual function</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">r</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">f</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">spec</span><span class="o">.</span><span class="n">stack</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="n">xt</span><span class="o">.</span><span class="n">print_exception</span><span class="p">()</span>
+            <span class="n">r</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">returncode</span> <span class="o">=</span> <span class="n">parse_proxy_return</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="p">)</span>
+        <span class="n">safe_flush</span><span class="p">(</span><span class="n">stdout</span><span class="p">)</span>
+        <span class="n">safe_flush</span><span class="p">(</span><span class="n">stderr</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">returncode</span></div>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_pick_buf</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="n">sysbuf</span><span class="p">,</span> <span class="n">enc</span><span class="p">,</span> <span class="n">err</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">handle</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">handle</span> <span class="ow">is</span> <span class="n">sysbuf</span><span class="p">:</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="n">sysbuf</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">handle</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">:</span>
+                <span class="n">buf</span> <span class="o">=</span> <span class="n">sysbuf</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">buf</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">TextIOWrapper</span><span class="p">(</span>
+                    <span class="n">io</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">err</span>
+                <span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="s2">&quot;encoding&quot;</span><span class="p">):</span>
+            <span class="c1"># must be a text stream, no need to wrap.</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="n">handle</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># must be a binary stream, should wrap it.</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">TextIOWrapper</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">err</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">buf</span>
+
+    <span class="k">def</span> <span class="nf">_wait_and_getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;make sure the instance has a certain attr, and return it.&quot;&quot;&quot;</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1e-7</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span></div>
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+        <p class="logo"><a href="../../../contents.html" title="contents">
+          <img class="logo" src="../../../_static/ascii_conch_part_transparent_tight.png" alt="Logo"/>
+        </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+        </div>
+      </div>
+    
+    
+        <div class="sidebar-toggle-group no-js">
+            
+            <button class="sidebar-toggle" id="sidebar-hide" title="Hide the sidebar menu">
+                 «
+                <span class="show-for-small">hide menu</span>
+                
+            </button>
+            <button class="sidebar-toggle" id="sidebar-show" title="Show the sidebar menu">
+                
+                <span class="show-for-small">menu</span>
+                <span class="hide-for-small">sidebar</span>
+                 »
+            </button>
+        </div>
+    
+      <div class="clearer"></div>
+    </div>
+    <div class="relbar-bottom">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../contents.html">xonsh 0.9.24 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">xonsh.procs.proxies</a></li> 
+      </ul>
+    </div>
+    </div>
+
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2015, Anthony Scopatz.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.4.3.
+    </div>
+    <!-- cloud_sptheme 1.4 -->
+  </body>
+</html>
