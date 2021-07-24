@@ -7,14 +7,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xonsh.ptk_shell.shell &#8212; xonsh 0.9.26 documentation</title>
-    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
-    <link rel="stylesheet" href="../../../_static/numpy_friendly.css" type="text/css" />
+    <title>xonsh.ptk_shell.shell &#8212; xonsh 0.10.0.dev117.dev117 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/numpy_friendly.css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
     
-    <script id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+    <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
     <script src="../../../_static/jquery.js"></script>
     <script src="../../../_static/underscore.js"></script>
     <script src="../../../_static/doctools.js"></script>
@@ -55,7 +55,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../contents.html">xonsh 0.9.26 documentation</a> &#187;</li>
+    <li><a href="../../../contents.html">xonsh 0.10.0.dev117.dev117 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.ptk_shell.shell</a></li> 
@@ -75,9 +75,10 @@
 <span class="kn">import</span> <span class="nn">os</span>
 <span class="kn">import</span> <span class="nn">re</span>
 <span class="kn">import</span> <span class="nn">sys</span>
-<span class="kn">import</span> <span class="nn">builtins</span>
+<span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">wraps</span>
 <span class="kn">from</span> <span class="nn">types</span> <span class="kn">import</span> <span class="n">MethodType</span>
 
+<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
 <span class="kn">from</span> <span class="nn">xonsh.events</span> <span class="kn">import</span> <span class="n">events</span>
 <span class="kn">from</span> <span class="nn">xonsh.base_shell</span> <span class="kn">import</span> <span class="n">BaseShell</span>
 <span class="kn">from</span> <span class="nn">xonsh.ptk_shell.formatter</span> <span class="kn">import</span> <span class="n">PTKPromptFormatter</span>
@@ -99,6 +100,7 @@
     <span class="n">load_emacs_shift_selection_bindings</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">prompt_toolkit.key_binding.key_bindings</span> <span class="kn">import</span> <span class="n">merge_key_bindings</span>
+<span class="kn">from</span> <span class="nn">prompt_toolkit.key_binding.bindings.named_commands</span> <span class="kn">import</span> <span class="n">get_by_name</span>
 <span class="kn">from</span> <span class="nn">prompt_toolkit.history</span> <span class="kn">import</span> <span class="n">ThreadedHistory</span>
 <span class="kn">from</span> <span class="nn">prompt_toolkit.shortcuts</span> <span class="kn">import</span> <span class="n">print_formatted_text</span> <span class="k">as</span> <span class="n">ptk_print</span>
 <span class="kn">from</span> <span class="nn">prompt_toolkit.shortcuts</span> <span class="kn">import</span> <span class="n">CompleteStyle</span>
@@ -108,6 +110,7 @@
 <span class="kn">from</span> <span class="nn">prompt_toolkit.styles.pygments</span> <span class="kn">import</span> <span class="n">pygments_token_to_classname</span>
 
 <span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">prompt_toolkit.clipboard</span> <span class="kn">import</span> <span class="n">DummyClipboard</span>
     <span class="kn">from</span> <span class="nn">prompt_toolkit.clipboard.pyperclip</span> <span class="kn">import</span> <span class="n">PyperclipClipboard</span>
 
     <span class="n">HAVE_SYS_CLIPBOARD</span> <span class="o">=</span> <span class="kc">True</span>
@@ -208,6 +211,47 @@
     <span class="k">return</span> <span class="n">_style_from_pygments_dict</span><span class="p">(</span><span class="n">pygments_cls</span><span class="o">.</span><span class="n">styles</span><span class="p">)</span>
 
 
+<div class="viewcode-block" id="disable_copy_on_deletion"><a class="viewcode-back" href="../../../api/ptk_shell/shell.html#xonsh.ptk_shell.shell.disable_copy_on_deletion">[docs]</a><span class="k">def</span> <span class="nf">disable_copy_on_deletion</span><span class="p">():</span>
+    <span class="n">dummy_clipboard</span> <span class="o">=</span> <span class="n">DummyClipboard</span><span class="p">()</span>
+    <span class="n">ignored_actions</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s2">&quot;kill-line&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;kill-word&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;unix-word-rubout&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;unix-line-discard&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;backward-kill-word&quot;</span><span class="p">,</span>
+    <span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">handle_binding</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">binding</span> <span class="o">=</span> <span class="n">get_by_name</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">print_warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to disable clipboard for ptk action </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">binding</span><span class="p">,</span> <span class="s2">&quot;xonsh_disabled_clipboard&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="c1"># binding&#39;s clipboard has already been disabled</span>
+            <span class="k">return</span>
+
+        <span class="n">binding</span><span class="o">.</span><span class="n">xonsh_disabled_clipboard</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">original_handler</span> <span class="o">=</span> <span class="n">binding</span><span class="o">.</span><span class="n">handler</span>
+
+        <span class="c1"># this needs to be defined inside a function so that ``binding`` will be the correct one</span>
+        <span class="nd">@wraps</span><span class="p">(</span><span class="n">original_handler</span><span class="p">)</span>
+        <span class="k">def</span> <span class="nf">wrapped_handler</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
+            <span class="n">app</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">app</span>
+            <span class="n">prev</span> <span class="o">=</span> <span class="n">app</span><span class="o">.</span><span class="n">clipboard</span>
+            <span class="n">app</span><span class="o">.</span><span class="n">clipboard</span> <span class="o">=</span> <span class="n">dummy_clipboard</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">original_handler</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+            <span class="k">finally</span><span class="p">:</span>
+                <span class="n">app</span><span class="o">.</span><span class="n">clipboard</span> <span class="o">=</span> <span class="n">prev</span>
+
+        <span class="n">binding</span><span class="o">.</span><span class="n">handler</span> <span class="o">=</span> <span class="n">wrapped_handler</span>
+
+    <span class="k">for</span> <span class="n">_name</span> <span class="ow">in</span> <span class="n">ignored_actions</span><span class="p">:</span>
+        <span class="n">handle_binding</span><span class="p">(</span><span class="n">_name</span><span class="p">)</span></div>
+
+
 <div class="viewcode-block" id="PromptToolkitShell"><a class="viewcode-back" href="../../../api/ptk_shell/shell.html#xonsh.ptk_shell.shell.PromptToolkitShell">[docs]</a><span class="k">class</span> <span class="nc">PromptToolkitShell</span><span class="p">(</span><span class="n">BaseShell</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;The xonsh shell for prompt_toolkit v2 and later.&quot;&quot;&quot;</span>
 
@@ -219,16 +263,19 @@
     <span class="p">}</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="n">ptk_args</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;ptk_args&quot;</span><span class="p">,</span> <span class="p">{})</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
             <span class="n">winutils</span><span class="o">.</span><span class="n">enable_virtual_terminal_processing</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_first_prompt</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">history</span> <span class="o">=</span> <span class="n">ThreadedHistory</span><span class="p">(</span><span class="n">PromptToolkitHistory</span><span class="p">())</span>
 
-        <span class="n">ptk_args</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;history&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">history</span><span class="p">}</span>
+        <span class="n">ptk_args</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;history&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">history</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_COPY_ON_DELETE&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="n">disable_copy_on_deletion</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">HAVE_SYS_CLIPBOARD</span><span class="p">:</span>
-            <span class="n">ptk_args</span><span class="p">[</span><span class="s2">&quot;clipboard&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">PyperclipClipboard</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">prompter</span> <span class="o">=</span> <span class="n">PromptSession</span><span class="p">(</span><span class="o">**</span><span class="n">ptk_args</span><span class="p">)</span>
+            <span class="n">ptk_args</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;clipboard&quot;</span><span class="p">,</span> <span class="n">PyperclipClipboard</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">prompter</span><span class="p">:</span> <span class="n">PromptSession</span> <span class="o">=</span> <span class="n">PromptSession</span><span class="p">(</span><span class="o">**</span><span class="n">ptk_args</span><span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">prompt_formatter</span> <span class="o">=</span> <span class="n">PTKPromptFormatter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">prompter</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">pt_completer</span> <span class="o">=</span> <span class="n">PromptToolkitCompleter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">completer</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ctx</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span>
@@ -258,7 +305,7 @@
 <span class="sd">        history.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">events</span><span class="o">.</span><span class="n">on_pre_prompt_format</span><span class="o">.</span><span class="n">fire</span><span class="p">()</span>
-        <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
         <span class="n">mouse_support</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;MOUSE_SUPPORT&quot;</span><span class="p">)</span>
         <span class="n">auto_suggest</span> <span class="o">=</span> <span class="n">auto_suggest</span> <span class="k">if</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;AUTO_SUGGEST&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span>
         <span class="n">refresh_interval</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PROMPT_REFRESH_INTERVAL&quot;</span><span class="p">)</span>
@@ -405,7 +452,7 @@
             <span class="nb">print</span><span class="p">(</span><span class="n">intro</span><span class="p">)</span>
         <span class="n">auto_suggest</span> <span class="o">=</span> <span class="n">AutoSuggestFromHistory</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">push</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_push</span>
-        <span class="k">while</span> <span class="ow">not</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">exit</span><span class="p">:</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="n">XSH</span><span class="o">.</span><span class="n">exit</span><span class="p">:</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">singleline</span><span class="p">(</span><span class="n">auto_suggest</span><span class="o">=</span><span class="n">auto_suggest</span><span class="p">)</span>
                 <span class="k">if</span> <span class="ow">not</span> <span class="n">line</span><span class="p">:</span>
@@ -417,13 +464,13 @@
             <span class="k">except</span> <span class="p">(</span><span class="ne">KeyboardInterrupt</span><span class="p">,</span> <span class="ne">SystemExit</span><span class="p">):</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">reset_buffer</span><span class="p">()</span>
             <span class="k">except</span> <span class="ne">EOFError</span><span class="p">:</span>
-                <span class="k">if</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;IGNOREEOF&quot;</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;IGNOREEOF&quot;</span><span class="p">):</span>
                     <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Use &quot;exit&quot; to leave the shell.&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="k">break</span></div>
 
     <span class="k">def</span> <span class="nf">_get_prompt_tokens</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">prompt_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-        <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>  <span class="c1"># type:ignore</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>  <span class="c1"># type:ignore</span>
         <span class="n">p</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">env_name</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="ow">not</span> <span class="n">p</span> <span class="ow">and</span> <span class="s2">&quot;default&quot;</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
@@ -475,7 +522,7 @@
     <span class="nd">@property</span>
     <span class="k">def</span> <span class="nf">bottom_toolbar_tokens</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Returns self._bottom_toolbar_tokens if it would yield a result&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;BOTTOM_TOOLBAR&quot;</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;BOTTOM_TOOLBAR&quot;</span><span class="p">):</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_bottom_toolbar_tokens</span>
 
 <div class="viewcode-block" id="PromptToolkitShell.continuation_tokens"><a class="viewcode-back" href="../../../api/ptk_shell/shell.html#xonsh.ptk_shell.shell.PromptToolkitShell.continuation_tokens">[docs]</a>    <span class="k">def</span> <span class="nf">continuation_tokens</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">width</span><span class="p">,</span> <span class="n">line_number</span><span class="p">,</span> <span class="n">is_soft_wrap</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
@@ -483,7 +530,7 @@
         <span class="k">if</span> <span class="n">is_soft_wrap</span><span class="p">:</span>
             <span class="k">return</span> <span class="s2">&quot;&quot;</span>
         <span class="n">width</span> <span class="o">=</span> <span class="n">width</span> <span class="o">-</span> <span class="mi">1</span>
-        <span class="n">dots</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;MULTILINE_PROMPT&quot;</span><span class="p">)</span>
+        <span class="n">dots</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;MULTILINE_PROMPT&quot;</span><span class="p">)</span>
         <span class="n">dots</span> <span class="o">=</span> <span class="n">dots</span><span class="p">()</span> <span class="k">if</span> <span class="n">callable</span><span class="p">(</span><span class="n">dots</span><span class="p">)</span> <span class="k">else</span> <span class="n">dots</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">dots</span><span class="p">:</span>
             <span class="k">return</span> <span class="s2">&quot;&quot;</span>
@@ -516,7 +563,7 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">tokens</span> <span class="o">=</span> <span class="n">partial_color_tokenize</span><span class="p">(</span><span class="n">string</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">force_string</span> <span class="ow">and</span> <span class="n">HAS_PYGMENTS</span><span class="p">:</span>
-            <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
+            <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
             <span class="n">style_overrides_env</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_STYLE_OVERRIDES&quot;</span><span class="p">,</span> <span class="p">{})</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">styler</span><span class="o">.</span><span class="n">style_name</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_COLOR_STYLE&quot;</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">styler</span><span class="o">.</span><span class="n">override</span><span class="p">(</span><span class="n">style_overrides_env</span><span class="p">)</span>
@@ -538,7 +585,7 @@
             <span class="c1"># assume this is a list of (Token, str) tuples and just print</span>
             <span class="n">tokens</span> <span class="o">=</span> <span class="n">string</span>
         <span class="n">tokens</span> <span class="o">=</span> <span class="n">PygmentsTokens</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span>
-        <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
         <span class="n">style_overrides_env</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_STYLE_OVERRIDES&quot;</span><span class="p">,</span> <span class="p">{})</span>
         <span class="k">if</span> <span class="n">HAS_PYGMENTS</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">styler</span><span class="o">.</span><span class="n">style_name</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_COLOR_STYLE&quot;</span><span class="p">)</span>
@@ -567,7 +614,7 @@
         <span class="sd">&quot;&quot;&quot;Returns the current color map.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">HAS_PYGMENTS</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">DEFAULT_STYLE_DICT</span>
-        <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">styler</span><span class="o">.</span><span class="n">style_name</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_COLOR_STYLE&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">styler</span><span class="o">.</span><span class="n">styles</span></div>
 
@@ -596,7 +643,7 @@
         <span class="c1">#   sys.stdout.write(&#39;\033[9999999C\n&#39;)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">ON_POSIX</span><span class="p">:</span>
             <span class="k">return</span>
-        <span class="n">stty</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">commands_cache</span><span class="o">.</span><span class="n">lazyget</span><span class="p">(</span><span class="s2">&quot;stty&quot;</span><span class="p">,</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+        <span class="n">stty</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">commands_cache</span><span class="o">.</span><span class="n">lazyget</span><span class="p">(</span><span class="s2">&quot;stty&quot;</span><span class="p">,</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
         <span class="k">if</span> <span class="n">stty</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span>
         <span class="n">os</span><span class="o">.</span><span class="n">system</span><span class="p">(</span><span class="n">stty</span> <span class="o">+</span> <span class="s2">&quot; sane&quot;</span><span class="p">)</span></div></div>
@@ -615,7 +662,7 @@
   <h3 id="searchlabel">Quick search</h3>
     <div class="searchformwrapper">
     <form class="search" action="../../../search.html" method="get">
-      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
       <input type="submit" value="Go" />
     </form>
     </div>
@@ -653,7 +700,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../contents.html">xonsh 0.9.26 documentation</a> &#187;</li>
+    <li><a href="../../../contents.html">xonsh 0.10.0.dev117.dev117 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.ptk_shell.shell</a></li> 
@@ -663,7 +710,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.5.2.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.1.1.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>

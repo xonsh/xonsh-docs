@@ -1,0 +1,1252 @@
+
+
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>xonsh.parsers.completion_context &#8212; xonsh 0.10.0.dev117.dev117 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/numpy_friendly.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
+    
+    <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+    <script src="../../../_static/jquery.js"></script>
+    <script src="../../../_static/underscore.js"></script>
+    <script src="../../../_static/doctools.js"></script>
+    <script src="../../../_static/runthis-client.min.js"></script>
+
+    
+    
+     
+        <script src="../../../_static/jquery.cookie.js"></script>
+    
+
+    
+     
+        <script src="../../../_static/cloud.base.js"></script>
+    
+
+    
+     
+        <script src="../../../_static/cloud.js"></script>
+    
+
+    <link rel="shortcut icon" href="../../../_static/magic_conch.ico"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+     
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="canonical" href="http://xon.sh/_modules/xonsh/parsers/completion_context.html"/>
+
+  </head><body>
+    <div class="relbar-top">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../contents.html">xonsh 0.10.0.dev117.dev117 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">xonsh.parsers.completion_context</a></li> 
+      </ul>
+    </div>
+    </div>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for xonsh.parsers.completion_context</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Implements the xonsh (tab-)completion context parser.</span>
+<span class="sd">This parser is meant to parse a (possibly incomplete) command line.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">enum</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">defaultdict</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">Dict</span><span class="p">,</span>
+    <span class="n">Optional</span><span class="p">,</span>
+    <span class="n">Tuple</span><span class="p">,</span>
+    <span class="n">List</span><span class="p">,</span>
+    <span class="n">NamedTuple</span><span class="p">,</span>
+    <span class="n">Generic</span><span class="p">,</span>
+    <span class="n">TypeVar</span><span class="p">,</span>
+    <span class="n">Union</span><span class="p">,</span>
+    <span class="n">Any</span><span class="p">,</span>
+    <span class="n">cast</span><span class="p">,</span>
+    <span class="n">overload</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="kn">import</span> <span class="n">lazyobject</span>
+<span class="kn">from</span> <span class="nn">xonsh.lexer</span> <span class="kn">import</span> <span class="n">Lexer</span>
+<span class="kn">from</span> <span class="nn">xonsh.parsers.base</span> <span class="kn">import</span> <span class="n">raise_parse_error</span><span class="p">,</span> <span class="n">Location</span>
+<span class="kn">from</span> <span class="nn">xonsh.ply.ply</span> <span class="kn">import</span> <span class="n">yacc</span>
+<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="n">check_for_partial_string</span><span class="p">,</span> <span class="n">get_line_continuation</span>
+
+
+<div class="viewcode-block" id="CommandArg"><a class="viewcode-back" href="../../../api/completion_context.html#xonsh.parsers.completion_context.CommandArg">[docs]</a><span class="k">class</span> <span class="nc">CommandArg</span><span class="p">(</span><span class="n">NamedTuple</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;An argument for a command&quot;&quot;&quot;</span>
+
+    <span class="n">value</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="sd">&quot;&quot;&quot;The argument&#39;s value&quot;&quot;&quot;</span>
+    <span class="n">opening_quote</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="sd">&quot;&quot;&quot;The arg&#39;s opening quote (if it exists)&quot;&quot;&quot;</span>
+    <span class="n">closing_quote</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="sd">&quot;&quot;&quot;The arg&#39;s closing quote (if it exists)&quot;&quot;&quot;</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">raw_value</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;The complete argument including quotes&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">opening_quote</span><span class="si">}{</span><span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="si">}{</span><span class="bp">self</span><span class="o">.</span><span class="n">closing_quote</span><span class="si">}</span><span class="s2">&quot;</span></div>
+
+
+<div class="viewcode-block" id="CommandContext"><a class="viewcode-back" href="../../../api/completion_context.html#xonsh.parsers.completion_context.CommandContext">[docs]</a><span class="k">class</span> <span class="nc">CommandContext</span><span class="p">(</span><span class="n">NamedTuple</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    The object containing the current command&#39;s completion context.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">args</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">CommandArg</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="sd">&quot;&quot;&quot;The arguments in the command&quot;&quot;&quot;</span>
+    <span class="n">arg_index</span><span class="p">:</span> <span class="nb">int</span>  <span class="c1"># ``-1`` if the cursor isn&#39;t in the command.</span>
+    <span class="sd">&quot;&quot;&quot;The current argument&#39;s index&quot;&quot;&quot;</span>
+
+    <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="sd">&quot;&quot;&quot;The current string arg&#39;s prefix&quot;&quot;&quot;</span>
+    <span class="n">suffix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="sd">&quot;&quot;&quot;The current string arg&#39;s suffix&quot;&quot;&quot;</span>
+    <span class="n">opening_quote</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="sd">&quot;&quot;&quot;The current arg&#39;s opening quote if it exists (e.g. ``&#39;``, ``r&quot;``, ``&#39;&#39;&#39;``)&quot;&quot;&quot;</span>
+    <span class="n">closing_quote</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="sd">&quot;&quot;&quot;The current arg&#39;s closing quote if it exists (e.g. ``&#39;``, ``&quot;``, ``&#39;&#39;&#39;``)&quot;&quot;&quot;</span>
+    <span class="n">is_after_closing_quote</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    The cursor is appending to a closed string literal, i.e. cursor at the end of ``ls &quot;/usr/&quot;``.</span>
+<span class="sd">    This affects the completion&#39;s behaviour - see ``Completer.complete`` in ``xonsh/completer.py``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">subcmd_opening</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="sd">&quot;&quot;&quot;If this command is inside a subproc expression (e.g. ``$(``, ``![``)&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="CommandContext.completing_command"><a class="viewcode-back" href="../../../api/completion_context.html#xonsh.parsers.completion_context.CommandContext.completing_command">[docs]</a>    <span class="k">def</span> <span class="nf">completing_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">command</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Return whether this context is completing args for a command&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">arg_index</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">value</span> <span class="o">==</span> <span class="n">command</span></div>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">raw_prefix</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Prefix before the cursor, including quotes&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_after_closing_quote</span><span class="p">:</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">opening_quote</span><span class="si">}{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}{</span><span class="bp">self</span><span class="o">.</span><span class="n">closing_quote</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">opening_quote</span><span class="si">}{</span><span class="bp">self</span><span class="o">.</span><span class="n">prefix</span><span class="si">}</span><span class="s2">&quot;</span></div>
+
+
+<div class="viewcode-block" id="PythonContext"><a class="viewcode-back" href="../../../api/completion_context.html#xonsh.parsers.completion_context.PythonContext">[docs]</a><span class="k">class</span> <span class="nc">PythonContext</span><span class="p">(</span><span class="n">NamedTuple</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    The object containing the current python code completion context.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">multiline_code</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="sd">&quot;&quot;&quot;The multi-line python code&quot;&quot;&quot;</span>
+    <span class="n">cursor_index</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="sd">&quot;&quot;&quot;The cursor&#39;s index in the multiline code&quot;&quot;&quot;</span>
+    <span class="n">is_sub_expression</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="sd">&quot;&quot;&quot;Whether this is a sub expression (``@(...)``)&quot;&quot;&quot;</span>
+    <span class="n">ctx</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="sd">&quot;&quot;&quot;Objects in the current execution context&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># don&#39;t show ctx since it might be huge</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;PythonContext(</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">multiline_code</span><span class="si">!r}</span><span class="s2">, </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cursor_index</span><span class="si">}</span><span class="s2">, is_sub_expression=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">is_sub_expression</span><span class="si">}</span><span class="s2">)&quot;</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">prefix</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;The code from the start to the cursor (may be multiline)&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">multiline_code</span><span class="p">[:</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor_index</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="CompletionContext"><a class="viewcode-back" href="../../../api/completion_context.html#xonsh.parsers.completion_context.CompletionContext">[docs]</a><span class="k">class</span> <span class="nc">CompletionContext</span><span class="p">(</span><span class="n">NamedTuple</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    The object containing the current completion context.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">command</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">CommandContext</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    The current command.</span>
+<span class="sd">    This will be ``None`` when we can&#39;t be completing a command, e.g. ``echo @(&lt;TAB&gt;``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">python</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">PythonContext</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    The current python code.</span>
+<span class="sd">    This will be ``None`` when we can&#39;t be completing python, e.g. ``echo $(&lt;TAB&gt;``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">with_ctx</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="s2">&quot;CompletionContext&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">python</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_replace</span><span class="p">(</span><span class="n">python</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">python</span><span class="o">.</span><span class="n">_replace</span><span class="p">(</span><span class="n">ctx</span><span class="o">=</span><span class="n">ctx</span><span class="p">))</span>
+        <span class="k">return</span> <span class="bp">self</span></div>
+
+
+<span class="c1"># Internal parser code:</span>
+
+
+<span class="k">class</span> <span class="nc">ExpansionOperation</span><span class="p">(</span><span class="n">enum</span><span class="o">.</span><span class="n">Enum</span><span class="p">):</span>
+    <span class="n">NEVER_EXPAND</span> <span class="o">=</span> <span class="nb">object</span><span class="p">()</span>
+    <span class="n">SIMPLE_ARG_EXPANSION</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># the default</span>
+
+
+<span class="k">class</span> <span class="nc">Missing</span><span class="p">(</span><span class="n">enum</span><span class="o">.</span><span class="n">Enum</span><span class="p">):</span>
+    <span class="n">MISSING</span> <span class="o">=</span> <span class="nb">object</span><span class="p">()</span>
+
+
+<span class="n">T</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">&quot;T&quot;</span><span class="p">)</span>
+<span class="n">T2</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">&quot;T2&quot;</span><span class="p">)</span>
+
+<span class="c1"># can&#39;t use Generic + NamedTuple, can&#39;t use dataclasses for compatibility with python 3.6.</span>
+
+
+<span class="k">class</span> <span class="nc">Spanned</span><span class="p">(</span><span class="n">Generic</span><span class="p">[</span><span class="n">T</span><span class="p">]):</span>
+    <span class="vm">__slots__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">,</span> <span class="s2">&quot;span&quot;</span><span class="p">,</span> <span class="s2">&quot;cursor_context&quot;</span><span class="p">,</span> <span class="s2">&quot;expansion_obj&quot;</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">value</span><span class="p">:</span> <span class="n">T</span><span class="p">,</span>
+        <span class="n">span</span><span class="p">:</span> <span class="nb">slice</span><span class="p">,</span>
+        <span class="n">cursor_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">CommandContext</span><span class="p">,</span> <span class="n">PythonContext</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">expansion_obj</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="s2">&quot;ExpandableObject&quot;</span><span class="p">,</span> <span class="n">ExpansionOperation</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Some parsed value with span and context information.</span>
+<span class="sd">        This is an internal class for the parser.</span>
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        value :</span>
+<span class="sd">            The spanned value.</span>
+<span class="sd">        span :</span>
+<span class="sd">            The span of chars this value takes in the input string.</span>
+<span class="sd">        cursor_context :</span>
+<span class="sd">            The context for the cursor if it&#39;s inside this value.</span>
+<span class="sd">            May be an ``int`` to represent the relative cursor location in a simple string arg.</span>
+<span class="sd">        expansion_obj :</span>
+<span class="sd">            The object needed to expand value.</span>
+<span class="sd">            This is used to expand the value to the right (e.g. in `expand_command_span`).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">span</span> <span class="o">=</span> <span class="n">span</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor_context</span> <span class="o">=</span> <span class="n">cursor_context</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">expansion_obj</span> <span class="o">=</span> <span class="n">expansion_obj</span>
+
+    <span class="nd">@overload</span>
+    <span class="k">def</span> <span class="nf">replace</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">value</span><span class="p">:</span> <span class="n">Missing</span> <span class="o">=</span> <span class="n">Missing</span><span class="o">.</span><span class="n">MISSING</span><span class="p">,</span>
+        <span class="n">span</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">slice</span><span class="p">,</span> <span class="n">Missing</span><span class="p">]</span> <span class="o">=</span> <span class="n">Missing</span><span class="o">.</span><span class="n">MISSING</span><span class="p">,</span>
+        <span class="n">cursor_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
+            <span class="n">Union</span><span class="p">[</span><span class="n">CommandContext</span><span class="p">,</span> <span class="n">PythonContext</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="n">Missing</span><span class="p">]</span>
+        <span class="p">]</span> <span class="o">=</span> <span class="n">Missing</span><span class="o">.</span><span class="n">MISSING</span><span class="p">,</span>
+        <span class="n">expansion_obj</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
+            <span class="s2">&quot;ExpandableObject&quot;</span><span class="p">,</span> <span class="n">ExpansionOperation</span><span class="p">,</span> <span class="n">Missing</span>
+        <span class="p">]</span> <span class="o">=</span> <span class="n">Missing</span><span class="o">.</span><span class="n">MISSING</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Spanned[T]&quot;</span><span class="p">:</span>
+        <span class="o">...</span>
+
+    <span class="nd">@overload</span>
+    <span class="k">def</span> <span class="nf">replace</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">value</span><span class="p">:</span> <span class="n">T2</span><span class="p">,</span>
+        <span class="n">span</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">slice</span><span class="p">,</span> <span class="n">Missing</span><span class="p">]</span> <span class="o">=</span> <span class="n">Missing</span><span class="o">.</span><span class="n">MISSING</span><span class="p">,</span>
+        <span class="n">cursor_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
+            <span class="n">Union</span><span class="p">[</span><span class="n">CommandContext</span><span class="p">,</span> <span class="n">PythonContext</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="n">Missing</span><span class="p">]</span>
+        <span class="p">]</span> <span class="o">=</span> <span class="n">Missing</span><span class="o">.</span><span class="n">MISSING</span><span class="p">,</span>
+        <span class="n">expansion_obj</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
+            <span class="s2">&quot;ExpandableObject&quot;</span><span class="p">,</span> <span class="n">ExpansionOperation</span><span class="p">,</span> <span class="n">Missing</span>
+        <span class="p">]</span> <span class="o">=</span> <span class="n">Missing</span><span class="o">.</span><span class="n">MISSING</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Spanned[T2]&quot;</span><span class="p">:</span>
+        <span class="o">...</span>
+
+    <span class="k">def</span> <span class="nf">replace</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">value</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">T2</span><span class="p">,</span> <span class="n">Missing</span><span class="p">]</span> <span class="o">=</span> <span class="n">Missing</span><span class="o">.</span><span class="n">MISSING</span><span class="p">,</span>
+        <span class="n">span</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">slice</span><span class="p">,</span> <span class="n">Missing</span><span class="p">]</span> <span class="o">=</span> <span class="n">Missing</span><span class="o">.</span><span class="n">MISSING</span><span class="p">,</span>
+        <span class="n">cursor_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
+            <span class="n">Union</span><span class="p">[</span><span class="n">CommandContext</span><span class="p">,</span> <span class="n">PythonContext</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="n">Missing</span><span class="p">]</span>
+        <span class="p">]</span> <span class="o">=</span> <span class="n">Missing</span><span class="o">.</span><span class="n">MISSING</span><span class="p">,</span>
+        <span class="n">expansion_obj</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
+            <span class="s2">&quot;ExpandableObject&quot;</span><span class="p">,</span> <span class="n">ExpansionOperation</span><span class="p">,</span> <span class="n">Missing</span>
+        <span class="p">]</span> <span class="o">=</span> <span class="n">Missing</span><span class="o">.</span><span class="n">MISSING</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Spanned[T2]&quot;</span><span class="p">:</span>
+        <span class="n">new_args</span> <span class="o">=</span> <span class="nb">locals</span><span class="p">()</span>
+        <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">variable</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__slots__</span><span class="p">:</span>
+            <span class="n">new_value</span> <span class="o">=</span> <span class="n">new_args</span><span class="p">[</span><span class="n">variable</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">new_value</span> <span class="ow">is</span> <span class="n">Missing</span><span class="o">.</span><span class="n">MISSING</span><span class="p">:</span>
+                <span class="n">kwargs</span><span class="p">[</span><span class="n">variable</span><span class="p">]</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">variable</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">kwargs</span><span class="p">[</span><span class="n">variable</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_value</span>
+        <span class="k">return</span> <span class="n">Spanned</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Spanned(</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">span</span><span class="si">}</span><span class="s2">, cursor_context=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cursor_context</span><span class="si">}</span><span class="s2">, &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;expansion_obj=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">expansion_obj</span><span class="si">}</span><span class="s2">)&quot;</span>
+        <span class="p">)</span>
+
+
+<span class="n">Commands</span> <span class="o">=</span> <span class="n">Spanned</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Spanned</span><span class="p">[</span><span class="n">CommandContext</span><span class="p">]]]</span>
+<span class="n">ArgContext</span> <span class="o">=</span> <span class="n">Union</span><span class="p">[</span><span class="n">Spanned</span><span class="p">[</span><span class="n">CommandContext</span><span class="p">],</span> <span class="n">Commands</span><span class="p">,</span> <span class="n">Spanned</span><span class="p">[</span><span class="n">PythonContext</span><span class="p">]]</span>
+
+<span class="n">ExpandableObject</span> <span class="o">=</span> <span class="n">Union</span><span class="p">[</span><span class="n">Spanned</span><span class="p">[</span><span class="n">CommandArg</span><span class="p">],</span> <span class="n">ArgContext</span><span class="p">]</span>
+<span class="c1"># https://github.com/python/mypy/issues/9424#issuecomment-687865111 :</span>
+<span class="n">Exp</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span>
+    <span class="s2">&quot;Exp&quot;</span><span class="p">,</span>
+    <span class="n">Spanned</span><span class="p">[</span><span class="n">CommandArg</span><span class="p">],</span>
+    <span class="n">Spanned</span><span class="p">[</span><span class="n">CommandContext</span><span class="p">],</span>
+    <span class="n">Commands</span><span class="p">,</span>
+    <span class="n">Spanned</span><span class="p">[</span><span class="n">PythonContext</span><span class="p">],</span>
+<span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">with_docstr</span><span class="p">(</span><span class="n">docstr</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">decorator</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+        <span class="n">func</span><span class="o">.</span><span class="vm">__doc__</span> <span class="o">=</span> <span class="n">docstr</span>
+        <span class="k">return</span> <span class="n">func</span>
+
+    <span class="k">return</span> <span class="n">decorator</span>
+
+
+<span class="n">EMPTY_SPAN</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">RULES_SEP</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n\t</span><span class="s2">| &quot;</span>
+
+
+<span class="nd">@lazyobject</span>
+<span class="k">def</span> <span class="nf">NEWLINE_RE</span><span class="p">():</span>
+    <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+
+
+<span class="nd">@lazyobject</span>
+<span class="k">def</span> <span class="nf">LINE_CONT_REPLACEMENT_DIFF</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Returns (line_continuation, replacement, diff).</span>
+<span class="sd">    Diff is the diff in length for each replacement.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">line_cont</span> <span class="o">=</span> <span class="n">get_line_continuation</span><span class="p">()</span>
+    <span class="k">if</span> <span class="s2">&quot; </span><span class="se">\\</span><span class="s2">&quot;</span> <span class="o">==</span> <span class="n">line_cont</span><span class="p">:</span>
+        <span class="c1"># interactive windows</span>
+        <span class="n">replacement</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">replacement</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">line_cont</span> <span class="o">+=</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="k">return</span> <span class="n">line_cont</span><span class="p">,</span> <span class="n">replacement</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">replacement</span><span class="p">)</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">line_cont</span><span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">CompletionContextParser</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;A parser to construct a completion context.&quot;&quot;&quot;</span>
+
+    <span class="n">used_tokens</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;STRING&quot;</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">paren_pairs</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">(</span><span class="s2">&quot;DOLLAR_LPAREN&quot;</span><span class="p">,</span> <span class="s2">&quot;RPAREN&quot;</span><span class="p">),</span>  <span class="c1"># $()</span>
+        <span class="p">(</span><span class="s2">&quot;BANG_LPAREN&quot;</span><span class="p">,</span> <span class="s2">&quot;RPAREN&quot;</span><span class="p">),</span>  <span class="c1"># !()</span>
+        <span class="p">(</span><span class="s2">&quot;ATDOLLAR_LPAREN&quot;</span><span class="p">,</span> <span class="s2">&quot;RPAREN&quot;</span><span class="p">),</span>  <span class="c1"># @$()</span>
+        <span class="p">(</span><span class="s2">&quot;DOLLAR_LBRACKET&quot;</span><span class="p">,</span> <span class="s2">&quot;RBRACKET&quot;</span><span class="p">),</span>  <span class="c1"># $[]</span>
+        <span class="p">(</span><span class="s2">&quot;BANG_LBRACKET&quot;</span><span class="p">,</span> <span class="s2">&quot;RBRACKET&quot;</span><span class="p">),</span>  <span class="c1"># ![]</span>
+        <span class="c1"># python sub-expression:</span>
+        <span class="p">(</span><span class="s2">&quot;AT_LPAREN&quot;</span><span class="p">,</span> <span class="s2">&quot;RPAREN&quot;</span><span class="p">),</span>  <span class="c1"># @()</span>
+    <span class="p">)</span>
+    <span class="n">r_parens</span> <span class="o">=</span> <span class="p">{</span><span class="n">right</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">right</span> <span class="ow">in</span> <span class="n">paren_pairs</span><span class="p">}</span>
+    <span class="n">l_to_r_parens</span> <span class="o">=</span> <span class="p">{</span><span class="n">left</span><span class="p">:</span> <span class="n">right</span> <span class="k">for</span> <span class="n">left</span><span class="p">,</span> <span class="n">right</span> <span class="ow">in</span> <span class="n">paren_pairs</span><span class="p">}</span>
+    <span class="n">used_tokens</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">left</span> <span class="k">for</span> <span class="n">left</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">paren_pairs</span><span class="p">)</span>
+    <span class="n">used_tokens</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">right</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">right</span> <span class="ow">in</span> <span class="n">paren_pairs</span><span class="p">)</span>
+    <span class="n">multi_tokens</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="c1"># multiple commands</span>
+        <span class="s2">&quot;SEMI&quot;</span><span class="p">,</span>  <span class="c1"># ;</span>
+        <span class="s2">&quot;NEWLINE&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;PIPE&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;AND&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;OR&quot;</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">used_tokens</span> <span class="o">|=</span> <span class="n">multi_tokens</span>
+    <span class="n">artificial_tokens</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;ANY&quot;</span><span class="p">}</span>
+    <span class="n">ignored_tokens</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;INDENT&quot;</span><span class="p">,</span> <span class="s2">&quot;DEDENT&quot;</span><span class="p">,</span> <span class="s2">&quot;WS&quot;</span><span class="p">}</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">yacc_optimize</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">yacc_table</span><span class="o">=</span><span class="s2">&quot;xonsh.completion_parser_table&quot;</span><span class="p">,</span>
+        <span class="n">debug</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">outputdir</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_input</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">line_indices</span> <span class="o">=</span> <span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">paren_counts</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">error</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">debug</span> <span class="o">=</span> <span class="n">debug</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lexer</span> <span class="o">=</span> <span class="n">Lexer</span><span class="p">(</span><span class="n">tolerant</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tokens</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">used_tokens</span> <span class="o">|</span> <span class="bp">self</span><span class="o">.</span><span class="n">artificial_tokens</span><span class="p">)</span>
+
+        <span class="n">yacc_kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
+            <span class="n">module</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">debug</span><span class="o">=</span><span class="n">debug</span><span class="p">,</span>
+            <span class="n">optimize</span><span class="o">=</span><span class="n">yacc_optimize</span><span class="p">,</span>
+            <span class="n">tabmodule</span><span class="o">=</span><span class="n">yacc_table</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">debug</span><span class="p">:</span>
+            <span class="n">yacc_kwargs</span><span class="p">[</span><span class="s2">&quot;errorlog&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">yacc</span><span class="o">.</span><span class="n">NullLogger</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">outputdir</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">outputdir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">realpath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)))</span>
+        <span class="n">yacc_kwargs</span><span class="p">[</span><span class="s2">&quot;outputdir&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">outputdir</span>
+
+        <span class="c1"># create parser on main thread, it&#39;s small and should be fast</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">parser</span> <span class="o">=</span> <span class="n">yacc</span><span class="o">.</span><span class="n">yacc</span><span class="p">(</span><span class="o">**</span><span class="n">yacc_kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">parse</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">multiline_text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">cursor_index</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">ctx</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">CompletionContext</span><span class="p">]:</span>
+        <span class="sd">&quot;&quot;&quot;Returns a CompletionContext from a command line.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        multiline_text : str</span>
+<span class="sd">            The complete multiline text.</span>
+<span class="sd">        cursor_index : int</span>
+<span class="sd">            The current cursor&#39;s index in the multiline text.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span> <span class="o">=</span> <span class="n">cursor_index</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">current_input</span> <span class="o">=</span> <span class="n">multiline_text</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">line_indices</span> <span class="o">=</span> <span class="p">(</span><span class="mi">0</span><span class="p">,)</span> <span class="o">+</span> <span class="nb">tuple</span><span class="p">(</span>
+            <span class="n">match</span><span class="o">.</span><span class="n">start</span><span class="p">()</span> <span class="o">+</span> <span class="mi">1</span> <span class="k">for</span> <span class="n">match</span> <span class="ow">in</span> <span class="n">NEWLINE_RE</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">multiline_text</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">paren_counts</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">error</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor_in_span</span><span class="p">(</span>
+                <span class="nb">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">multiline_text</span><span class="p">))</span>
+            <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Bad cursor index: </span><span class="si">{</span><span class="n">cursor_index</span><span class="si">}</span><span class="s2">&quot;</span>
+
+            <span class="n">context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">CompletionContext</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span>
+                <span class="nb">input</span><span class="o">=</span><span class="n">multiline_text</span><span class="p">,</span> <span class="n">lexer</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">debug</span><span class="o">=</span><span class="mi">1</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">debug</span> <span class="k">else</span> <span class="mi">0</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">SyntaxError</span><span class="p">,</span> <span class="ne">AssertionError</span><span class="p">):</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">debug</span><span class="p">:</span>
+                <span class="k">raise</span>
+            <span class="n">context</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">debug</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">error</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">error</span>
+
+        <span class="k">if</span> <span class="n">context</span> <span class="ow">and</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">context</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">with_ctx</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">context</span>
+
+    <span class="c1"># Tokenizer:</span>
+
+    <span class="k">def</span> <span class="nf">input</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">s</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">lexer</span><span class="o">.</span><span class="n">input</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">token</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Simulate some lexer properties for the parser:</span>
+<span class="sd">        * skip tokens from ``ignored_tokens``.</span>
+<span class="sd">        * make ``lexpos`` absolute instead of per line.</span>
+<span class="sd">        * set tokens that aren&#39;t in ``used_tokens`` to type ``ANY``.</span>
+<span class="sd">        * handle a weird lexer behavior with ``AND``/``OR``.</span>
+<span class="sd">        * set multi_tokens with cursor to type ``ANY``.</span>
+<span class="sd">        * set mismatched closing parens to type ``ANY``.</span>
+
+<span class="sd">        The paren checking is needed since accepting both matched and unmatched parenthesis isn&#39;t possible with an LALR(1) parser.</span>
+<span class="sd">        See https://stackoverflow.com/questions/8496065/why-is-this-lr1-grammar-not-lalr1</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="n">tok</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lexer</span><span class="o">.</span><span class="n">token</span><span class="p">()</span>
+
+            <span class="k">if</span> <span class="n">tok</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">tok</span>
+
+            <span class="k">if</span> <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">ignored_tokens</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="n">lineno</span> <span class="o">=</span> <span class="n">tok</span><span class="o">.</span><span class="n">lineno</span> <span class="o">-</span> <span class="mi">1</span>  <span class="c1"># tok.lineno is 1-indexed</span>
+            <span class="k">assert</span> <span class="n">lineno</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">line_indices</span>
+            <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Invalid lexer state for token </span><span class="si">{</span><span class="n">tok</span><span class="si">}</span><span class="s2"> - bad lineno&quot;</span>
+
+            <span class="n">tok</span><span class="o">.</span><span class="n">lexpos</span> <span class="o">=</span> <span class="n">lexpos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">line_indices</span><span class="p">[</span><span class="n">lineno</span><span class="p">]</span> <span class="o">+</span> <span class="n">tok</span><span class="o">.</span><span class="n">lexpos</span>
+
+            <span class="k">if</span> <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">multi_tokens</span><span class="p">:</span>
+                <span class="c1"># for some reason the lexer simulates ``and`` / ``or`` values for ``&amp;&amp;` / ``||``</span>
+                <span class="k">if</span> <span class="p">(</span>
+                    <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;AND&quot;</span>
+                    <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_input</span><span class="p">[</span><span class="n">lexpos</span> <span class="p">:</span> <span class="n">lexpos</span> <span class="o">+</span> <span class="mi">2</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;&amp;&amp;&quot;</span>
+                <span class="p">):</span>
+                    <span class="n">tok</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;&amp;&amp;&quot;</span>
+                <span class="k">elif</span> <span class="p">(</span>
+                    <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;OR&quot;</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_input</span><span class="p">[</span><span class="n">lexpos</span> <span class="p">:</span> <span class="n">lexpos</span> <span class="o">+</span> <span class="mi">2</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;||&quot;</span>
+                <span class="p">):</span>
+                    <span class="n">tok</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;||&quot;</span>
+
+                <span class="c1"># if the cursor is inside this token, set it to type ``ANY``</span>
+                <span class="n">outer_span</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">lexpos</span><span class="p">,</span> <span class="n">lexpos</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">tok</span><span class="o">.</span><span class="n">value</span><span class="p">))</span>
+                <span class="n">inner_span</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">outer_span</span><span class="o">.</span><span class="n">start</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">outer_span</span><span class="o">.</span><span class="n">stop</span><span class="p">)</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor_in_span</span><span class="p">(</span><span class="n">inner_span</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
+                    <span class="c1"># the cursor is in a space-separated multi keyword.</span>
+                    <span class="c1"># even if the cursor&#39;s at the edge, the keyword should be considered as a normal arg</span>
+                    <span class="n">tok</span><span class="o">.</span><span class="n">value</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;and&quot;</span><span class="p">,</span> <span class="s2">&quot;or&quot;</span><span class="p">)</span>
+                    <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor_in_span</span><span class="p">(</span><span class="n">outer_span</span><span class="p">)</span>
+                <span class="p">):</span>
+                    <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="o">=</span> <span class="s2">&quot;ANY&quot;</span>
+
+            <span class="c1"># parentheses handling</span>
+            <span class="k">elif</span> <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">l_to_r_parens</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">paren_counts</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">l_to_r_parens</span><span class="p">[</span><span class="n">tok</span><span class="o">.</span><span class="n">type</span><span class="p">]]</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">paren_counts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tok</span><span class="o">.</span><span class="n">type</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">paren_counts</span><span class="p">[</span><span class="n">tok</span><span class="o">.</span><span class="n">type</span><span class="p">]</span> <span class="o">-=</span> <span class="mi">1</span>
+            <span class="k">elif</span> <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">r_parens</span><span class="p">:</span>
+                <span class="c1"># tok.type is not in self.paren_counts, meaning this right paren is unmatched</span>
+                <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="o">=</span> <span class="s2">&quot;ANY&quot;</span>
+
+            <span class="k">if</span> <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">used_tokens</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">tok</span>
+
+            <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="o">=</span> <span class="s2">&quot;ANY&quot;</span>
+            <span class="k">return</span> <span class="n">tok</span>
+
+    <span class="c1"># Grammar:</span>
+
+    <span class="k">def</span> <span class="nf">p_context_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;context : command</span>
+<span class="sd">        | commands</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">spanned</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Spanned</span><span class="p">[</span><span class="n">CommandContext</span><span class="p">],</span> <span class="n">Commands</span><span class="p">]</span> <span class="o">=</span> <span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="c1"># expand the commands to the complete input</span>
+        <span class="n">complete_span</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">current_input</span><span class="p">))</span>
+        <span class="n">spanned</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">try_expand_span</span><span class="p">(</span><span class="n">spanned</span><span class="p">,</span> <span class="n">complete_span</span><span class="p">)</span> <span class="ow">or</span> <span class="n">spanned</span>
+
+        <span class="n">context</span> <span class="o">=</span> <span class="n">spanned</span><span class="o">.</span><span class="n">cursor_context</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">context</span><span class="p">,</span> <span class="n">CommandContext</span><span class="p">):</span>
+            <span class="c1"># if the context is the main command, it might be python code</span>
+            <span class="n">context_is_main_command</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">spanned</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+                <span class="k">for</span> <span class="n">command</span> <span class="ow">in</span> <span class="n">spanned</span><span class="o">.</span><span class="n">value</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">context</span> <span class="ow">is</span> <span class="n">command</span><span class="o">.</span><span class="n">value</span><span class="p">:</span>
+                        <span class="c1"># TODO: False for connecting keywords other than &#39;\n&#39; and &#39;;&#39;</span>
+                        <span class="n">context_is_main_command</span> <span class="o">=</span> <span class="kc">True</span>
+                        <span class="k">break</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">context</span> <span class="ow">is</span> <span class="n">spanned</span><span class="o">.</span><span class="n">value</span><span class="p">:</span>
+                    <span class="n">context_is_main_command</span> <span class="o">=</span> <span class="kc">True</span>
+
+            <span class="k">if</span> <span class="n">context_is_main_command</span><span class="p">:</span>
+                <span class="n">python_context</span> <span class="o">=</span> <span class="n">PythonContext</span><span class="p">(</span>
+                    <span class="n">multiline_code</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">current_input</span><span class="p">,</span>
+                    <span class="n">cursor_index</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">cursor</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">CompletionContext</span><span class="p">(</span><span class="n">command</span><span class="o">=</span><span class="n">context</span><span class="p">,</span> <span class="n">python</span><span class="o">=</span><span class="n">python_context</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">CompletionContext</span><span class="p">(</span><span class="n">command</span><span class="o">=</span><span class="n">context</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">context</span><span class="p">,</span> <span class="n">PythonContext</span><span class="p">):</span>
+            <span class="c1"># the cursor is in a python sub expression `@()`, so it must be python</span>
+            <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">CompletionContext</span><span class="p">(</span><span class="n">python</span><span class="o">=</span><span class="n">context</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">debug</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">error</span> <span class="o">=</span> <span class="ne">SyntaxError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to find cursor context in </span><span class="si">{</span><span class="n">spanned</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="nf">p_command</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;command : args</span>
+<span class="sd">        |</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">spanned_args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Spanned</span><span class="p">[</span><span class="n">CommandArg</span><span class="p">]]</span> <span class="o">=</span> <span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">span</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">spanned_args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">spanned_args</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">stop</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># empty command</span>
+            <span class="n">spanned_args</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">span</span> <span class="o">=</span> <span class="n">EMPTY_SPAN</span>  <span class="c1"># this will be expanded in expand_command_span</span>
+
+        <span class="n">args</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">arg</span><span class="o">.</span><span class="n">value</span> <span class="k">for</span> <span class="n">arg</span> <span class="ow">in</span> <span class="n">spanned_args</span><span class="p">)</span>
+        <span class="n">cursor_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">CommandContext</span><span class="p">,</span> <span class="n">PythonContext</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="n">context</span> <span class="o">=</span> <span class="n">CommandContext</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">arg_index</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor_in_span</span><span class="p">(</span><span class="n">span</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">arg_index</span><span class="p">,</span> <span class="n">arg</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">spanned_args</span><span class="p">):</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span> <span class="o">&lt;</span> <span class="n">arg</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">start</span><span class="p">:</span>
+                    <span class="c1"># an empty arg that will be inserted into arg_index</span>
+                    <span class="n">context</span> <span class="o">=</span> <span class="n">CommandContext</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">arg_index</span><span class="p">)</span>
+                    <span class="k">break</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor_in_span</span><span class="p">(</span><span class="n">arg</span><span class="o">.</span><span class="n">span</span><span class="p">):</span>
+                    <span class="n">context</span><span class="p">,</span> <span class="n">cursor_context</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle_command_arg</span><span class="p">(</span><span class="n">arg</span><span class="p">)</span>
+                    <span class="n">context</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">_replace</span><span class="p">(</span>
+                        <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">[:</span><span class="n">arg_index</span><span class="p">]</span> <span class="o">+</span> <span class="n">args</span><span class="p">[</span><span class="n">arg_index</span> <span class="o">+</span> <span class="mi">1</span> <span class="p">:],</span>
+                        <span class="n">arg_index</span><span class="o">=</span><span class="n">arg_index</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="k">break</span>
+
+        <span class="k">if</span> <span class="n">cursor_context</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">context</span><span class="o">.</span><span class="n">arg_index</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+            <span class="n">cursor_context</span> <span class="o">=</span> <span class="n">context</span>
+        <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">Spanned</span><span class="p">(</span>
+            <span class="n">context</span><span class="p">,</span>
+            <span class="n">span</span><span class="p">,</span>
+            <span class="n">cursor_context</span><span class="p">,</span>
+            <span class="n">expansion_obj</span><span class="o">=</span><span class="n">spanned_args</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="n">spanned_args</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">p_multiple_commands_first</span><span class="p">(</span><span class="n">p</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;commands : command&quot;&quot;&quot;</span>
+        <span class="n">command</span><span class="p">:</span> <span class="n">Spanned</span><span class="p">[</span><span class="n">CommandContext</span><span class="p">]</span> <span class="o">=</span> <span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">Spanned</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">command</span><span class="p">],</span>
+            <span class="n">command</span><span class="o">.</span><span class="n">span</span><span class="p">,</span>
+            <span class="n">cursor_context</span><span class="o">=</span><span class="n">command</span><span class="o">.</span><span class="n">cursor_context</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="nd">@with_docstr</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;&quot;&quot;commands : </span><span class="si">{</span><span class="n">RULES_SEP</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;commands </span><span class="si">{</span><span class="n">kwd</span><span class="si">}</span><span class="s2"> command&quot;</span> <span class="k">for</span> <span class="n">kwd</span> <span class="ow">in</span> <span class="n">multi_tokens</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;&quot;&quot;</span>
+    <span class="p">)</span>
+    <span class="k">def</span> <span class="nf">p_multiple_commands_many</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">):</span>
+        <span class="c1"># commands KWD command</span>
+        <span class="n">commands</span><span class="p">:</span> <span class="n">Commands</span> <span class="o">=</span> <span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">kwd_index</span> <span class="o">=</span> <span class="mi">2</span>
+        <span class="n">command</span><span class="p">:</span> <span class="n">Spanned</span><span class="p">[</span><span class="n">CommandContext</span><span class="p">]</span> <span class="o">=</span> <span class="n">p</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span>
+
+        <span class="c1"># expand commands span</span>
+        <span class="n">kwd_start</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">lexpos</span><span class="p">(</span><span class="n">kwd_index</span><span class="p">)</span>
+        <span class="n">commands</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">try_expand_right</span><span class="p">(</span><span class="n">commands</span><span class="p">,</span> <span class="n">kwd_start</span><span class="p">)</span> <span class="ow">or</span> <span class="n">commands</span>
+
+        <span class="c1"># expand command</span>
+        <span class="n">kwd_stop</span> <span class="o">=</span> <span class="n">kwd_start</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="n">kwd_index</span><span class="p">])</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">try_expand_left</span><span class="p">(</span><span class="n">command</span><span class="p">,</span> <span class="n">kwd_stop</span><span class="p">)</span> <span class="ow">or</span> <span class="n">command</span>
+
+        <span class="n">commands</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        <span class="n">expansion_obj</span> <span class="o">=</span> <span class="n">command</span>
+
+        <span class="k">if</span> <span class="n">command</span><span class="o">.</span><span class="n">cursor_context</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">cursor_context</span> <span class="o">=</span> <span class="n">command</span><span class="o">.</span><span class="n">cursor_context</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">cursor_context</span> <span class="o">=</span> <span class="n">commands</span><span class="o">.</span><span class="n">cursor_context</span>
+
+        <span class="n">commands</span> <span class="o">=</span> <span class="n">commands</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span>
+            <span class="n">span</span><span class="o">=</span><span class="nb">slice</span><span class="p">(</span><span class="n">commands</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">expansion_obj</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">stop</span><span class="p">),</span>
+            <span class="n">cursor_context</span><span class="o">=</span><span class="n">cursor_context</span><span class="p">,</span>
+            <span class="n">expansion_obj</span><span class="o">=</span><span class="n">expansion_obj</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">commands</span>
+
+    <span class="nd">@with_docstr</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;&quot;&quot;sub_expression : </span><span class="si">{</span><span class="n">RULES_SEP</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">l</span><span class="si">}</span><span class="s2"> commands </span><span class="si">{</span><span class="n">r</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">l</span><span class="p">,</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">paren_pairs</span><span class="p">)</span><span class="si">}</span><span class="s2"></span>
+<span class="s2">        | </span><span class="si">{</span><span class="n">RULES_SEP</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">l</span><span class="si">}</span><span class="s2"> commands&quot;</span> <span class="k">for</span> <span class="n">l</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">paren_pairs</span><span class="p">)</span><span class="si">}</span><span class="s2"></span>
+<span class="s2">    &quot;&quot;&quot;</span>
+    <span class="p">)</span>
+    <span class="k">def</span> <span class="nf">p_sub_expression</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">):</span>
+        <span class="n">sub_expr_opening</span> <span class="o">=</span> <span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">outer_start</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">lexpos</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">inner_start</span> <span class="o">=</span> <span class="n">outer_start</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">sub_expr_opening</span><span class="p">)</span>
+
+        <span class="n">commands</span><span class="p">:</span> <span class="n">Commands</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="o">==</span> <span class="mi">4</span><span class="p">:</span>
+            <span class="c1"># LPAREN commands RPAREN</span>
+            <span class="n">commands</span> <span class="o">=</span> <span class="n">p</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+            <span class="n">inner_stop</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">lexpos</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+            <span class="n">outer_stop</span> <span class="o">=</span> <span class="n">inner_stop</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="mi">3</span><span class="p">])</span>
+            <span class="n">closed_parens</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># LPAREN commands</span>
+            <span class="n">commands</span> <span class="o">=</span> <span class="n">p</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">commands</span><span class="o">.</span><span class="n">span</span> <span class="ow">is</span> <span class="n">EMPTY_SPAN</span><span class="p">:</span>  <span class="c1"># an empty command without a location</span>
+                <span class="n">inner_stop</span> <span class="o">=</span> <span class="n">outer_stop</span> <span class="o">=</span> <span class="n">inner_start</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">inner_stop</span> <span class="o">=</span> <span class="n">outer_stop</span> <span class="o">=</span> <span class="n">commands</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">stop</span>
+            <span class="n">closed_parens</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="n">inner_span</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">inner_start</span><span class="p">,</span> <span class="n">inner_stop</span><span class="p">)</span>
+        <span class="n">outer_span</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">outer_start</span><span class="p">,</span> <span class="n">outer_stop</span><span class="p">)</span>
+
+        <span class="n">commands</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">try_expand_span</span><span class="p">(</span><span class="n">commands</span><span class="p">,</span> <span class="n">inner_span</span><span class="p">)</span> <span class="ow">or</span> <span class="n">commands</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">commands</span><span class="o">.</span><span class="n">value</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="c1"># if this is a single command, set it&#39;s subcmd_opening attribute</span>
+            <span class="n">single_command</span> <span class="o">=</span> <span class="n">commands</span><span class="o">.</span><span class="n">value</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">new_value</span><span class="p">:</span> <span class="n">CommandContext</span> <span class="o">=</span> <span class="n">single_command</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">_replace</span><span class="p">(</span>
+                <span class="n">subcmd_opening</span><span class="o">=</span><span class="n">sub_expr_opening</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">commands</span><span class="o">.</span><span class="n">cursor_context</span> <span class="ow">is</span> <span class="n">single_command</span><span class="o">.</span><span class="n">value</span><span class="p">:</span>
+                <span class="n">single_command</span> <span class="o">=</span> <span class="n">single_command</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">cursor_context</span><span class="o">=</span><span class="n">new_value</span><span class="p">)</span>
+                <span class="n">commands</span> <span class="o">=</span> <span class="n">commands</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">cursor_context</span><span class="o">=</span><span class="n">new_value</span><span class="p">)</span>
+
+            <span class="n">commands</span><span class="o">.</span><span class="n">value</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">single_command</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="n">new_value</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">sub_expr_opening</span> <span class="o">==</span> <span class="s2">&quot;@(&quot;</span><span class="p">:</span>
+            <span class="c1"># python sub-expression</span>
+            <span class="n">python_context</span> <span class="o">=</span> <span class="n">PythonContext</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">current_input</span><span class="p">[</span><span class="n">inner_span</span><span class="p">],</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span> <span class="o">-</span> <span class="n">inner_span</span><span class="o">.</span><span class="n">start</span><span class="p">,</span>
+                <span class="n">is_sub_expression</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">commands</span><span class="o">.</span><span class="n">cursor_context</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span>
+                <span class="n">command</span><span class="o">.</span><span class="n">value</span> <span class="o">==</span> <span class="n">commands</span><span class="o">.</span><span class="n">cursor_context</span> <span class="k">for</span> <span class="n">command</span> <span class="ow">in</span> <span class="n">commands</span><span class="o">.</span><span class="n">value</span>
+            <span class="p">):</span>
+                <span class="c1"># the cursor is inside an inner arg</span>
+                <span class="n">cursor_context</span> <span class="o">=</span> <span class="n">commands</span><span class="o">.</span><span class="n">cursor_context</span>
+            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor_in_span</span><span class="p">(</span><span class="n">inner_span</span><span class="p">):</span>
+                <span class="c1"># the cursor is in the python expression</span>
+                <span class="n">cursor_context</span> <span class="o">=</span> <span class="n">python_context</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">cursor_context</span> <span class="o">=</span> <span class="kc">None</span>
+
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">commands</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+                <span class="ow">and</span> <span class="n">commands</span><span class="o">.</span><span class="n">value</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">expansion_obj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_command_or_commands</span><span class="p">(</span>
+                    <span class="n">commands</span><span class="o">.</span><span class="n">value</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">expansion_obj</span><span class="o">.</span><span class="n">expansion_obj</span>
+                <span class="p">)</span>
+            <span class="p">):</span>
+                <span class="c1"># the last arg (in the last command) is a subcommand, e.g. `@(a; x = $(echo `</span>
+                <span class="n">expansion_obj</span> <span class="o">=</span> <span class="n">commands</span><span class="o">.</span><span class="n">value</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">expansion_obj</span><span class="o">.</span><span class="n">expansion_obj</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">expansion_obj</span> <span class="o">=</span> <span class="kc">None</span>
+
+            <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">Spanned</span><span class="p">(</span><span class="n">python_context</span><span class="p">,</span> <span class="n">outer_span</span><span class="p">,</span> <span class="n">cursor_context</span><span class="p">,</span> <span class="n">expansion_obj</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">commands</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">span</span><span class="o">=</span><span class="n">outer_span</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">closed_parens</span><span class="p">:</span>
+            <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">expansion_obj</span><span class="o">=</span><span class="n">ExpansionOperation</span><span class="o">.</span><span class="n">NEVER_EXPAND</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">p_sub_expression_arg</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;arg : sub_expression&quot;&quot;&quot;</span>
+        <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sub_expression_arg</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+
+    <span class="nd">@with_docstr</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;&quot;&quot;arg : </span><span class="si">{</span><span class="n">RULES_SEP</span><span class="o">.</span><span class="n">join</span><span class="p">({</span><span class="s2">&quot;ANY&quot;</span><span class="p">}</span> <span class="o">|</span> <span class="n">used_tokens</span> <span class="o">-</span> <span class="n">multi_tokens</span> <span class="o">-</span> <span class="n">r_parens</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;&quot;&quot;</span>
+    <span class="p">)</span>
+    <span class="k">def</span> <span class="nf">p_any_token_arg</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">):</span>
+        <span class="n">raw_arg</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">lexpos</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">stop</span> <span class="o">=</span> <span class="n">start</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">raw_arg</span><span class="p">)</span>
+        <span class="n">span</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">stop</span><span class="p">)</span>
+
+        <span class="c1"># handle line continuations</span>
+        <span class="n">raw_arg</span><span class="p">,</span> <span class="n">relative_cursor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_string_segment</span><span class="p">(</span><span class="n">raw_arg</span><span class="p">,</span> <span class="n">span</span><span class="p">)</span>
+
+        <span class="n">arg</span> <span class="o">=</span> <span class="n">CompletionContextParser</span><span class="o">.</span><span class="n">try_parse_string_literal</span><span class="p">(</span><span class="n">raw_arg</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">arg</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">arg</span> <span class="o">=</span> <span class="n">CommandArg</span><span class="p">(</span><span class="n">raw_arg</span><span class="p">)</span>
+
+        <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">Spanned</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="n">span</span><span class="p">,</span> <span class="n">cursor_context</span><span class="o">=</span><span class="n">relative_cursor</span><span class="p">)</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">p_args_first</span><span class="p">(</span><span class="n">p</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;args : arg&quot;&quot;&quot;</span>
+        <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
+
+    <span class="k">def</span> <span class="nf">p_args_many</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;args : args arg&quot;&quot;&quot;</span>
+        <span class="n">args</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Spanned</span><span class="p">[</span><span class="n">CommandArg</span><span class="p">]]</span> <span class="o">=</span> <span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">new_arg</span><span class="p">:</span> <span class="n">Spanned</span><span class="p">[</span><span class="n">CommandArg</span><span class="p">]</span> <span class="o">=</span> <span class="n">p</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="n">last_arg</span><span class="p">:</span> <span class="n">Spanned</span><span class="p">[</span><span class="n">CommandArg</span><span class="p">]</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="n">in_between_span</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">last_arg</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">stop</span><span class="p">,</span> <span class="n">new_arg</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">start</span><span class="p">)</span>
+        <span class="n">in_between</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_input</span><span class="p">[</span><span class="n">in_between_span</span><span class="p">]</span>
+
+        <span class="c1"># handle line continuations between these args</span>
+        <span class="n">in_between</span><span class="p">,</span> <span class="n">relative_cursor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_string_segment</span><span class="p">(</span>
+            <span class="n">in_between</span><span class="p">,</span> <span class="n">in_between_span</span>
+        <span class="p">)</span>
+
+        <span class="n">joined_raw</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">last_arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">raw_value</span><span class="si">}{</span><span class="n">in_between</span><span class="si">}{</span><span class="n">new_arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">raw_value</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="n">string_literal</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">try_parse_string_literal</span><span class="p">(</span><span class="n">joined_raw</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">string_literal</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">in_between</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">string_literal</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># we&#39;re appending to a partial string, e.g. `&quot;a b`</span>
+                <span class="n">arg</span> <span class="o">=</span> <span class="n">string_literal</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># these args are adjacent and didn&#39;t match other rules, e.g. `a&quot;b&quot;`</span>
+                <span class="n">arg</span> <span class="o">=</span> <span class="n">CommandArg</span><span class="p">(</span><span class="n">joined_raw</span><span class="p">)</span>
+
+            <span class="c1"># select which context to preserve</span>
+            <span class="n">cursor_context</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">relative_cursor</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># the cursor is in between</span>
+                <span class="n">cursor_context</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">last_arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">raw_value</span><span class="p">)</span> <span class="o">+</span> <span class="n">relative_cursor</span>
+            <span class="k">elif</span> <span class="n">last_arg</span><span class="o">.</span><span class="n">cursor_context</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># the cursor is in the last arg</span>
+                <span class="n">cursor_context</span> <span class="o">=</span> <span class="n">last_arg</span><span class="o">.</span><span class="n">cursor_context</span>
+            <span class="k">elif</span> <span class="n">new_arg</span><span class="o">.</span><span class="n">cursor_context</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># the cursor is in the new arg</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">new_arg</span><span class="o">.</span><span class="n">cursor_context</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                    <span class="c1"># the context is a relative cursor</span>
+                    <span class="n">cursor_context</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="nb">len</span><span class="p">(</span><span class="n">last_arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">raw_value</span><span class="p">)</span>
+                        <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">in_between</span><span class="p">)</span>
+                        <span class="o">+</span> <span class="n">new_arg</span><span class="o">.</span><span class="n">cursor_context</span>
+                    <span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">cursor_context</span> <span class="o">=</span> <span class="n">new_arg</span><span class="o">.</span><span class="n">cursor_context</span>
+
+            <span class="n">args</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">Spanned</span><span class="p">(</span>
+                <span class="n">value</span><span class="o">=</span><span class="n">arg</span><span class="p">,</span>
+                <span class="n">span</span><span class="o">=</span><span class="nb">slice</span><span class="p">(</span><span class="n">last_arg</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">new_arg</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">stop</span><span class="p">),</span>
+                <span class="n">cursor_context</span><span class="o">=</span><span class="n">cursor_context</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">args</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">new_arg</span><span class="p">)</span>
+        <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">args</span>
+
+    <span class="k">def</span> <span class="nf">p_error</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">p</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">raise_parse_error</span><span class="p">(</span><span class="s2">&quot;no further code&quot;</span><span class="p">)</span>
+
+        <span class="n">raise_parse_error</span><span class="p">(</span>
+            <span class="s2">&quot;code: </span><span class="si">{0}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">value</span><span class="p">),</span>
+            <span class="n">Location</span><span class="p">(</span><span class="s2">&quot;input&quot;</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">lineno</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">lexpos</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">line_indices</span><span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">lineno</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">current_input</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">current_input</span><span class="o">.</span><span class="n">splitlines</span><span class="p">(</span><span class="n">keepends</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+        <span class="p">)</span>
+
+    <span class="c1"># Utils:</span>
+
+    <span class="k">def</span> <span class="nf">try_expand_right</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">:</span> <span class="n">Exp</span><span class="p">,</span> <span class="n">new_right</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Exp</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="n">obj</span><span class="o">.</span><span class="n">span</span> <span class="ow">is</span> <span class="n">EMPTY_SPAN</span><span class="p">:</span>
+            <span class="n">new_span</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">new_right</span><span class="p">,</span> <span class="n">new_right</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">new_span</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">new_right</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">try_expand_span</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">new_span</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">try_expand_left</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">:</span> <span class="n">Exp</span><span class="p">,</span> <span class="n">new_left</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Exp</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="n">obj</span><span class="o">.</span><span class="n">span</span> <span class="ow">is</span> <span class="n">EMPTY_SPAN</span><span class="p">:</span>
+            <span class="n">new_span</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">new_left</span><span class="p">,</span> <span class="n">new_left</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">new_span</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">new_left</span><span class="p">,</span> <span class="n">obj</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">stop</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">try_expand_span</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">new_span</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">try_expand_span</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">:</span> <span class="n">Exp</span><span class="p">,</span> <span class="n">new_span</span><span class="p">:</span> <span class="nb">slice</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Exp</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="n">obj</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">start</span> <span class="o">&lt;=</span> <span class="n">new_span</span><span class="o">.</span><span class="n">start</span> <span class="ow">and</span> <span class="n">new_span</span><span class="o">.</span><span class="n">stop</span> <span class="o">&lt;=</span> <span class="n">obj</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">stop</span><span class="p">:</span>
+            <span class="c1"># the new span doesn&#39;t expand the old one</span>
+            <span class="k">if</span> <span class="n">obj</span><span class="o">.</span><span class="n">span</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">EMPTY_SPAN</span><span class="p">:</span>
+                <span class="c1"># EMPTY_SPAN is a special value for an empty element that isn&#39;t yet located anywhere</span>
+                <span class="k">return</span> <span class="n">obj</span>
+        <span class="k">if</span> <span class="n">obj</span><span class="o">.</span><span class="n">expansion_obj</span> <span class="ow">is</span> <span class="n">ExpansionOperation</span><span class="o">.</span><span class="n">NEVER_EXPAND</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">CommandArg</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">try_expand_arg_span</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">new_span</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">CommandContext</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">expand_command_span</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">new_span</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="c1"># obj is multiple commands</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">expand_commands_span</span><span class="p">(</span><span class="n">cast</span><span class="p">(</span><span class="n">Commands</span><span class="p">,</span> <span class="n">obj</span><span class="p">),</span> <span class="n">new_span</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">PythonContext</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">try_expand_python_context</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">new_span</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="nf">expand_command_span</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">command</span><span class="p">:</span> <span class="n">Spanned</span><span class="p">[</span><span class="n">CommandContext</span><span class="p">],</span> <span class="n">new_span</span><span class="p">:</span> <span class="nb">slice</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Spanned</span><span class="p">[</span><span class="n">CommandContext</span><span class="p">]:</span>
+        <span class="sd">&quot;&quot;&quot;This is used when we know the command&#39;s real span is larger</span>
+
+<span class="sd">        For example, only when we&#39;re done parsing ` echo hi`, we know the head whitespace is also part of the command.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">is_empty_command</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">command</span><span class="o">.</span><span class="n">span</span> <span class="ow">is</span> <span class="n">EMPTY_SPAN</span>
+        <span class="p">)</span>  <span class="c1"># special span for an empty command in an unknown location</span>
+
+        <span class="n">new_arg_index</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">command</span><span class="o">.</span><span class="n">cursor_context</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor_in_span</span><span class="p">(</span><span class="n">new_span</span><span class="p">):</span>
+            <span class="c1"># the cursor is in the expanded span</span>
+            <span class="k">if</span> <span class="n">is_empty_command</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span> <span class="o">&lt;</span> <span class="n">command</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">start</span><span class="p">:</span>
+                <span class="n">new_arg_index</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span> <span class="o">&gt;</span> <span class="n">command</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">stop</span><span class="p">:</span>
+                <span class="n">new_arg_index</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">command</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">args</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">command</span><span class="o">.</span><span class="n">expansion_obj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="c1"># this command has a last argument that we should try to expand</span>
+                    <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">command</span><span class="o">.</span><span class="n">expansion_obj</span><span class="p">,</span> <span class="n">Spanned</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span>
+                        <span class="n">command</span><span class="o">.</span><span class="n">expansion_obj</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">CommandArg</span>
+                    <span class="p">)</span>
+                    <span class="n">last_arg</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">Spanned</span><span class="p">[</span><span class="n">CommandArg</span><span class="p">],</span> <span class="n">command</span><span class="o">.</span><span class="n">expansion_obj</span><span class="p">)</span>
+
+                    <span class="n">expanded_arg</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">try_expand_right</span><span class="p">(</span><span class="n">last_arg</span><span class="p">,</span> <span class="n">new_span</span><span class="o">.</span><span class="n">stop</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">expanded_arg</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="c1"># arg was expanded successfully!</span>
+                        <span class="n">new_context</span><span class="p">,</span> <span class="n">new_cursor_context</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">handle_command_arg</span><span class="p">(</span>
+                            <span class="n">expanded_arg</span>
+                        <span class="p">)</span>
+                        <span class="n">old_args</span> <span class="o">=</span> <span class="n">command</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">args</span>
+                        <span class="n">new_context</span> <span class="o">=</span> <span class="n">new_context</span><span class="o">.</span><span class="n">_replace</span><span class="p">(</span>
+                            <span class="n">args</span><span class="o">=</span><span class="n">old_args</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+                            <span class="n">arg_index</span><span class="o">=</span><span class="n">new_arg_index</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span>
+                            <span class="n">subcmd_opening</span><span class="o">=</span><span class="n">command</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">subcmd_opening</span><span class="p">,</span>
+                        <span class="p">)</span>
+                        <span class="k">if</span> <span class="n">new_cursor_context</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                            <span class="n">new_cursor_context</span> <span class="o">=</span> <span class="n">new_context</span>
+                        <span class="k">return</span> <span class="n">Spanned</span><span class="p">(</span>
+                            <span class="n">value</span><span class="o">=</span><span class="n">new_context</span><span class="p">,</span>
+                            <span class="n">span</span><span class="o">=</span><span class="n">new_span</span><span class="p">,</span>
+                            <span class="n">cursor_context</span><span class="o">=</span><span class="n">new_cursor_context</span><span class="p">,</span>
+                            <span class="n">expansion_obj</span><span class="o">=</span><span class="n">expanded_arg</span><span class="p">,</span>
+                        <span class="p">)</span>
+                    <span class="c1"># if the arg can&#39;t be expanded, the cursor just adds a new empty arg</span>
+
+        <span class="k">if</span> <span class="n">new_arg_index</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">new_context</span> <span class="o">=</span> <span class="n">command</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">_replace</span><span class="p">(</span><span class="n">arg_index</span><span class="o">=</span><span class="n">new_arg_index</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">Spanned</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="n">new_context</span><span class="p">,</span> <span class="n">span</span><span class="o">=</span><span class="n">new_span</span><span class="p">,</span> <span class="n">cursor_context</span><span class="o">=</span><span class="n">new_context</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">command</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">span</span><span class="o">=</span><span class="n">new_span</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">expand_commands_span</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">commands</span><span class="p">:</span> <span class="n">Commands</span><span class="p">,</span> <span class="n">new_span</span><span class="p">:</span> <span class="nb">slice</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Commands</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Like expand_command_span, but for multiple commands - expands the first command and the last command.&quot;&quot;&quot;</span>
+        <span class="n">cursor_context</span> <span class="o">=</span> <span class="n">commands</span><span class="o">.</span><span class="n">cursor_context</span>
+        <span class="n">is_empty_command</span> <span class="o">=</span> <span class="n">commands</span><span class="o">.</span><span class="n">span</span> <span class="ow">is</span> <span class="n">EMPTY_SPAN</span>
+
+        <span class="k">if</span> <span class="n">is_empty_command</span> <span class="ow">or</span> <span class="n">new_span</span><span class="o">.</span><span class="n">start</span> <span class="o">&lt;</span> <span class="n">commands</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">start</span><span class="p">:</span>
+            <span class="c1"># expand first command</span>
+            <span class="n">first_command</span><span class="p">:</span> <span class="n">Spanned</span><span class="p">[</span><span class="n">CommandContext</span><span class="p">]</span> <span class="o">=</span> <span class="n">commands</span><span class="o">.</span><span class="n">value</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">commands</span><span class="o">.</span><span class="n">value</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">first_command</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">try_expand_left</span><span class="p">(</span><span class="n">first_command</span><span class="p">,</span> <span class="n">new_span</span><span class="o">.</span><span class="n">start</span><span class="p">)</span> <span class="ow">or</span> <span class="n">first_command</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">first_command</span><span class="o">.</span><span class="n">cursor_context</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">cursor_context</span> <span class="o">=</span> <span class="n">first_command</span><span class="o">.</span><span class="n">cursor_context</span>
+
+        <span class="k">if</span> <span class="n">is_empty_command</span> <span class="ow">or</span> <span class="n">new_span</span><span class="o">.</span><span class="n">stop</span> <span class="o">&gt;</span> <span class="n">commands</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">stop</span><span class="p">:</span>
+            <span class="c1"># expand last command</span>
+            <span class="n">last_command</span><span class="p">:</span> <span class="n">Spanned</span><span class="p">[</span><span class="n">CommandContext</span><span class="p">]</span> <span class="o">=</span> <span class="n">commands</span><span class="o">.</span><span class="n">value</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">commands</span><span class="o">.</span><span class="n">value</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">last_command</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">try_expand_right</span><span class="p">(</span><span class="n">last_command</span><span class="p">,</span> <span class="n">new_span</span><span class="o">.</span><span class="n">stop</span><span class="p">)</span> <span class="ow">or</span> <span class="n">last_command</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">last_command</span><span class="o">.</span><span class="n">cursor_context</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">cursor_context</span> <span class="o">=</span> <span class="n">last_command</span><span class="o">.</span><span class="n">cursor_context</span>
+
+        <span class="k">return</span> <span class="n">commands</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">span</span><span class="o">=</span><span class="n">new_span</span><span class="p">,</span> <span class="n">cursor_context</span><span class="o">=</span><span class="n">cursor_context</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">try_expand_arg_span</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">arg</span><span class="p">:</span> <span class="n">Spanned</span><span class="p">[</span><span class="n">CommandArg</span><span class="p">],</span> <span class="n">new_span</span><span class="p">:</span> <span class="nb">slice</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Spanned</span><span class="p">[</span><span class="n">CommandArg</span><span class="p">]]:</span>
+        <span class="sd">&quot;&quot;&quot;Try to expand the arg to a new span. This will return None if the arg can&#39;t be expanded to the new span.</span>
+
+<span class="sd">        For example, expanding `&quot;hi   ` will work since the added whitespace is part of the arg, but `&quot;hi&quot;   ` won&#39;t work.</span>
+<span class="sd">        Similarly, `$(hi ` can be expanded but `$(nice)  ` can&#39;t.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">arg</span><span class="o">.</span><span class="n">expansion_obj</span> <span class="ow">is</span> <span class="n">ExpansionOperation</span><span class="o">.</span><span class="n">SIMPLE_ARG_EXPANSION</span><span class="o">.</span><span class="n">value</span><span class="p">:</span>
+            <span class="c1"># this is a simple textual arg</span>
+            <span class="n">added_span</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">arg</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">stop</span><span class="p">,</span> <span class="n">new_span</span><span class="o">.</span><span class="n">stop</span><span class="p">)</span>
+            <span class="n">added_text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_input</span><span class="p">[</span><span class="n">added_span</span><span class="p">]</span>
+
+            <span class="c1"># handle line continuations between these args</span>
+            <span class="n">added_text</span><span class="p">,</span> <span class="n">relative_cursor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_string_segment</span><span class="p">(</span>
+                <span class="n">added_text</span><span class="p">,</span> <span class="n">added_span</span>
+            <span class="p">)</span>
+
+            <span class="n">joined_raw</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">raw_value</span> <span class="o">+</span> <span class="n">added_text</span>
+            <span class="n">string_literal</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">try_parse_string_literal</span><span class="p">(</span><span class="n">joined_raw</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">string_literal</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span>
+
+            <span class="n">cursor_context</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">arg</span><span class="o">.</span><span class="n">cursor_context</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">cursor_context</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">cursor_context</span>
+            <span class="k">elif</span> <span class="n">relative_cursor</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># the cursor is in the whitespace</span>
+                <span class="n">cursor_context</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">raw_value</span><span class="p">)</span> <span class="o">+</span> <span class="n">relative_cursor</span>
+            <span class="k">return</span> <span class="n">Spanned</span><span class="p">(</span><span class="n">string_literal</span><span class="p">,</span> <span class="n">new_span</span><span class="p">,</span> <span class="n">cursor_context</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">arg</span><span class="o">.</span><span class="n">expansion_obj</span><span class="p">,</span> <span class="n">Spanned</span><span class="p">):</span>
+            <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_command_or_commands</span><span class="p">(</span><span class="n">arg</span><span class="o">.</span><span class="n">expansion_obj</span><span class="p">)</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_python</span><span class="p">(</span>
+                <span class="n">arg</span><span class="o">.</span><span class="n">expansion_obj</span>
+            <span class="p">)</span>
+            <span class="n">sub_expr</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">ArgContext</span><span class="p">,</span> <span class="n">arg</span><span class="o">.</span><span class="n">expansion_obj</span><span class="p">)</span>
+
+            <span class="c1"># this arg is a subcommand or multiple subcommands, e.g. `$(a &amp;&amp; b)`</span>
+            <span class="n">expanded_obj</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ArgContext</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">try_expand_span</span><span class="p">(</span><span class="n">sub_expr</span><span class="p">,</span> <span class="n">new_span</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+            <span class="k">if</span> <span class="n">expanded_obj</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">sub_expression_arg</span><span class="p">(</span><span class="n">expanded_obj</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># this shouldn&#39;t happen</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="nf">try_expand_python_context</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">python_context</span><span class="p">:</span> <span class="n">Spanned</span><span class="p">[</span><span class="n">PythonContext</span><span class="p">],</span> <span class="n">new_span</span><span class="p">:</span> <span class="nb">slice</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Spanned</span><span class="p">[</span><span class="n">PythonContext</span><span class="p">]]:</span>
+        <span class="n">added_span</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">python_context</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">stop</span><span class="p">,</span> <span class="n">new_span</span><span class="o">.</span><span class="n">stop</span><span class="p">)</span>
+        <span class="n">added_code</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_input</span><span class="p">[</span><span class="n">added_span</span><span class="p">]</span>
+        <span class="n">new_code</span> <span class="o">=</span> <span class="n">python_context</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">multiline_code</span> <span class="o">+</span> <span class="n">added_code</span>
+        <span class="k">if</span> <span class="n">python_context</span><span class="o">.</span><span class="n">cursor_context</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor_in_span</span><span class="p">(</span><span class="n">added_span</span><span class="p">):</span>
+            <span class="n">new_cursor_index</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">python_context</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">multiline_code</span><span class="p">)</span>
+                <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span>
+                <span class="o">-</span> <span class="n">added_span</span><span class="o">.</span><span class="n">start</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">new_cursor_index</span> <span class="o">=</span> <span class="n">python_context</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">cursor_index</span>
+        <span class="n">new_python_context</span> <span class="o">=</span> <span class="n">python_context</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">_replace</span><span class="p">(</span>
+            <span class="n">multiline_code</span><span class="o">=</span><span class="n">new_code</span><span class="p">,</span> <span class="n">cursor_index</span><span class="o">=</span><span class="n">new_cursor_index</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">python_context</span><span class="o">.</span><span class="n">expansion_obj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># the last command is expandable</span>
+            <span class="c1"># if it were an `ExpansionOperation`, `try_expand` would caught it instead</span>
+            <span class="n">expandable</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span><span class="n">ExpandableObject</span><span class="p">,</span> <span class="n">python_context</span><span class="o">.</span><span class="n">expansion_obj</span><span class="p">)</span>
+            <span class="n">expanded_command</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ExpandableObject</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">try_expand_right</span><span class="p">(</span><span class="n">expandable</span><span class="p">,</span> <span class="n">new_span</span><span class="o">.</span><span class="n">stop</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="n">expanded_command</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="ow">and</span> <span class="n">expanded_command</span><span class="o">.</span><span class="n">cursor_context</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="p">):</span>
+                <span class="k">return</span> <span class="n">python_context</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span>
+                    <span class="n">value</span><span class="o">=</span><span class="n">new_python_context</span><span class="p">,</span>
+                    <span class="n">span</span><span class="o">=</span><span class="n">new_span</span><span class="p">,</span>
+                    <span class="n">cursor_context</span><span class="o">=</span><span class="n">expanded_command</span><span class="o">.</span><span class="n">cursor_context</span><span class="p">,</span>
+                    <span class="n">expansion_obj</span><span class="o">=</span><span class="n">expanded_command</span><span class="p">,</span>
+                <span class="p">)</span>
+
+        <span class="c1"># the last command can&#39;t be expanded, but the python code is still valid</span>
+        <span class="n">new_cursor_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">PythonContext</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor_in_span</span><span class="p">(</span><span class="n">new_span</span><span class="p">):</span>
+            <span class="n">new_cursor_context</span> <span class="o">=</span> <span class="n">new_python_context</span>
+        <span class="k">return</span> <span class="n">python_context</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span>
+            <span class="n">value</span><span class="o">=</span><span class="n">new_python_context</span><span class="p">,</span> <span class="n">span</span><span class="o">=</span><span class="n">new_span</span><span class="p">,</span> <span class="n">cursor_context</span><span class="o">=</span><span class="n">new_cursor_context</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">handle_command_arg</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">arg</span><span class="p">:</span> <span class="n">Spanned</span><span class="p">[</span><span class="n">CommandArg</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">CommandContext</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">CommandContext</span><span class="p">,</span> <span class="n">PythonContext</span><span class="p">]]]:</span>
+        <span class="sd">&quot;&quot;&quot;Create a command context from an arg which contains the cursor.</span>
+<span class="sd">        Also return the internal cursor context if it exists.</span>
+<span class="sd">        `args`, `arg_index`, and `subcmd_opening` aren&#39;t set by this function</span>
+<span class="sd">        and need to be set by the caller via `_replace`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor_in_span</span><span class="p">(</span><span class="n">arg</span><span class="o">.</span><span class="n">span</span><span class="p">)</span>
+
+        <span class="n">prefix</span> <span class="o">=</span> <span class="n">suffix</span> <span class="o">=</span> <span class="n">opening_quote</span> <span class="o">=</span> <span class="n">closing_quote</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="n">cursor_context</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">is_after_closing_quote</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span> <span class="o">==</span> <span class="n">arg</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">stop</span><span class="p">:</span>
+            <span class="c1"># cursor is at the end of this arg</span>
+
+            <span class="k">if</span> <span class="n">arg</span><span class="o">.</span><span class="n">cursor_context</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span>
+                <span class="n">arg</span><span class="o">.</span><span class="n">cursor_context</span><span class="p">,</span> <span class="nb">int</span>
+            <span class="p">):</span>
+                <span class="c1"># this arg is already a context (e.g. a sub expression)</span>
+                <span class="n">cursor_context</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">cursor_context</span>
+
+            <span class="k">elif</span> <span class="n">arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">closing_quote</span><span class="p">:</span>
+                <span class="c1"># appending to a quoted string, e.g. `ls &quot;C:\\Wind&quot;`</span>
+                <span class="n">is_after_closing_quote</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="n">opening_quote</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">opening_quote</span>
+                <span class="n">prefix</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">value</span>
+                <span class="n">closing_quote</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">closing_quote</span>
+
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># appending to a partial string, e.g. `ls &quot;C:\\Wind`</span>
+                <span class="n">prefix</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">value</span>
+                <span class="n">opening_quote</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">opening_quote</span>
+
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor_in_span</span><span class="p">(</span><span class="n">arg</span><span class="o">.</span><span class="n">span</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">arg</span><span class="o">.</span><span class="n">cursor_context</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span>
+                <span class="n">arg</span><span class="o">.</span><span class="n">cursor_context</span><span class="p">,</span> <span class="nb">int</span>
+            <span class="p">):</span>
+                <span class="c1"># this arg is already a context (e.g. a sub expression)</span>
+                <span class="n">cursor_context</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">cursor_context</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">arg</span><span class="o">.</span><span class="n">cursor_context</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="c1"># this arg provides a relative cursor location</span>
+                    <span class="n">relative_location</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">cursor_context</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">relative_location</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span> <span class="o">-</span> <span class="n">arg</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">start</span>
+
+                <span class="n">raw_value</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">raw_value</span>
+                <span class="k">if</span> <span class="n">relative_location</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">opening_quote</span><span class="p">):</span>
+                    <span class="c1"># the cursor is inside the opening quote</span>
+                    <span class="n">prefix</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">opening_quote</span><span class="p">[:</span><span class="n">relative_location</span><span class="p">]</span>
+                    <span class="n">suffix</span> <span class="o">=</span> <span class="n">raw_value</span><span class="p">[</span><span class="n">relative_location</span><span class="p">:]</span>
+                <span class="k">elif</span> <span class="p">(</span>
+                    <span class="n">relative_location</span>
+                    <span class="o">&gt;=</span> <span class="nb">len</span><span class="p">(</span><span class="n">arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">opening_quote</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">value</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+                <span class="p">):</span>
+                    <span class="c1"># the cursor is inside the closing quote</span>
+                    <span class="n">prefix</span> <span class="o">=</span> <span class="n">raw_value</span><span class="p">[:</span><span class="n">relative_location</span><span class="p">]</span>
+                    <span class="n">suffix</span> <span class="o">=</span> <span class="n">raw_value</span><span class="p">[</span><span class="n">relative_location</span><span class="p">:]</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="c1"># the cursor is inside the string</span>
+                    <span class="n">opening_quote</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">opening_quote</span>
+                    <span class="n">closing_quote</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">closing_quote</span>
+                    <span class="n">location_in_value</span> <span class="o">=</span> <span class="n">relative_location</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">opening_quote</span><span class="p">)</span>
+                    <span class="n">prefix</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">value</span><span class="p">[:</span><span class="n">location_in_value</span><span class="p">]</span>
+                    <span class="n">suffix</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">value</span><span class="p">[</span><span class="n">location_in_value</span><span class="p">:]</span>
+
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">CommandContext</span><span class="p">(</span>
+                <span class="n">args</span><span class="o">=</span><span class="p">(),</span>
+                <span class="n">arg_index</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>  <span class="c1"># the caller needs to fill these</span>
+                <span class="n">prefix</span><span class="o">=</span><span class="n">prefix</span><span class="p">,</span>
+                <span class="n">suffix</span><span class="o">=</span><span class="n">suffix</span><span class="p">,</span>
+                <span class="n">opening_quote</span><span class="o">=</span><span class="n">opening_quote</span><span class="p">,</span>
+                <span class="n">closing_quote</span><span class="o">=</span><span class="n">closing_quote</span><span class="p">,</span>
+                <span class="n">is_after_closing_quote</span><span class="o">=</span><span class="n">is_after_closing_quote</span><span class="p">,</span>
+            <span class="p">),</span>
+            <span class="n">cursor_context</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">sub_expression_arg</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sub_expression</span><span class="p">:</span> <span class="n">ArgContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Spanned</span><span class="p">[</span><span class="n">CommandArg</span><span class="p">]:</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_input</span><span class="p">[</span><span class="n">sub_expression</span><span class="o">.</span><span class="n">span</span><span class="p">]</span>
+        <span class="n">arg</span> <span class="o">=</span> <span class="n">sub_expression</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span>
+            <span class="n">value</span><span class="o">=</span><span class="n">CommandArg</span><span class="p">(</span><span class="n">value</span><span class="p">),</span>
+            <span class="n">expansion_obj</span><span class="o">=</span><span class="n">sub_expression</span><span class="p">,</span>
+        <span class="p">)</span>  <span class="c1"># preserves the cursor_context and expansion_obj if it they exist</span>
+        <span class="k">return</span> <span class="n">arg</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">try_parse_string_literal</span><span class="p">(</span><span class="n">raw_arg</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">CommandArg</span><span class="p">]:</span>
+        <span class="sd">&quot;&quot;&quot;Try to parse this as a single string literal. can be partial</span>
+<span class="sd">        For example:</span>
+<span class="sd">            &quot;wow&quot;</span>
+<span class="sd">            &quot;a b</span>
+<span class="sd">            &#39;&#39;&#39;a b &#39;c&#39; &quot;d&quot;</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">startix</span><span class="p">,</span> <span class="n">endix</span><span class="p">,</span> <span class="n">quote</span> <span class="o">=</span> <span class="n">check_for_partial_string</span><span class="p">(</span><span class="n">raw_arg</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">startix</span> <span class="o">!=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">endix</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="kc">None</span><span class="p">,</span>  <span class="c1"># the arg doesn&#39;t start with a string literal</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">raw_arg</span><span class="p">),</span>  <span class="c1"># the string literal ends in the middle of the arg</span>
+        <span class="p">):</span>
+            <span class="c1"># xonsh won&#39;t treat it as a string literal</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">endix</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># no closing quote</span>
+                <span class="k">return</span> <span class="n">CommandArg</span><span class="p">(</span><span class="n">raw_arg</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">quote</span><span class="p">)</span> <span class="p">:</span> <span class="n">endix</span><span class="p">],</span> <span class="n">opening_quote</span><span class="o">=</span><span class="n">quote</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">closing_quote_len</span> <span class="o">=</span> <span class="n">quote</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="s1">&#39;&quot;&#39;</span><span class="p">)</span> <span class="o">+</span> <span class="n">quote</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="s2">&quot;&#39;&quot;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">CommandArg</span><span class="p">(</span>
+                    <span class="n">value</span><span class="o">=</span><span class="n">raw_arg</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">quote</span><span class="p">)</span> <span class="p">:</span> <span class="o">-</span><span class="n">closing_quote_len</span><span class="p">],</span>
+                    <span class="n">closing_quote</span><span class="o">=</span><span class="n">raw_arg</span><span class="p">[</span><span class="o">-</span><span class="n">closing_quote_len</span><span class="p">:],</span>
+                    <span class="n">opening_quote</span><span class="o">=</span><span class="n">quote</span><span class="p">,</span>
+                <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">process_string_segment</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">string</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">span</span><span class="p">:</span> <span class="nb">slice</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
+        <span class="sd">&quot;&quot;&quot;Process a string segment:</span>
+<span class="sd">        1. Return a relative_cursor if it&#39;s inside the span (for ``Spanned.cursor_context``).</span>
+<span class="sd">        2. Handle line continuations in the string.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">relative_cursor</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">line_cont</span><span class="p">,</span> <span class="n">replacement</span><span class="p">,</span> <span class="n">diff</span> <span class="o">=</span> <span class="n">LINE_CONT_REPLACEMENT_DIFF</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor_in_span</span><span class="p">(</span><span class="n">span</span><span class="p">):</span>
+            <span class="n">relative_cursor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span> <span class="o">-</span> <span class="n">span</span><span class="o">.</span><span class="n">start</span>
+            <span class="n">relative_cursor</span> <span class="o">+=</span> <span class="n">string</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">line_cont</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">relative_cursor</span><span class="p">)</span> <span class="o">*</span> <span class="n">diff</span>
+
+        <span class="n">string</span> <span class="o">=</span> <span class="n">string</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">line_cont</span><span class="p">,</span> <span class="n">replacement</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">string</span><span class="p">,</span> <span class="n">relative_cursor</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">is_command_or_commands</span><span class="p">(</span><span class="n">obj</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">Spanned</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">CommandContext</span><span class="p">):</span>
+                <span class="k">return</span> <span class="kc">True</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">value</span><span class="p">):</span>
+                <span class="n">first_element</span> <span class="o">=</span> <span class="n">obj</span><span class="o">.</span><span class="n">value</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">first_element</span><span class="p">,</span> <span class="n">Spanned</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span>
+                    <span class="n">first_element</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">CommandContext</span>
+                <span class="p">):</span>
+                    <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">is_python</span><span class="p">(</span><span class="n">obj</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">Spanned</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">PythonContext</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">cursor_in_span</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">span</span><span class="p">:</span> <span class="nb">slice</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns whether the cursor is in the span.</span>
+<span class="sd">        The edge is included (if `self.cursor`` == ``stop``).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">span</span><span class="o">.</span><span class="n">start</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cursor</span> <span class="o">&lt;=</span> <span class="n">span</span><span class="o">.</span><span class="n">stop</span>
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+        <p class="logo"><a href="../../../contents.html" title="contents">
+          <img class="logo" src="../../../_static/ascii_conch_part_transparent_tight.png" alt="Logo"/>
+        </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+        </div>
+      </div>
+    
+    
+        <div class="sidebar-toggle-group no-js">
+            
+            <button class="sidebar-toggle" id="sidebar-hide" title="Hide the sidebar menu">
+                 «
+                <span class="show-for-small">hide menu</span>
+                
+            </button>
+            <button class="sidebar-toggle" id="sidebar-show" title="Show the sidebar menu">
+                
+                <span class="show-for-small">menu</span>
+                <span class="hide-for-small">sidebar</span>
+                 »
+            </button>
+        </div>
+    
+      <div class="clearer"></div>
+    </div>
+    <div class="relbar-bottom">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../contents.html">xonsh 0.10.0.dev117.dev117 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">xonsh.parsers.completion_context</a></li> 
+      </ul>
+    </div>
+    </div>
+
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2015, Anthony Scopatz.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.1.1.
+    </div>
+    <!-- cloud_sptheme 1.4 -->
+  </body>
+</html>
