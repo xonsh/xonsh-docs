@@ -7,14 +7,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xonsh.commands_cache &#8212; xonsh 0.9.26 documentation</title>
-    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
-    <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
+    <title>xonsh.commands_cache &#8212; xonsh 0.11.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/numpy_friendly.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
     
-    <script id="documentation_options" data-url_root="../../" src="../../_static/documentation_options.js"></script>
+    <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
     <script src="../../_static/jquery.js"></script>
     <script src="../../_static/underscore.js"></script>
     <script src="../../_static/doctools.js"></script>
@@ -55,7 +55,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.9.26 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.commands_cache</a></li> 
@@ -79,12 +79,16 @@
 <span class="sd">True) or must be run the foreground (returns False).</span>
 <span class="sd">&quot;&quot;&quot;</span>
 <span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">pickle</span>
 <span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">threading</span>
 <span class="kn">import</span> <span class="nn">time</span>
-<span class="kn">import</span> <span class="nn">builtins</span>
 <span class="kn">import</span> <span class="nn">argparse</span>
 <span class="kn">import</span> <span class="nn">collections.abc</span> <span class="k">as</span> <span class="nn">cabc</span>
+<span class="kn">import</span> <span class="nn">typing</span> <span class="k">as</span> <span class="nn">tp</span>
+<span class="kn">from</span> <span class="nn">pathlib</span> <span class="kn">import</span> <span class="n">Path</span>
 
+<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
 <span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="kn">import</span> <span class="n">ON_WINDOWS</span><span class="p">,</span> <span class="n">ON_POSIX</span><span class="p">,</span> <span class="n">pathbasename</span>
 <span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="n">executables_in</span>
 <span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="kn">import</span> <span class="n">lazyobject</span>
@@ -98,19 +102,32 @@
 <span class="sd">    the command has an alias.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
+    <span class="n">CACHE_FILE</span> <span class="o">=</span> <span class="s2">&quot;commands-cache.pickle&quot;</span>
+
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_cmds_cache</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_path_checksum</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_alias_checksum</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_path_mtime</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">threadable_predictors</span> <span class="o">=</span> <span class="n">default_threadable_predictors</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_loaded_pickled</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="c1"># Path to the cache-file where all commands/aliases are cached for pre-loading&quot;&quot;&quot;</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cache_file</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;XONSH_DATA_DIR&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">joinpath</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">CACHE_FILE</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">())</span>
+            <span class="k">if</span> <span class="n">env</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="s2">&quot;XONSH_DATA_DIR&quot;</span> <span class="ow">in</span> <span class="n">env</span>
+            <span class="ow">and</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;COMMANDS_CACHE_SAVE_INTERMEDIATE&quot;</span><span class="p">)</span>
+            <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span>
 
     <span class="k">def</span> <span class="fm">__contains__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
         <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">all_commands</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">lazyin</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
 
     <span class="k">def</span> <span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">for</span> <span class="n">cmd</span><span class="p">,</span> <span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">is_alias</span><span class="p">)</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">all_commands</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">for</span> <span class="n">cmd</span><span class="p">,</span> <span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">_</span><span class="p">)</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">all_commands</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">if</span> <span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="n">path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="c1"># All command keys are stored in uppercase on Windows.</span>
                 <span class="c1"># This ensures the original command name is returned.</span>
@@ -134,75 +151,119 @@
 <span class="sd">        name on Windows as a list, conserving the ordering in `PATHEXT`.</span>
 <span class="sd">        Returns a list as `name` being the only item in it on other platforms.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
-            <span class="n">pathext</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PATHEXT&quot;</span><span class="p">,</span> <span class="p">[])</span>
+            <span class="n">pathext</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PATHEXT&quot;</span><span class="p">,</span> <span class="p">[])</span>
             <span class="n">name</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
             <span class="k">return</span> <span class="p">[</span><span class="n">name</span> <span class="o">+</span> <span class="n">ext</span> <span class="k">for</span> <span class="n">ext</span> <span class="ow">in</span> <span class="p">([</span><span class="s2">&quot;&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">pathext</span><span class="p">)]</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">return</span> <span class="p">[</span><span class="n">name</span><span class="p">]</span></div>
 
 <div class="viewcode-block" id="CommandsCache.remove_dups"><a class="viewcode-back" href="../../api/commands_cache.html#xonsh.commands_cache.CommandsCache.remove_dups">[docs]</a>    <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="nf">remove_dups</span><span class="p">(</span><span class="n">p</span><span class="p">):</span>
-        <span class="n">ret</span> <span class="o">=</span> <span class="nb">list</span><span class="p">()</span>
-        <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="nb">map</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">realpath</span><span class="p">,</span> <span class="n">p</span><span class="p">):</span>
-            <span class="k">if</span> <span class="n">e</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ret</span><span class="p">:</span>
-                <span class="n">ret</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">ret</span></div>
+    <span class="k">def</span> <span class="nf">remove_dups</span><span class="p">(</span><span class="n">paths</span><span class="p">):</span>
+        <span class="n">cont</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">map</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">realpath</span><span class="p">,</span> <span class="n">paths</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">p</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">cont</span><span class="p">:</span>
+                <span class="n">cont</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">p</span><span class="p">):</span>
+                    <span class="k">yield</span> <span class="n">p</span></div>
+
+    <span class="k">def</span> <span class="nf">_update_if_changed</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">paths</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="n">aliases</span><span class="p">):</span>
+        <span class="c1"># did PATH change?</span>
+        <span class="n">path_hash</span> <span class="o">=</span> <span class="nb">hash</span><span class="p">(</span><span class="n">paths</span><span class="p">)</span>
+        <span class="k">yield</span> <span class="n">path_hash</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">_path_checksum</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_path_checksum</span> <span class="o">=</span> <span class="n">path_hash</span>
+
+        <span class="c1"># did aliases change?</span>
+        <span class="n">al_hash</span> <span class="o">=</span> <span class="nb">hash</span><span class="p">(</span><span class="nb">frozenset</span><span class="p">(</span><span class="n">aliases</span><span class="p">))</span>
+        <span class="k">yield</span> <span class="n">al_hash</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">_alias_checksum</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_alias_checksum</span> <span class="o">=</span> <span class="n">al_hash</span>
+
+        <span class="c1"># did the contents of any directory in PATH change?</span>
+        <span class="n">max_mtime</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">path</span><span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">stat</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">st_mtime</span><span class="p">,</span> <span class="n">paths</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">yield</span> <span class="n">max_mtime</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_path_mtime</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_path_mtime</span> <span class="o">=</span> <span class="n">max_mtime</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span> <span class="nf">all_commands</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="n">paths</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PATH&quot;</span><span class="p">,</span> <span class="p">[])</span>
-        <span class="n">paths</span> <span class="o">=</span> <span class="n">CommandsCache</span><span class="o">.</span><span class="n">remove_dups</span><span class="p">(</span><span class="n">paths</span><span class="p">)</span>
-        <span class="n">path_immut</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">paths</span> <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
-        <span class="c1"># did PATH change?</span>
-        <span class="n">path_hash</span> <span class="o">=</span> <span class="nb">hash</span><span class="p">(</span><span class="n">path_immut</span><span class="p">)</span>
-        <span class="n">cache_valid_path</span> <span class="o">=</span> <span class="n">path_hash</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">_path_checksum</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_path_checksum</span> <span class="o">=</span> <span class="n">path_hash</span>
-        <span class="c1"># did aliases change?</span>
-        <span class="n">alss</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s2">&quot;aliases&quot;</span><span class="p">,</span> <span class="nb">dict</span><span class="p">())</span>
-        <span class="n">al_hash</span> <span class="o">=</span> <span class="nb">hash</span><span class="p">(</span><span class="nb">frozenset</span><span class="p">(</span><span class="n">alss</span><span class="p">))</span>
-        <span class="n">cache_valid_aliases</span> <span class="o">=</span> <span class="n">al_hash</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">_alias_checksum</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_alias_checksum</span> <span class="o">=</span> <span class="n">al_hash</span>
-        <span class="c1"># did the contents of any directory in PATH change?</span>
-        <span class="n">max_mtime</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">path_immut</span><span class="p">:</span>
-            <span class="n">mtime</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">stat</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">st_mtime</span>
-            <span class="k">if</span> <span class="n">mtime</span> <span class="o">&gt;</span> <span class="n">max_mtime</span><span class="p">:</span>
-                <span class="n">max_mtime</span> <span class="o">=</span> <span class="n">mtime</span>
-        <span class="n">cache_valid_paths</span> <span class="o">=</span> <span class="n">max_mtime</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_path_mtime</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_path_mtime</span> <span class="o">=</span> <span class="n">max_mtime</span>
-
-        <span class="k">if</span> <span class="n">cache_valid_path</span> <span class="ow">and</span> <span class="n">cache_valid_paths</span><span class="p">:</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">cache_valid_aliases</span><span class="p">:</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="p">[]</span> <span class="k">if</span> <span class="n">env</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PATH&quot;</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="n">path_immut</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">CommandsCache</span><span class="o">.</span><span class="n">remove_dups</span><span class="p">(</span><span class="n">path</span><span class="p">))</span>
+        <span class="n">alss</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">XSH</span><span class="p">,</span> <span class="s2">&quot;aliases&quot;</span><span class="p">,</span> <span class="nb">dict</span><span class="p">())</span>
+        <span class="p">(</span>
+            <span class="n">has_path_changed</span><span class="p">,</span>
+            <span class="n">has_alias_changed</span><span class="p">,</span>
+            <span class="n">has_any_path_updated</span><span class="p">,</span>
+        <span class="p">)</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_update_if_changed</span><span class="p">(</span><span class="n">path_immut</span><span class="p">,</span> <span class="n">alss</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">has_path_changed</span> <span class="ow">and</span> <span class="n">has_any_path_updated</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">has_alias_changed</span><span class="p">:</span>
                 <span class="k">for</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">alias</span> <span class="ow">in</span> <span class="n">alss</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
                     <span class="n">key</span> <span class="o">=</span> <span class="n">cmd</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="k">if</span> <span class="n">ON_WINDOWS</span> <span class="k">else</span> <span class="n">cmd</span>
                     <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cmds_cache</span><span class="p">:</span>
                         <span class="bp">self</span><span class="o">.</span><span class="n">_cmds_cache</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cmds_cache</span><span class="p">[</span><span class="n">key</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span> <span class="n">alias</span><span class="p">)</span>
                     <span class="k">else</span><span class="p">:</span>
                         <span class="bp">self</span><span class="o">.</span><span class="n">_cmds_cache</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+                <span class="c1"># save the changes to cache as well</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">set_cmds_cache</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_cmds_cache</span><span class="p">)</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cmds_cache</span>
 
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cache_file</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">cache_file</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="c1"># pickle the result only if XONSH_DATA_DIR is set</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_loaded_pickled</span><span class="p">:</span>
+                <span class="c1"># first time load the commands from cache-file</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_cmds_cache</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_cached_commands</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_loaded_pickled</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="c1"># also start a thread that updates the cache in the bg</span>
+            <span class="n">worker</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">(</span>
+                <span class="n">target</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_update_cmds_cache</span><span class="p">,</span>
+                <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">path_immut</span><span class="p">,</span> <span class="n">alss</span><span class="p">],</span>
+                <span class="n">daemon</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">worker</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_update_cmds_cache</span><span class="p">(</span><span class="n">path_immut</span><span class="p">,</span> <span class="n">alss</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cmds_cache</span>
+
+    <span class="k">def</span> <span class="nf">_update_cmds_cache</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">paths</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">aliases</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">tp</span><span class="o">.</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">tp</span><span class="o">.</span><span class="n">Any</span><span class="p">]:</span>
+        <span class="sd">&quot;&quot;&quot;Update the cmds_cache variable in background without slowing down parseLexer&quot;&quot;&quot;</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span> <span class="ow">or</span> <span class="p">{}</span>  <span class="c1"># type: ignore</span>
+
         <span class="n">allcmds</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="n">path_immut</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="n">paths</span><span class="p">):</span>
             <span class="c1"># iterate backwards so that entries at the front of PATH overwrite</span>
             <span class="c1"># entries at the back.</span>
             <span class="k">for</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="n">executables_in</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
                 <span class="n">key</span> <span class="o">=</span> <span class="n">cmd</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="k">if</span> <span class="n">ON_WINDOWS</span> <span class="k">else</span> <span class="n">cmd</span>
-                <span class="n">allcmds</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">cmd</span><span class="p">),</span> <span class="n">alss</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+                <span class="n">allcmds</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">cmd</span><span class="p">),</span> <span class="n">aliases</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
 
-        <span class="n">warn_cnt</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;COMMANDS_CACHE_SIZE_WARNING&quot;</span><span class="p">)</span>
+        <span class="n">warn_cnt</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;COMMANDS_CACHE_SIZE_WARNING&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">warn_cnt</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">allcmds</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">warn_cnt</span><span class="p">:</span>
             <span class="nb">print</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;Warning! Found </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">allcmds</span><span class="p">)</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> executable files in the PATH directories!&quot;</span><span class="p">,</span>
                 <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">,</span>
             <span class="p">)</span>
 
-        <span class="k">for</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="n">alss</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="n">aliases</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">cmd</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">allcmds</span><span class="p">:</span>
                 <span class="n">key</span> <span class="o">=</span> <span class="n">cmd</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="k">if</span> <span class="n">ON_WINDOWS</span> <span class="k">else</span> <span class="n">cmd</span>
-                <span class="n">allcmds</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+                <span class="n">allcmds</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">set_cmds_cache</span><span class="p">(</span><span class="n">allcmds</span><span class="p">)</span>
 
+<div class="viewcode-block" id="CommandsCache.get_cached_commands"><a class="viewcode-back" href="../../api/commands_cache.html#xonsh.commands_cache.CommandsCache.get_cached_commands">[docs]</a>    <span class="k">def</span> <span class="nf">get_cached_commands</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">tp</span><span class="o">.</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cache_file</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">cache_file</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">pickle</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cache_file</span><span class="o">.</span><span class="n">read_bytes</span><span class="p">())</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="c1"># the file is corrupt</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">cache_file</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="n">missing_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">{}</span></div>
+
+<div class="viewcode-block" id="CommandsCache.set_cmds_cache"><a class="viewcode-back" href="../../api/commands_cache.html#xonsh.commands_cache.CommandsCache.set_cmds_cache">[docs]</a>    <span class="k">def</span> <span class="nf">set_cmds_cache</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">allcmds</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">tp</span><span class="o">.</span><span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">tp</span><span class="o">.</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">tp</span><span class="o">.</span><span class="n">Any</span><span class="p">]:</span>
+        <span class="sd">&quot;&quot;&quot;write cmds to cache-file and instance-attribute&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cache_file</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cache_file</span><span class="o">.</span><span class="n">write_bytes</span><span class="p">(</span><span class="n">pickle</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">allcmds</span><span class="p">))</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_cmds_cache</span> <span class="o">=</span> <span class="n">allcmds</span>
-        <span class="k">return</span> <span class="n">allcmds</span>
+        <span class="k">return</span> <span class="n">allcmds</span></div>
 
 <div class="viewcode-block" id="CommandsCache.cached_name"><a class="viewcode-back" href="../../api/commands_cache.html#xonsh.commands_cache.CommandsCache.cached_name">[docs]</a>    <span class="k">def</span> <span class="nf">cached_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Returns the name that would appear in the cache, if it exists.&quot;&quot;&quot;</span>
@@ -245,10 +306,10 @@
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        name : str</span>
-<span class="sd">                name of binary to search for</span>
+<span class="sd">            name of binary to search for</span>
 <span class="sd">        ignore_alias : bool, optional</span>
-<span class="sd">                Force return of binary path even if alias of ``name`` exists</span>
-<span class="sd">                (default ``False``)</span>
+<span class="sd">            Force return of binary path even if alias of ``name`` exists</span>
+<span class="sd">            (default ``False``)</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># make sure the cache is up to date by accessing the property</span>
         <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">all_commands</span>
@@ -260,10 +321,10 @@
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        name : str</span>
-<span class="sd">                name of binary to search for</span>
+<span class="sd">            name of binary to search for</span>
 <span class="sd">        ignore_alias : bool, optional</span>
-<span class="sd">                Force return of binary path even if alias of ``name`` exists</span>
-<span class="sd">                (default ``False``)</span>
+<span class="sd">            Force return of binary path even if alias of ``name`` exists</span>
+<span class="sd">            (default ``False``)</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">possibilities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_possible_names</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
@@ -345,7 +406,7 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># alias stuff</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isabs</span><span class="p">(</span><span class="n">cmd0</span><span class="p">)</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">sep</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">cmd0</span><span class="p">:</span>
-            <span class="n">alss</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s2">&quot;aliases&quot;</span><span class="p">,</span> <span class="nb">dict</span><span class="p">())</span>
+            <span class="n">alss</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">XSH</span><span class="p">,</span> <span class="s2">&quot;aliases&quot;</span><span class="p">,</span> <span class="nb">dict</span><span class="p">())</span>
             <span class="k">if</span> <span class="n">cmd0</span> <span class="ow">in</span> <span class="n">alss</span><span class="p">:</span>
                 <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">default_predictor_alias</span><span class="p">(</span><span class="n">cmd0</span><span class="p">)</span>
 
@@ -362,7 +423,7 @@
             <span class="mi">10</span>  <span class="c1"># this limit is se to handle infinite loops in aliases definition</span>
         <span class="p">)</span>
         <span class="n">first_args</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># contains in reverse order args passed to the aliased command</span>
-        <span class="n">alss</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s2">&quot;aliases&quot;</span><span class="p">,</span> <span class="nb">dict</span><span class="p">())</span>
+        <span class="n">alss</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">XSH</span><span class="p">,</span> <span class="s2">&quot;aliases&quot;</span><span class="p">,</span> <span class="nb">dict</span><span class="p">())</span>
         <span class="k">while</span> <span class="n">cmd0</span> <span class="ow">in</span> <span class="n">alss</span><span class="p">:</span>
             <span class="n">alias_name</span> <span class="o">=</span> <span class="n">alss</span><span class="p">[</span><span class="n">cmd0</span><span class="p">]</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">alias_name</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">))</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span>
@@ -522,7 +583,7 @@
         <span class="k">if</span> <span class="n">args</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="ow">and</span> <span class="n">args</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="s2">&quot;-&quot;</span> <span class="ow">and</span> <span class="s2">&quot;=&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">args</span><span class="p">[</span><span class="n">i</span><span class="p">]:</span>
             <span class="c1"># args[i] is the command and the following is its arguments</span>
             <span class="c1"># so args[i:] is used to predict if the command is threadable</span>
-            <span class="k">return</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">commands_cache</span><span class="o">.</span><span class="n">predict_threadable</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="n">i</span><span class="p">:])</span>
+            <span class="k">return</span> <span class="n">XSH</span><span class="o">.</span><span class="n">commands_cache</span><span class="o">.</span><span class="n">predict_threadable</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="n">i</span><span class="p">:])</span>
     <span class="k">return</span> <span class="kc">True</span></div>
 
 
@@ -664,7 +725,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.9.26 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.commands_cache</a></li> 
@@ -674,7 +735,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.5.2.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.0.0.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>

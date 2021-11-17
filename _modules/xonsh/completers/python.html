@@ -7,14 +7,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xonsh.completers.python &#8212; xonsh 0.9.26 documentation</title>
-    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
-    <link rel="stylesheet" href="../../../_static/numpy_friendly.css" type="text/css" />
+    <title>xonsh.completers.python &#8212; xonsh 0.11.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/numpy_friendly.css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
     
-    <script id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+    <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
     <script src="../../../_static/jquery.js"></script>
     <script src="../../../_static/underscore.js"></script>
     <script src="../../../_static/doctools.js"></script>
@@ -55,7 +55,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../contents.html">xonsh 0.9.26 documentation</a> &#187;</li>
+    <li><a href="../../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.completers.python</a></li> 
@@ -72,17 +72,22 @@
   <h1>Source code for xonsh.completers.python</h1><div class="highlight"><pre>
 <span></span><span class="sd">&quot;&quot;&quot;Completers for Python code&quot;&quot;&quot;</span>
 <span class="kn">import</span> <span class="nn">re</span>
-<span class="kn">import</span> <span class="nn">sys</span>
 <span class="kn">import</span> <span class="nn">inspect</span>
 <span class="kn">import</span> <span class="nn">builtins</span>
-<span class="kn">import</span> <span class="nn">importlib</span>
 <span class="kn">import</span> <span class="nn">warnings</span>
 <span class="kn">import</span> <span class="nn">collections.abc</span> <span class="k">as</span> <span class="nn">cabc</span>
+<span class="kn">from</span> <span class="nn">xonsh.parsers.completion_context</span> <span class="kn">import</span> <span class="n">CompletionContext</span><span class="p">,</span> <span class="n">PythonContext</span>
 
 <span class="kn">import</span> <span class="nn">xonsh.tools</span> <span class="k">as</span> <span class="nn">xt</span>
 <span class="kn">import</span> <span class="nn">xonsh.lazyasd</span> <span class="k">as</span> <span class="nn">xl</span>
+<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
 
-<span class="kn">from</span> <span class="nn">xonsh.completers.tools</span> <span class="kn">import</span> <span class="n">get_filter_function</span>
+<span class="kn">from</span> <span class="nn">xonsh.completers.tools</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">CompleterResult</span><span class="p">,</span>
+    <span class="n">contextual_completer</span><span class="p">,</span>
+    <span class="n">get_filter_function</span><span class="p">,</span>
+    <span class="n">RichCompletion</span><span class="p">,</span>
+<span class="p">)</span>
 
 
 <span class="nd">@xl</span><span class="o">.</span><span class="n">lazyobject</span>
@@ -93,15 +98,15 @@
 <span class="nd">@xl</span><span class="o">.</span><span class="n">lazyobject</span>
 <span class="k">def</span> <span class="nf">XONSH_EXPR_TOKENS</span><span class="p">():</span>
     <span class="k">return</span> <span class="p">{</span>
-        <span class="s2">&quot;and &quot;</span><span class="p">,</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;and&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
         <span class="s2">&quot;else&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;for &quot;</span><span class="p">,</span>
-        <span class="s2">&quot;if &quot;</span><span class="p">,</span>
-        <span class="s2">&quot;in &quot;</span><span class="p">,</span>
-        <span class="s2">&quot;is &quot;</span><span class="p">,</span>
-        <span class="s2">&quot;lambda &quot;</span><span class="p">,</span>
-        <span class="s2">&quot;not &quot;</span><span class="p">,</span>
-        <span class="s2">&quot;or &quot;</span><span class="p">,</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;for&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;if&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;in&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;is&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;lambda&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;not&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;or&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
         <span class="s2">&quot;+&quot;</span><span class="p">,</span>
         <span class="s2">&quot;-&quot;</span><span class="p">,</span>
         <span class="s2">&quot;/&quot;</span><span class="p">,</span>
@@ -120,7 +125,7 @@
         <span class="s2">&quot;&gt;=&quot;</span><span class="p">,</span>
         <span class="s2">&quot;==&quot;</span><span class="p">,</span>
         <span class="s2">&quot;!=&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;,&quot;</span><span class="p">,</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
         <span class="s2">&quot;?&quot;</span><span class="p">,</span>
         <span class="s2">&quot;??&quot;</span><span class="p">,</span>
         <span class="s2">&quot;$(&quot;</span><span class="p">,</span>
@@ -138,27 +143,27 @@
 <span class="nd">@xl</span><span class="o">.</span><span class="n">lazyobject</span>
 <span class="k">def</span> <span class="nf">XONSH_STMT_TOKENS</span><span class="p">():</span>
     <span class="k">return</span> <span class="p">{</span>
-        <span class="s2">&quot;as &quot;</span><span class="p">,</span>
-        <span class="s2">&quot;assert &quot;</span><span class="p">,</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;as&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;assert&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
         <span class="s2">&quot;break&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;class &quot;</span><span class="p">,</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;class&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
         <span class="s2">&quot;continue&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;def &quot;</span><span class="p">,</span>
-        <span class="s2">&quot;del &quot;</span><span class="p">,</span>
-        <span class="s2">&quot;elif &quot;</span><span class="p">,</span>
-        <span class="s2">&quot;except &quot;</span><span class="p">,</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;def&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;del&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;elif&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;except&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
         <span class="s2">&quot;finally:&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;from &quot;</span><span class="p">,</span>
-        <span class="s2">&quot;global &quot;</span><span class="p">,</span>
-        <span class="s2">&quot;import &quot;</span><span class="p">,</span>
-        <span class="s2">&quot;nonlocal &quot;</span><span class="p">,</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;from&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;global&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;import&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;nonlocal&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
         <span class="s2">&quot;pass&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;raise &quot;</span><span class="p">,</span>
-        <span class="s2">&quot;return &quot;</span><span class="p">,</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;raise&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;return&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
         <span class="s2">&quot;try:&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;while &quot;</span><span class="p">,</span>
-        <span class="s2">&quot;with &quot;</span><span class="p">,</span>
-        <span class="s2">&quot;yield &quot;</span><span class="p">,</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;while&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;with&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+        <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;yield&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
         <span class="s2">&quot;-&quot;</span><span class="p">,</span>
         <span class="s2">&quot;/&quot;</span><span class="p">,</span>
         <span class="s2">&quot;//&quot;</span><span class="p">,</span>
@@ -197,34 +202,45 @@
     <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="n">XONSH_EXPR_TOKENS</span><span class="p">)</span> <span class="o">|</span> <span class="nb">set</span><span class="p">(</span><span class="n">XONSH_STMT_TOKENS</span><span class="p">)</span>
 
 
-<div class="viewcode-block" id="complete_python"><a class="viewcode-back" href="../../../api/completers/python.html#xonsh.completers.python.complete_python">[docs]</a><span class="k">def</span> <span class="nf">complete_python</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+<div class="viewcode-block" id="complete_python"><a class="viewcode-back" href="../../../api/completers/python.html#xonsh.completers.python.complete_python">[docs]</a><span class="nd">@contextual_completer</span>
+<span class="k">def</span> <span class="nf">complete_python</span><span class="p">(</span><span class="n">context</span><span class="p">:</span> <span class="n">CompletionContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CompleterResult</span><span class="p">:</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Completes based on the contents of the current Python environment,</span>
 <span class="sd">    the Python built-ins, and xonsh operators.</span>
-<span class="sd">    If there are no matches, split on common delimiters and try again.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">rtn</span> <span class="o">=</span> <span class="n">_complete_python</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
+    <span class="c1"># If there are no matches, split on common delimiters and try again.</span>
+    <span class="k">if</span> <span class="n">context</span><span class="o">.</span><span class="n">python</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="k">if</span> <span class="n">context</span><span class="o">.</span><span class="n">command</span> <span class="ow">and</span> <span class="n">context</span><span class="o">.</span><span class="n">command</span><span class="o">.</span><span class="n">arg_index</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="c1"># this can be a command (i.e. not a subexpression)</span>
+        <span class="n">first</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">command</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">value</span>
+        <span class="n">ctx</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">python</span><span class="o">.</span><span class="n">ctx</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">first</span> <span class="ow">in</span> <span class="n">XSH</span><span class="o">.</span><span class="n">commands_cache</span> <span class="ow">and</span> <span class="n">first</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ctx</span><span class="p">:</span>  <span class="c1"># type: ignore</span>
+            <span class="c1"># this is a known command, so it won&#39;t be python code</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="n">line</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">python</span><span class="o">.</span><span class="n">multiline_code</span>
+    <span class="n">prefix</span> <span class="o">=</span> <span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="n">maxsplit</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[</span><span class="s2">&quot;&quot;</span><span class="p">])[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">rtn</span> <span class="o">=</span> <span class="n">_complete_python</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">context</span><span class="o">.</span><span class="n">python</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">rtn</span><span class="p">:</span>
         <span class="n">prefix</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\(|=|{|\[|,&quot;</span><span class="p">,</span> <span class="n">prefix</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">prefix</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">)</span>
             <span class="k">else</span> <span class="n">prefix</span>
         <span class="p">)</span>
-        <span class="n">start</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
-        <span class="n">rtn</span> <span class="o">=</span> <span class="n">_complete_python</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">rtn</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">rtn</span></div>
+        <span class="n">rtn</span> <span class="o">=</span> <span class="n">_complete_python</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">context</span><span class="o">.</span><span class="n">python</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">rtn</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span></div>
 
 
-<span class="k">def</span> <span class="nf">_complete_python</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+<span class="k">def</span> <span class="nf">_complete_python</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="n">PythonContext</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Completes based on the contents of the current Python environment,</span>
 <span class="sd">    the Python built-ins, and xonsh operators.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="n">line</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
-        <span class="n">first</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="k">if</span> <span class="n">first</span> <span class="ow">in</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">commands_cache</span> <span class="ow">and</span> <span class="n">first</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ctx</span><span class="p">:</span>
-            <span class="k">return</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">line</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">multiline_code</span>
+    <span class="n">end</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">cursor_index</span>
+    <span class="n">ctx</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">ctx</span>
     <span class="n">filt</span> <span class="o">=</span> <span class="n">get_filter_function</span><span class="p">()</span>
     <span class="n">rtn</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -244,19 +260,6 @@
     <span class="k">return</span> <span class="n">rtn</span>
 
 
-<div class="viewcode-block" id="complete_python_mode"><a class="viewcode-back" href="../../../api/completers/python.html#xonsh.completers.python.complete_python_mode">[docs]</a><span class="k">def</span> <span class="nf">complete_python_mode</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Python-mode completions for @( and ${</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">prefix</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;@(&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">prefix</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;${&quot;</span><span class="p">)):</span>
-        <span class="k">return</span> <span class="nb">set</span><span class="p">()</span>
-    <span class="n">prefix_start</span> <span class="o">=</span> <span class="n">prefix</span><span class="p">[:</span><span class="mi">2</span><span class="p">]</span>
-    <span class="n">python_matches</span> <span class="o">=</span> <span class="n">complete_python</span><span class="p">(</span><span class="n">prefix</span><span class="p">[</span><span class="mi">2</span><span class="p">:],</span> <span class="n">line</span><span class="p">,</span> <span class="n">start</span> <span class="o">-</span> <span class="mi">2</span><span class="p">,</span> <span class="n">end</span> <span class="o">-</span> <span class="mi">2</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">python_matches</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Sequence</span><span class="p">):</span>
-        <span class="n">python_matches</span> <span class="o">=</span> <span class="n">python_matches</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-    <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="n">prefix_start</span> <span class="o">+</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">python_matches</span><span class="p">)</span></div>
-
-
 <span class="k">def</span> <span class="nf">_turn_off_warning</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Decorator to turn off warning temporarily.&quot;&quot;&quot;</span>
 
@@ -274,15 +277,15 @@
 <span class="sd">    a (None, None) tuple.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">_ctx</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="n">xonsh_safe_eval</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">execer</span><span class="o">.</span><span class="n">eval</span>
+    <span class="n">xonsh_safe_eval</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">execer</span><span class="o">.</span><span class="n">eval</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="n">val</span> <span class="o">=</span> <span class="n">xonsh_safe_eval</span><span class="p">(</span><span class="n">expr</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="n">_ctx</span> <span class="o">=</span> <span class="n">ctx</span>
-    <span class="k">except</span><span class="p">:</span>  <span class="c1"># pylint:disable=bare-except</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">val</span> <span class="o">=</span> <span class="n">xonsh_safe_eval</span><span class="p">(</span><span class="n">expr</span><span class="p">,</span> <span class="n">builtins</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
             <span class="n">_ctx</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="vm">__dict__</span>
-        <span class="k">except</span><span class="p">:</span>  <span class="c1"># pylint:disable=bare-except</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
             <span class="n">val</span> <span class="o">=</span> <span class="n">_ctx</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">return</span> <span class="n">val</span><span class="p">,</span> <span class="n">_ctx</span>
 
@@ -313,7 +316,7 @@
         <span class="k">if</span> <span class="n">_val_</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">_ctx_</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">continue</span>
         <span class="n">a</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="n">opt</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;COMPLETIONS_BRACKETS&quot;</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;COMPLETIONS_BRACKETS&quot;</span><span class="p">]:</span>
             <span class="k">if</span> <span class="n">callable</span><span class="p">(</span><span class="n">a</span><span class="p">):</span>
                 <span class="n">rpl</span> <span class="o">=</span> <span class="n">opt</span> <span class="o">+</span> <span class="s2">&quot;(&quot;</span>
             <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="p">(</span><span class="n">cabc</span><span class="o">.</span><span class="n">Sequence</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Mapping</span><span class="p">)):</span>
@@ -347,34 +350,6 @@
         <span class="k">return</span> <span class="nb">set</span><span class="p">()</span>
     <span class="n">args</span> <span class="o">=</span> <span class="p">{</span><span class="n">p</span> <span class="o">+</span> <span class="s2">&quot;=&quot;</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">sig</span><span class="o">.</span><span class="n">parameters</span> <span class="k">if</span> <span class="n">filter_func</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">prefix</span><span class="p">)}</span>
     <span class="k">return</span> <span class="n">args</span></div>
-
-
-<div class="viewcode-block" id="complete_import"><a class="viewcode-back" href="../../../api/completers/python.html#xonsh.completers.python.complete_import">[docs]</a><span class="k">def</span> <span class="nf">complete_import</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Completes module names and contents for &quot;import ...&quot; and &quot;from ... import</span>
-<span class="sd">    ...&quot;</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">ltoks</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
-    <span class="n">ntoks</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">ltoks</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">ntoks</span> <span class="o">==</span> <span class="mi">2</span> <span class="ow">and</span> <span class="n">ltoks</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;from&quot;</span><span class="p">:</span>
-        <span class="c1"># completing module to import</span>
-        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2"> &quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">complete_module</span><span class="p">(</span><span class="n">prefix</span><span class="p">)}</span>
-    <span class="k">if</span> <span class="n">ntoks</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">ltoks</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;import&quot;</span> <span class="ow">and</span> <span class="n">start</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="s2">&quot;import &quot;</span><span class="p">):</span>
-        <span class="c1"># completing module to import</span>
-        <span class="k">return</span> <span class="n">complete_module</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">ntoks</span> <span class="o">&gt;</span> <span class="mi">2</span> <span class="ow">and</span> <span class="n">ltoks</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;from&quot;</span> <span class="ow">and</span> <span class="n">ltoks</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;import&quot;</span><span class="p">:</span>
-        <span class="c1"># complete thing inside a module</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">mod</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">import_module</span><span class="p">(</span><span class="n">ltoks</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
-        <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-            <span class="k">return</span> <span class="nb">set</span><span class="p">()</span>
-        <span class="n">out</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getmembers</span><span class="p">(</span><span class="n">mod</span><span class="p">)</span> <span class="k">if</span> <span class="n">i</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">prefix</span><span class="p">)}</span>
-        <span class="k">return</span> <span class="n">out</span>
-    <span class="k">return</span> <span class="nb">set</span><span class="p">()</span></div>
-
-
-<div class="viewcode-block" id="complete_module"><a class="viewcode-back" href="../../../api/completers/python.html#xonsh.completers.python.complete_module">[docs]</a><span class="k">def</span> <span class="nf">complete_module</span><span class="p">(</span><span class="n">prefix</span><span class="p">):</span>
-    <span class="k">return</span> <span class="p">{</span><span class="n">s</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">modules</span> <span class="k">if</span> <span class="n">get_filter_function</span><span class="p">()(</span><span class="n">s</span><span class="p">,</span> <span class="n">prefix</span><span class="p">)}</span></div>
 </pre></div>
 
             <div class="clearer"></div>
@@ -428,7 +403,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../contents.html">xonsh 0.9.26 documentation</a> &#187;</li>
+    <li><a href="../../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.completers.python</a></li> 
@@ -438,7 +413,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.5.2.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.0.0.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>

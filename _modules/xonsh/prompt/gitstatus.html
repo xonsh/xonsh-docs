@@ -7,14 +7,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xonsh.prompt.gitstatus &#8212; xonsh 0.9.26 documentation</title>
-    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
-    <link rel="stylesheet" href="../../../_static/numpy_friendly.css" type="text/css" />
+    <title>xonsh.prompt.gitstatus &#8212; xonsh 0.11.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/numpy_friendly.css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
     
-    <script id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+    <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
     <script src="../../../_static/jquery.js"></script>
     <script src="../../../_static/underscore.js"></script>
     <script src="../../../_static/doctools.js"></script>
@@ -55,7 +55,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../contents.html">xonsh 0.9.26 documentation</a> &#187;</li>
+    <li><a href="../../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.prompt.gitstatus</a></li> 
@@ -72,42 +72,27 @@
   <h1>Source code for xonsh.prompt.gitstatus</h1><div class="highlight"><pre>
 <span></span><span class="c1"># -*- coding: utf-8 -*-</span>
 <span class="sd">&quot;&quot;&quot;Informative git status prompt formatter&quot;&quot;&quot;</span>
-
-<span class="kn">import</span> <span class="nn">builtins</span>
-<span class="kn">import</span> <span class="nn">collections</span>
 <span class="kn">import</span> <span class="nn">os</span>
 <span class="kn">import</span> <span class="nn">subprocess</span>
 
-<span class="kn">import</span> <span class="nn">xonsh.lazyasd</span> <span class="k">as</span> <span class="nn">xl</span>
+<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
+<span class="kn">from</span> <span class="nn">xonsh.color_tools</span> <span class="kn">import</span> <span class="n">COLORS</span>
+<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="n">NamedConstantMeta</span><span class="p">,</span> <span class="n">XAttr</span>
 
 
-<span class="n">GitStatus</span> <span class="o">=</span> <span class="n">collections</span><span class="o">.</span><span class="n">namedtuple</span><span class="p">(</span>
-    <span class="s2">&quot;GitStatus&quot;</span><span class="p">,</span>
-    <span class="p">[</span>
-        <span class="s2">&quot;branch&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;num_ahead&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;num_behind&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;untracked&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;changed&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;deleted&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;conflicts&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;staged&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;stashed&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;operations&quot;</span><span class="p">,</span>
-    <span class="p">],</span>
-<span class="p">)</span>
+<span class="k">def</span> <span class="nf">_check_output</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="n">denv</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">detype</span><span class="p">()</span>
+    <span class="n">denv</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s2">&quot;GIT_OPTIONAL_LOCKS&quot;</span><span class="p">:</span> <span class="s2">&quot;0&quot;</span><span class="p">})</span>
 
-
-<span class="k">def</span> <span class="nf">_check_output</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
     <span class="n">kwargs</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
         <span class="nb">dict</span><span class="p">(</span>
-            <span class="n">env</span><span class="o">=</span><span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">detype</span><span class="p">(),</span>
+            <span class="n">env</span><span class="o">=</span><span class="n">denv</span><span class="p">,</span>
             <span class="n">stdout</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span>
             <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">,</span>
             <span class="n">universal_newlines</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="p">)</span>
     <span class="p">)</span>
-    <span class="n">timeout</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;VC_BRANCH_TIMEOUT&quot;</span><span class="p">]</span>
+    <span class="n">timeout</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;VC_BRANCH_TIMEOUT&quot;</span><span class="p">]</span>
     <span class="c1"># See https://docs.python.org/3/library/subprocess.html#subprocess.Popen.communicate</span>
     <span class="k">with</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="k">as</span> <span class="n">proc</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
@@ -134,35 +119,65 @@
             <span class="k">raise</span>
 
 
-<span class="nd">@xl</span><span class="o">.</span><span class="n">lazyobject</span>
-<span class="k">def</span> <span class="nf">_DEFS</span><span class="p">():</span>
-    <span class="n">DEFS</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s2">&quot;HASH&quot;</span><span class="p">:</span> <span class="s2">&quot;:&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;BRANCH&quot;</span><span class="p">:</span> <span class="s2">&quot;</span><span class="si">{CYAN}</span><span class="s2">&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;OPERATION&quot;</span><span class="p">:</span> <span class="s2">&quot;</span><span class="si">{CYAN}</span><span class="s2">&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;STAGED&quot;</span><span class="p">:</span> <span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">●&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;CONFLICTS&quot;</span><span class="p">:</span> <span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">×&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;CHANGED&quot;</span><span class="p">:</span> <span class="s2">&quot;</span><span class="si">{BLUE}</span><span class="s2">+&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;DELETED&quot;</span><span class="p">:</span> <span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">-&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;UNTRACKED&quot;</span><span class="p">:</span> <span class="s2">&quot;…&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;STASHED&quot;</span><span class="p">:</span> <span class="s2">&quot;⚑&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;CLEAN&quot;</span><span class="p">:</span> <span class="s2">&quot;</span><span class="si">{BOLD_GREEN}</span><span class="s2">✓&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;AHEAD&quot;</span><span class="p">:</span> <span class="s2">&quot;↑·&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;BEHIND&quot;</span><span class="p">:</span> <span class="s2">&quot;↓·&quot;</span><span class="p">,</span>
-    <span class="p">}</span>
-    <span class="k">return</span> <span class="n">DEFS</span>
+<span class="k">class</span> <span class="nc">_DEFS</span><span class="p">(</span><span class="n">metaclass</span><span class="o">=</span><span class="n">NamedConstantMeta</span><span class="p">):</span>
+    <span class="n">HASH_INDICATOR</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)</span>
+    <span class="n">BRANCH</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{CYAN}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">OPERATION</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{CYAN}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">STAGED</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">●&quot;</span><span class="p">)</span>
+    <span class="n">CONFLICTS</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">×&quot;</span><span class="p">)</span>
+    <span class="n">CHANGED</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{BLUE}</span><span class="s2">+&quot;</span><span class="p">)</span>
+    <span class="n">DELETED</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">-&quot;</span><span class="p">)</span>
+    <span class="n">UNTRACKED</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;…&quot;</span><span class="p">)</span>
+    <span class="n">STASHED</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;⚑&quot;</span><span class="p">)</span>
+    <span class="n">CLEAN</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{BOLD_GREEN}</span><span class="s2">✓&quot;</span><span class="p">)</span>
+    <span class="n">AHEAD</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;↑·&quot;</span><span class="p">)</span>
+    <span class="n">BEHIND</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;↓·&quot;</span><span class="p">)</span>
+    <span class="n">LINES_ADDED</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{BLUE}</span><span class="s2">+&quot;</span><span class="p">)</span>
+    <span class="n">LINES_REMOVED</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">-&quot;</span><span class="p">)</span>
+    <span class="n">SEPARATOR</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">|&quot;</span><span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_get_def</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
-    <span class="n">def_</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_GITSTATUS_&quot;</span> <span class="o">+</span> <span class="n">key</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">def_</span> <span class="k">if</span> <span class="n">def_</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">_DEFS</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+<span class="k">def</span> <span class="nf">_get_def</span><span class="p">(</span><span class="n">attr</span><span class="p">:</span> <span class="n">XAttr</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="n">key</span> <span class="o">=</span> <span class="n">attr</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+    <span class="n">def_</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_GITSTATUS_&quot;</span> <span class="o">+</span> <span class="n">key</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">def_</span> <span class="k">if</span> <span class="n">def_</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">attr</span><span class="o">.</span><span class="n">value</span>
 
 
-<span class="k">def</span> <span class="nf">_get_tag_or_hash</span><span class="p">():</span>
+<span class="k">def</span> <span class="nf">_is_hidden</span><span class="p">(</span><span class="n">attr</span><span class="p">:</span> <span class="n">XAttr</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="n">hidden</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_GITSTATUS_FIELDS_HIDDEN&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">attr</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="ow">in</span> <span class="n">hidden</span> <span class="ow">or</span> <span class="n">attr</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">hidden</span>
+
+
+<span class="k">def</span> <span class="nf">_get_tag_or_hash</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
     <span class="n">tag_or_hash</span> <span class="o">=</span> <span class="n">_check_output</span><span class="p">([</span><span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;describe&quot;</span><span class="p">,</span> <span class="s2">&quot;--always&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
     <span class="n">hash_</span> <span class="o">=</span> <span class="n">_check_output</span><span class="p">([</span><span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;rev-parse&quot;</span><span class="p">,</span> <span class="s2">&quot;--short&quot;</span><span class="p">,</span> <span class="s2">&quot;HEAD&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
     <span class="n">have_tag_name</span> <span class="o">=</span> <span class="n">tag_or_hash</span> <span class="o">!=</span> <span class="n">hash_</span>
-    <span class="k">return</span> <span class="n">tag_or_hash</span> <span class="k">if</span> <span class="n">have_tag_name</span> <span class="k">else</span> <span class="n">_get_def</span><span class="p">(</span><span class="s2">&quot;HASH&quot;</span><span class="p">)</span> <span class="o">+</span> <span class="n">hash_</span>
+    <span class="k">return</span> <span class="n">tag_or_hash</span> <span class="k">if</span> <span class="n">have_tag_name</span> <span class="k">else</span> <span class="n">_get_def</span><span class="p">(</span><span class="n">_DEFS</span><span class="o">.</span><span class="n">HASH_INDICATOR</span><span class="p">)</span> <span class="o">+</span> <span class="n">hash_</span>
+
+
+<span class="k">def</span> <span class="nf">_parse_int</span><span class="p">(</span><span class="n">val</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">val</span><span class="o">.</span><span class="n">isdigit</span><span class="p">():</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">default</span>
+
+
+<span class="k">def</span> <span class="nf">_get_files_changed</span><span class="p">():</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">changed</span> <span class="o">=</span> <span class="n">_check_output</span><span class="p">([</span><span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;diff&quot;</span><span class="p">,</span> <span class="s2">&quot;--numstat&quot;</span><span class="p">])</span>
+    <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{}</span>
+
+    <span class="n">insert</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">delete</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">if</span> <span class="n">changed</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">changed</span><span class="o">.</span><span class="n">splitlines</span><span class="p">():</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">maxsplit</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">insert</span> <span class="o">+=</span> <span class="n">_parse_int</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="n">delete</span> <span class="o">+=</span> <span class="n">_parse_int</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+
+    <span class="k">return</span> <span class="p">{</span><span class="n">_DEFS</span><span class="o">.</span><span class="n">LINES_ADDED</span><span class="p">:</span> <span class="n">insert</span><span class="p">,</span> <span class="n">_DEFS</span><span class="o">.</span><span class="n">LINES_REMOVED</span><span class="p">:</span> <span class="n">delete</span><span class="p">}</span>
 
 
 <span class="k">def</span> <span class="nf">_get_stash</span><span class="p">(</span><span class="n">gitdir</span><span class="p">):</span>
@@ -182,17 +197,25 @@
         <span class="p">(</span><span class="s2">&quot;REVERT_HEAD&quot;</span><span class="p">,</span> <span class="s2">&quot;REVERTING&quot;</span><span class="p">),</span>
         <span class="p">(</span><span class="s2">&quot;BISECT_LOG&quot;</span><span class="p">,</span> <span class="s2">&quot;BISECTING&quot;</span><span class="p">),</span>
     <span class="p">)</span>
-    <span class="k">return</span> <span class="p">[</span><span class="n">f</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">files</span> <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">gitdir</span><span class="p">,</span> <span class="n">f</span><span class="p">[</span><span class="mi">0</span><span class="p">]))]</span>
+    <span class="n">operations</span> <span class="o">=</span> <span class="p">[</span><span class="n">f</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">files</span> <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">gitdir</span><span class="p">,</span> <span class="n">f</span><span class="p">[</span><span class="mi">0</span><span class="p">]))]</span>
+    <span class="k">if</span> <span class="n">operations</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;|&quot;</span> <span class="o">+</span> <span class="s2">&quot;|&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">operations</span><span class="p">)</span>
+    <span class="k">return</span> <span class="s2">&quot;&quot;</span>
 
 
-<div class="viewcode-block" id="gitstatus"><a class="viewcode-back" href="../../../api/prompt/gitstatus.html#xonsh.prompt.gitstatus.gitstatus">[docs]</a><span class="k">def</span> <span class="nf">gitstatus</span><span class="p">():</span>
-    <span class="sd">&quot;&quot;&quot;Return namedtuple with fields:</span>
-<span class="sd">    branch name, number of ahead commit, number of behind commit,</span>
-<span class="sd">    untracked number, changed number, deleted number, conflicts number,</span>
-<span class="sd">    staged number, stashed number, operation.&quot;&quot;&quot;</span>
+<span class="k">def</span> <span class="nf">_get_operation_stashed</span><span class="p">():</span>
+    <span class="n">gitdir</span> <span class="o">=</span> <span class="n">_check_output</span><span class="p">([</span><span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;rev-parse&quot;</span><span class="p">,</span> <span class="s2">&quot;--git-dir&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="n">stashed</span> <span class="o">=</span> <span class="n">_get_stash</span><span class="p">(</span><span class="n">gitdir</span><span class="p">)</span>
+    <span class="n">operation</span> <span class="o">=</span> <span class="n">_gitoperation</span><span class="p">(</span><span class="n">gitdir</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span><span class="n">_DEFS</span><span class="o">.</span><span class="n">OPERATION</span><span class="p">:</span> <span class="n">operation</span><span class="p">,</span> <span class="n">_DEFS</span><span class="o">.</span><span class="n">STASHED</span><span class="p">:</span> <span class="n">stashed</span><span class="p">}</span>
+
+
+<span class="k">def</span> <span class="nf">_get_status_fields</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Return parsed values from ``git status``&quot;&quot;&quot;</span>
+
     <span class="n">status</span> <span class="o">=</span> <span class="n">_check_output</span><span class="p">([</span><span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">,</span> <span class="s2">&quot;--porcelain&quot;</span><span class="p">,</span> <span class="s2">&quot;--branch&quot;</span><span class="p">])</span>
     <span class="n">branch</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
-    <span class="n">num_ahead</span><span class="p">,</span> <span class="n">num_behind</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span>
+    <span class="n">ahead</span><span class="p">,</span> <span class="n">behind</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span>
     <span class="n">untracked</span><span class="p">,</span> <span class="n">changed</span><span class="p">,</span> <span class="n">deleted</span><span class="p">,</span> <span class="n">conflicts</span><span class="p">,</span> <span class="n">staged</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span>
     <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">status</span><span class="o">.</span><span class="n">splitlines</span><span class="p">():</span>
         <span class="k">if</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;##&quot;</span><span class="p">):</span>
@@ -210,9 +233,9 @@
                     <span class="n">divergence</span> <span class="o">=</span> <span class="n">divergence</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s2">&quot;[]&quot;</span><span class="p">)</span>
                     <span class="k">for</span> <span class="n">div</span> <span class="ow">in</span> <span class="n">divergence</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;, &quot;</span><span class="p">):</span>
                         <span class="k">if</span> <span class="s2">&quot;ahead&quot;</span> <span class="ow">in</span> <span class="n">div</span><span class="p">:</span>
-                            <span class="n">num_ahead</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">div</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="s2">&quot;ahead &quot;</span><span class="p">)</span> <span class="p">:]</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+                            <span class="n">ahead</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">div</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="s2">&quot;ahead &quot;</span><span class="p">)</span> <span class="p">:]</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
                         <span class="k">elif</span> <span class="s2">&quot;behind&quot;</span> <span class="ow">in</span> <span class="n">div</span><span class="p">:</span>
-                            <span class="n">num_behind</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">div</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="s2">&quot;behind &quot;</span><span class="p">)</span> <span class="p">:]</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+                            <span class="n">behind</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">div</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="s2">&quot;behind &quot;</span><span class="p">)</span> <span class="p">:]</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
         <span class="k">elif</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;??&quot;</span><span class="p">):</span>
             <span class="n">untracked</span> <span class="o">+=</span> <span class="mi">1</span>
         <span class="k">else</span><span class="p">:</span>
@@ -226,57 +249,104 @@
             <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">line</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="s2">&quot; &quot;</span><span class="p">:</span>
                 <span class="n">staged</span> <span class="o">+=</span> <span class="mi">1</span>
 
-    <span class="n">gitdir</span> <span class="o">=</span> <span class="n">_check_output</span><span class="p">([</span><span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;rev-parse&quot;</span><span class="p">,</span> <span class="s2">&quot;--git-dir&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
-    <span class="n">stashed</span> <span class="o">=</span> <span class="n">_get_stash</span><span class="p">(</span><span class="n">gitdir</span><span class="p">)</span>
-    <span class="n">operations</span> <span class="o">=</span> <span class="n">_gitoperation</span><span class="p">(</span><span class="n">gitdir</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="n">_DEFS</span><span class="o">.</span><span class="n">BRANCH</span><span class="p">:</span> <span class="n">branch</span><span class="p">,</span>
+        <span class="n">_DEFS</span><span class="o">.</span><span class="n">AHEAD</span><span class="p">:</span> <span class="n">ahead</span><span class="p">,</span>
+        <span class="n">_DEFS</span><span class="o">.</span><span class="n">BEHIND</span><span class="p">:</span> <span class="n">behind</span><span class="p">,</span>
+        <span class="n">_DEFS</span><span class="o">.</span><span class="n">UNTRACKED</span><span class="p">:</span> <span class="n">untracked</span><span class="p">,</span>
+        <span class="n">_DEFS</span><span class="o">.</span><span class="n">CHANGED</span><span class="p">:</span> <span class="n">changed</span><span class="p">,</span>
+        <span class="n">_DEFS</span><span class="o">.</span><span class="n">DELETED</span><span class="p">:</span> <span class="n">deleted</span><span class="p">,</span>
+        <span class="n">_DEFS</span><span class="o">.</span><span class="n">CONFLICTS</span><span class="p">:</span> <span class="n">conflicts</span><span class="p">,</span>
+        <span class="n">_DEFS</span><span class="o">.</span><span class="n">STAGED</span><span class="p">:</span> <span class="n">staged</span><span class="p">,</span>
+    <span class="p">}</span>
 
-    <span class="k">return</span> <span class="n">GitStatus</span><span class="p">(</span>
-        <span class="n">branch</span><span class="p">,</span>
-        <span class="n">num_ahead</span><span class="p">,</span>
-        <span class="n">num_behind</span><span class="p">,</span>
-        <span class="n">untracked</span><span class="p">,</span>
-        <span class="n">changed</span><span class="p">,</span>
-        <span class="n">deleted</span><span class="p">,</span>
-        <span class="n">conflicts</span><span class="p">,</span>
-        <span class="n">staged</span><span class="p">,</span>
-        <span class="n">stashed</span><span class="p">,</span>
-        <span class="n">operations</span><span class="p">,</span>
-    <span class="p">)</span></div>
+
+<div class="viewcode-block" id="get_gitstatus_fields"><a class="viewcode-back" href="../../../api/prompt/gitstatus.html#xonsh.prompt.gitstatus.get_gitstatus_fields">[docs]</a><span class="k">def</span> <span class="nf">get_gitstatus_fields</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;return all shown fields&quot;&quot;&quot;</span>
+    <span class="n">fields</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">keys</span><span class="p">,</span> <span class="n">provider</span> <span class="ow">in</span> <span class="p">(</span>
+        <span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">_DEFS</span><span class="o">.</span><span class="n">BRANCH</span><span class="p">,</span>
+                <span class="n">_DEFS</span><span class="o">.</span><span class="n">AHEAD</span><span class="p">,</span>
+                <span class="n">_DEFS</span><span class="o">.</span><span class="n">BEHIND</span><span class="p">,</span>
+                <span class="n">_DEFS</span><span class="o">.</span><span class="n">UNTRACKED</span><span class="p">,</span>
+                <span class="n">_DEFS</span><span class="o">.</span><span class="n">CHANGED</span><span class="p">,</span>
+                <span class="n">_DEFS</span><span class="o">.</span><span class="n">DELETED</span><span class="p">,</span>
+                <span class="n">_DEFS</span><span class="o">.</span><span class="n">CONFLICTS</span><span class="p">,</span>
+                <span class="n">_DEFS</span><span class="o">.</span><span class="n">STAGED</span><span class="p">,</span>
+            <span class="p">),</span>
+            <span class="n">_get_status_fields</span><span class="p">,</span>
+        <span class="p">),</span>
+        <span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">_DEFS</span><span class="o">.</span><span class="n">OPERATION</span><span class="p">,</span>
+                <span class="n">_DEFS</span><span class="o">.</span><span class="n">STASHED</span><span class="p">,</span>
+            <span class="p">),</span>
+            <span class="n">_get_operation_stashed</span><span class="p">,</span>
+        <span class="p">),</span>
+        <span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">_DEFS</span><span class="o">.</span><span class="n">LINES_ADDED</span><span class="p">,</span>
+                <span class="n">_DEFS</span><span class="o">.</span><span class="n">LINES_REMOVED</span><span class="p">,</span>
+            <span class="p">),</span>
+            <span class="n">_get_files_changed</span><span class="p">,</span>
+        <span class="p">),</span>
+    <span class="p">):</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="ow">not</span> <span class="n">_is_hidden</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">keys</span><span class="p">)):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">fields</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">provider</span><span class="p">())</span>
+            <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">SubprocessError</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">fields</span></div>
 
 
 <div class="viewcode-block" id="gitstatus_prompt"><a class="viewcode-back" href="../../../api/prompt/gitstatus.html#xonsh.prompt.gitstatus.gitstatus_prompt">[docs]</a><span class="k">def</span> <span class="nf">gitstatus_prompt</span><span class="p">():</span>
     <span class="sd">&quot;&quot;&quot;Return str `BRANCH|OPERATOR|numbers`&quot;&quot;&quot;</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="n">s</span> <span class="o">=</span> <span class="n">gitstatus</span><span class="p">()</span>
-    <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">SubprocessError</span><span class="p">:</span>
+    <span class="n">fields</span> <span class="o">=</span> <span class="n">get_gitstatus_fields</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">fields</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">return</span> <span class="kc">None</span>
 
-    <span class="n">ret</span> <span class="o">=</span> <span class="n">_get_def</span><span class="p">(</span><span class="s2">&quot;BRANCH&quot;</span><span class="p">)</span> <span class="o">+</span> <span class="n">s</span><span class="o">.</span><span class="n">branch</span>
-    <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">num_ahead</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="n">ret</span> <span class="o">+=</span> <span class="n">_get_def</span><span class="p">(</span><span class="s2">&quot;AHEAD&quot;</span><span class="p">)</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">num_ahead</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">num_behind</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="n">ret</span> <span class="o">+=</span> <span class="n">_get_def</span><span class="p">(</span><span class="s2">&quot;BEHIND&quot;</span><span class="p">)</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">num_behind</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">operations</span><span class="p">:</span>
-        <span class="n">ret</span> <span class="o">+=</span> <span class="n">_get_def</span><span class="p">(</span><span class="s2">&quot;OPERATION&quot;</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;|&quot;</span> <span class="o">+</span> <span class="s2">&quot;|&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">operations</span><span class="p">)</span>
-    <span class="n">ret</span> <span class="o">+=</span> <span class="s2">&quot;|&quot;</span>
-    <span class="k">for</span> <span class="n">category</span> <span class="ow">in</span> <span class="p">(</span>
-        <span class="s2">&quot;staged&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;conflicts&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;changed&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;deleted&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;untracked&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;stashed&quot;</span><span class="p">,</span>
-    <span class="p">):</span>
-        <span class="n">symbol</span> <span class="o">=</span> <span class="n">_get_def</span><span class="p">(</span><span class="n">category</span><span class="o">.</span><span class="n">upper</span><span class="p">())</span>
-        <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">category</span><span class="p">)</span>
+    <span class="n">ret</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">fld</span> <span class="ow">in</span> <span class="p">(</span><span class="n">_DEFS</span><span class="o">.</span><span class="n">BRANCH</span><span class="p">,</span> <span class="n">_DEFS</span><span class="o">.</span><span class="n">AHEAD</span><span class="p">,</span> <span class="n">_DEFS</span><span class="o">.</span><span class="n">BEHIND</span><span class="p">,</span> <span class="n">_DEFS</span><span class="o">.</span><span class="n">OPERATION</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">_is_hidden</span><span class="p">(</span><span class="n">fld</span><span class="p">):</span>
+            <span class="n">val</span> <span class="o">=</span> <span class="n">fields</span><span class="p">[</span><span class="n">fld</span><span class="p">]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">val</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">ret</span> <span class="o">+=</span> <span class="n">_get_def</span><span class="p">(</span><span class="n">fld</span><span class="p">)</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">ret</span><span class="p">:</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="s2">&quot;|&quot;</span>
+
+    <span class="n">number_flds</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">_DEFS</span><span class="o">.</span><span class="n">STAGED</span><span class="p">,</span>
+        <span class="n">_DEFS</span><span class="o">.</span><span class="n">CONFLICTS</span><span class="p">,</span>
+        <span class="n">_DEFS</span><span class="o">.</span><span class="n">CHANGED</span><span class="p">,</span>
+        <span class="n">_DEFS</span><span class="o">.</span><span class="n">DELETED</span><span class="p">,</span>
+        <span class="n">_DEFS</span><span class="o">.</span><span class="n">UNTRACKED</span><span class="p">,</span>
+        <span class="n">_DEFS</span><span class="o">.</span><span class="n">STASHED</span><span class="p">,</span>
+        <span class="n">_DEFS</span><span class="o">.</span><span class="n">LINES_ADDED</span><span class="p">,</span>
+        <span class="n">_DEFS</span><span class="o">.</span><span class="n">LINES_REMOVED</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">for</span> <span class="n">fld</span> <span class="ow">in</span> <span class="n">number_flds</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">_is_hidden</span><span class="p">(</span><span class="n">fld</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="n">symbol</span> <span class="o">=</span> <span class="n">_get_def</span><span class="p">(</span><span class="n">fld</span><span class="p">)</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">fields</span><span class="p">[</span><span class="n">fld</span><span class="p">]</span>
         <span class="k">if</span> <span class="n">symbol</span> <span class="ow">and</span> <span class="n">value</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="n">ret</span> <span class="o">+=</span> <span class="n">symbol</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span>
-    <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">staged</span> <span class="o">+</span> <span class="n">s</span><span class="o">.</span><span class="n">conflicts</span> <span class="o">+</span> <span class="n">s</span><span class="o">.</span><span class="n">changed</span> <span class="o">+</span> <span class="n">s</span><span class="o">.</span><span class="n">deleted</span> <span class="o">+</span> <span class="n">s</span><span class="o">.</span><span class="n">untracked</span> <span class="o">+</span> <span class="n">s</span><span class="o">.</span><span class="n">stashed</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="n">symbol</span> <span class="o">=</span> <span class="n">_get_def</span><span class="p">(</span><span class="s2">&quot;CLEAN&quot;</span><span class="p">)</span>
+            <span class="n">ret</span> <span class="o">+=</span> <span class="n">symbol</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">+</span> <span class="n">COLORS</span><span class="o">.</span><span class="n">RESET</span>
+    <span class="k">if</span> <span class="nb">sum</span><span class="p">((</span><span class="n">fields</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">fld</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">fld</span> <span class="ow">in</span> <span class="n">number_flds</span><span class="p">))</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_is_hidden</span><span class="p">(</span>
+        <span class="n">_DEFS</span><span class="o">.</span><span class="n">CLEAN</span>
+    <span class="p">):</span>
+        <span class="n">symbol</span> <span class="o">=</span> <span class="n">_get_def</span><span class="p">(</span><span class="n">_DEFS</span><span class="o">.</span><span class="n">CLEAN</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">symbol</span><span class="p">:</span>
-            <span class="n">ret</span> <span class="o">+=</span> <span class="n">symbol</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span>
+            <span class="n">ret</span> <span class="o">+=</span> <span class="n">symbol</span> <span class="o">+</span> <span class="n">COLORS</span><span class="o">.</span><span class="n">RESET</span>
     <span class="n">ret</span> <span class="o">=</span> <span class="n">ret</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;|&quot;</span><span class="p">)</span>
-    <span class="n">ret</span> <span class="o">+=</span> <span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">ret</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">COLORS</span><span class="o">.</span><span class="n">RESET</span><span class="p">):</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">COLORS</span><span class="o">.</span><span class="n">RESET</span>
+
+    <span class="n">ret</span> <span class="o">=</span> <span class="n">ret</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;|&quot;</span><span class="p">,</span> <span class="n">_get_def</span><span class="p">(</span><span class="n">_DEFS</span><span class="o">.</span><span class="n">SEPARATOR</span><span class="p">))</span>
 
     <span class="k">return</span> <span class="n">ret</span></div>
 </pre></div>
@@ -332,7 +402,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../contents.html">xonsh 0.9.26 documentation</a> &#187;</li>
+    <li><a href="../../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.prompt.gitstatus</a></li> 
@@ -342,7 +412,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.5.2.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.0.0.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>

@@ -7,14 +7,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xonsh.xonfig &#8212; xonsh 0.9.26 documentation</title>
-    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
-    <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
+    <title>xonsh.xonfig &#8212; xonsh 0.11.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/numpy_friendly.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
     
-    <script id="documentation_options" data-url_root="../../" src="../../_static/documentation_options.js"></script>
+    <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
     <script src="../../_static/jquery.js"></script>
     <script src="../../_static/underscore.js"></script>
     <script src="../../_static/doctools.js"></script>
@@ -55,7 +55,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.9.26 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.xonfig</a></li> 
@@ -81,9 +81,6 @@
 <span class="kn">import</span> <span class="nn">pprint</span>
 <span class="kn">import</span> <span class="nn">tempfile</span>
 <span class="kn">import</span> <span class="nn">textwrap</span>
-<span class="kn">import</span> <span class="nn">builtins</span>
-<span class="kn">import</span> <span class="nn">argparse</span>
-<span class="kn">import</span> <span class="nn">functools</span>
 <span class="kn">import</span> <span class="nn">itertools</span>
 <span class="kn">import</span> <span class="nn">contextlib</span>
 <span class="kn">import</span> <span class="nn">collections</span>
@@ -93,6 +90,8 @@
 
 <span class="kn">import</span> <span class="nn">xonsh.wizard</span> <span class="k">as</span> <span class="nn">wiz</span>
 <span class="kn">from</span> <span class="nn">xonsh</span> <span class="kn">import</span> <span class="n">__version__</span> <span class="k">as</span> <span class="n">XONSH_VERSION</span>
+<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
+<span class="kn">from</span> <span class="nn">xonsh.cli_utils</span> <span class="kn">import</span> <span class="n">ArgParserAlias</span><span class="p">,</span> <span class="n">Annotated</span><span class="p">,</span> <span class="n">Arg</span><span class="p">,</span> <span class="n">add_args</span>
 <span class="kn">from</span> <span class="nn">xonsh.prompt.base</span> <span class="kn">import</span> <span class="n">is_template_string</span>
 <span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">is_readline_available</span><span class="p">,</span>
@@ -102,6 +101,8 @@
     <span class="n">ON_POSIX</span><span class="p">,</span>
     <span class="n">ON_LINUX</span><span class="p">,</span>
     <span class="n">linux_distro</span><span class="p">,</span>
+    <span class="n">ON_WSL</span><span class="p">,</span>
+    <span class="n">ON_WSL1</span><span class="p">,</span>
     <span class="n">ON_DARWIN</span><span class="p">,</span>
     <span class="n">ON_WINDOWS</span><span class="p">,</span>
     <span class="n">ON_CYGWIN</span><span class="p">,</span>
@@ -153,8 +154,8 @@
 
 <span class="s2">                      {{BOLD_WHITE}}Foreign Shell Setup{{RESET}}</span>
 <span class="s2">                      {{YELLOW}}-------------------{{RESET}}</span>
-<span class="s2">The xonsh shell has the ability to interface with foreign shells such</span>
-<span class="s2">as Bash, or zsh (fish not yet implemented).</span>
+<span class="s2">The xonsh shell has the ability to interface with Bash or zsh</span>
+<span class="s2">via the foreign shell interface.</span>
 
 <span class="s2">For configuration, this means that xonsh can load the environment,</span>
 <span class="s2">aliases, and functions specified in the config files of these shells.</span>
@@ -261,7 +262,7 @@
 
 <span class="k">def</span> <span class="nf">_dump_xonfig_env</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
     <span class="n">name</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">))</span>
-    <span class="n">detyper</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get_detyper</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+    <span class="n">detyper</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get_detyper</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
     <span class="n">dval</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">if</span> <span class="n">detyper</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">detyper</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
     <span class="n">dval</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">if</span> <span class="n">dval</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">dval</span>
     <span class="k">return</span> <span class="s2">&quot;$</span><span class="si">{name}</span><span class="s2"> = </span><span class="si">{val!r}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">val</span><span class="o">=</span><span class="n">dval</span><span class="p">)</span>
@@ -361,7 +362,7 @@
 
 <div class="viewcode-block" id="make_exit_message"><a class="viewcode-back" href="../../api/xonfig.html#xonsh.xonfig.make_exit_message">[docs]</a><span class="k">def</span> <span class="nf">make_exit_message</span><span class="p">():</span>
     <span class="sd">&quot;&quot;&quot;Creates a message for how to exit the wizard.&quot;&quot;&quot;</span>
-    <span class="n">shell_type</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">shell_type</span>
+    <span class="n">shell_type</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">shell_type</span>
     <span class="n">keyseq</span> <span class="o">=</span> <span class="s2">&quot;Ctrl-D&quot;</span> <span class="k">if</span> <span class="n">shell_type</span> <span class="o">==</span> <span class="s2">&quot;readline&quot;</span> <span class="k">else</span> <span class="s2">&quot;Ctrl-C&quot;</span>
     <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;To exit the wizard at any time, press </span><span class="si">{BOLD_UNDERLINE_CYAN}</span><span class="s2">&quot;</span>
     <span class="n">msg</span> <span class="o">+=</span> <span class="n">keyseq</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">.</span><span class="se">\n</span><span class="s2">&quot;</span>
@@ -371,7 +372,7 @@
 
 <div class="viewcode-block" id="make_envvar"><a class="viewcode-back" href="../../api/xonfig.html#xonsh.xonfig.make_envvar">[docs]</a><span class="k">def</span> <span class="nf">make_envvar</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Makes a StoreNonEmpty node for an environment variable.&quot;&quot;&quot;</span>
-    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
     <span class="n">vd</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get_docs</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">vd</span><span class="o">.</span><span class="n">is_configurable</span><span class="p">:</span>
         <span class="k">return</span>
@@ -417,7 +418,7 @@
 
 <div class="viewcode-block" id="make_env_wiz"><a class="viewcode-back" href="../../api/xonfig.html#xonsh.xonfig.make_env_wiz">[docs]</a><span class="k">def</span> <span class="nf">make_env_wiz</span><span class="p">():</span>
     <span class="sd">&quot;&quot;&quot;Makes an environment variable wizard.&quot;&quot;&quot;</span>
-    <span class="n">w</span> <span class="o">=</span> <span class="n">_make_flat_wiz</span><span class="p">(</span><span class="n">make_envvar</span><span class="p">,</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">keys</span><span class="p">()))</span>
+    <span class="n">w</span> <span class="o">=</span> <span class="n">_make_flat_wiz</span><span class="p">(</span><span class="n">make_envvar</span><span class="p">,</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">keys</span><span class="p">()))</span>
     <span class="k">return</span> <span class="n">w</span></div>
 
 
@@ -515,14 +516,25 @@
     <span class="k">return</span> <span class="n">w</span></div>
 
 
-<span class="k">def</span> <span class="nf">_wizard</span><span class="p">(</span><span class="n">ns</span><span class="p">):</span>
-    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
-    <span class="n">shell</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">shell</span>
-    <span class="n">fname</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSHRC&quot;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="n">ns</span><span class="o">.</span><span class="n">file</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">ns</span><span class="o">.</span><span class="n">file</span>
+<span class="k">def</span> <span class="nf">_wizard</span><span class="p">(</span>
+    <span class="n">rcfile</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">confirm</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Launch configurator in terminal</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    -------</span>
+<span class="sd">    rcfile : -f, --file</span>
+<span class="sd">        config file location, default=$XONSHRC</span>
+<span class="sd">    confirm : -c, --confirm</span>
+<span class="sd">        confirm that the wizard should be run.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
+    <span class="n">shell</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">shell</span>
+    <span class="n">xonshrcs</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSHRC&quot;</span><span class="p">,</span> <span class="p">[])</span>
+    <span class="n">fname</span> <span class="o">=</span> <span class="n">xonshrcs</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="n">xonshrcs</span> <span class="ow">and</span> <span class="n">rcfile</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">rcfile</span>
     <span class="n">no_wiz</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_CONFIG_DIR&quot;</span><span class="p">),</span> <span class="s2">&quot;no-wizard&quot;</span><span class="p">)</span>
-    <span class="n">w</span> <span class="o">=</span> <span class="n">make_xonfig_wizard</span><span class="p">(</span>
-        <span class="n">default_file</span><span class="o">=</span><span class="n">fname</span><span class="p">,</span> <span class="n">confirm</span><span class="o">=</span><span class="n">ns</span><span class="o">.</span><span class="n">confirm</span><span class="p">,</span> <span class="n">no_wizard_file</span><span class="o">=</span><span class="n">no_wiz</span>
-    <span class="p">)</span>
+    <span class="n">w</span> <span class="o">=</span> <span class="n">make_xonfig_wizard</span><span class="p">(</span><span class="n">default_file</span><span class="o">=</span><span class="n">fname</span><span class="p">,</span> <span class="n">confirm</span><span class="o">=</span><span class="n">confirm</span><span class="p">,</span> <span class="n">no_wizard_file</span><span class="o">=</span><span class="n">no_wiz</span><span class="p">)</span>
     <span class="n">tempenv</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;PROMPT&quot;</span><span class="p">:</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;XONSH_STORE_STDOUT&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">}</span>
     <span class="n">pv</span> <span class="o">=</span> <span class="n">wiz</span><span class="o">.</span><span class="n">PromptVisitor</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="n">store_in_history</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">multiline</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
@@ -573,9 +585,18 @@
     <span class="k">return</span> <span class="n">s</span>
 
 
-<span class="k">def</span> <span class="nf">_info</span><span class="p">(</span><span class="n">ns</span><span class="p">):</span>
-    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
-    <span class="n">data</span> <span class="o">=</span> <span class="p">[(</span><span class="s2">&quot;xonsh&quot;</span><span class="p">,</span> <span class="n">XONSH_VERSION</span><span class="p">)]</span>
+<span class="k">def</span> <span class="nf">_info</span><span class="p">(</span>
+    <span class="n">to_json</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Displays configuration information</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    to_json : -j, --json</span>
+<span class="sd">        reports results as json</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
+    <span class="n">data</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">List</span><span class="p">[</span><span class="n">tp</span><span class="o">.</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">[(</span><span class="s2">&quot;xonsh&quot;</span><span class="p">,</span> <span class="n">XONSH_VERSION</span><span class="p">)]</span>
     <span class="n">hash_</span><span class="p">,</span> <span class="n">date_</span> <span class="o">=</span> <span class="n">githash</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">hash_</span><span class="p">:</span>
         <span class="n">data</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="s2">&quot;Git SHA&quot;</span><span class="p">,</span> <span class="n">hash_</span><span class="p">))</span>
@@ -587,6 +608,7 @@
             <span class="p">(</span><span class="s2">&quot;have readline&quot;</span><span class="p">,</span> <span class="n">is_readline_available</span><span class="p">()),</span>
             <span class="p">(</span><span class="s2">&quot;prompt toolkit&quot;</span><span class="p">,</span> <span class="n">ptk_version</span><span class="p">()</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">),</span>
             <span class="p">(</span><span class="s2">&quot;shell type&quot;</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;SHELL_TYPE&quot;</span><span class="p">)),</span>
+            <span class="p">(</span><span class="s2">&quot;history backend&quot;</span><span class="p">,</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_HISTORY_BACKEND&quot;</span><span class="p">)),</span>
             <span class="p">(</span><span class="s2">&quot;pygments&quot;</span><span class="p">,</span> <span class="n">pygments_version</span><span class="p">()),</span>
             <span class="p">(</span><span class="s2">&quot;on posix&quot;</span><span class="p">,</span> <span class="nb">bool</span><span class="p">(</span><span class="n">ON_POSIX</span><span class="p">)),</span>
             <span class="p">(</span><span class="s2">&quot;on linux&quot;</span><span class="p">,</span> <span class="nb">bool</span><span class="p">(</span><span class="n">ON_LINUX</span><span class="p">)),</span>
@@ -594,6 +616,9 @@
     <span class="p">)</span>
     <span class="k">if</span> <span class="n">ON_LINUX</span><span class="p">:</span>
         <span class="n">data</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="s2">&quot;distro&quot;</span><span class="p">,</span> <span class="n">linux_distro</span><span class="p">()))</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="s2">&quot;on wsl&quot;</span><span class="p">,</span> <span class="nb">bool</span><span class="p">(</span><span class="n">ON_WSL</span><span class="p">)))</span>
+        <span class="k">if</span> <span class="n">ON_WSL</span><span class="p">:</span>
+            <span class="n">data</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="s2">&quot;wsl version&quot;</span><span class="p">,</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">ON_WSL1</span> <span class="k">else</span> <span class="mi">2</span><span class="p">))</span>
     <span class="n">data</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span>
         <span class="p">[</span>
             <span class="p">(</span><span class="s2">&quot;on darwin&quot;</span><span class="p">,</span> <span class="nb">bool</span><span class="p">(</span><span class="n">ON_DARWIN</span><span class="p">)),</span>
@@ -617,17 +642,25 @@
     <span class="n">data</span><span class="o">.</span><span class="n">extend</span><span class="p">([(</span><span class="s2">&quot;on jupyter&quot;</span><span class="p">,</span> <span class="n">jup_ksm</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;jupyter kernel&quot;</span><span class="p">,</span> <span class="n">jup_kernel</span><span class="p">)])</span>
 
     <span class="n">data</span><span class="o">.</span><span class="n">extend</span><span class="p">([(</span><span class="s2">&quot;xontrib&quot;</span><span class="p">,</span> <span class="n">xontribs_loaded</span><span class="p">())])</span>
+    <span class="n">data</span><span class="o">.</span><span class="n">extend</span><span class="p">([(</span><span class="s2">&quot;RC file&quot;</span><span class="p">,</span> <span class="n">XSH</span><span class="o">.</span><span class="n">rc_files</span><span class="p">)])</span>
 
-    <span class="n">formatter</span> <span class="o">=</span> <span class="n">_xonfig_format_json</span> <span class="k">if</span> <span class="n">ns</span><span class="o">.</span><span class="n">json</span> <span class="k">else</span> <span class="n">_xonfig_format_human</span>
+    <span class="n">formatter</span> <span class="o">=</span> <span class="n">_xonfig_format_json</span> <span class="k">if</span> <span class="n">to_json</span> <span class="k">else</span> <span class="n">_xonfig_format_human</span>
     <span class="n">s</span> <span class="o">=</span> <span class="n">formatter</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">s</span>
 
 
-<span class="k">def</span> <span class="nf">_styles</span><span class="p">(</span><span class="n">ns</span><span class="p">):</span>
-    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
+<span class="k">def</span> <span class="nf">_styles</span><span class="p">(</span><span class="n">to_json</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">_stdout</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Prints available xonsh color styles</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    to_json: -j, --json</span>
+<span class="sd">        reports results as json</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
     <span class="n">curr</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_COLOR_STYLE&quot;</span><span class="p">)</span>
     <span class="n">styles</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">color_style_names</span><span class="p">())</span>
-    <span class="k">if</span> <span class="n">ns</span><span class="o">.</span><span class="n">json</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">to_json</span><span class="p">:</span>
         <span class="n">s</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">styles</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
         <span class="nb">print</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
         <span class="k">return</span>
@@ -638,7 +671,7 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;  &quot;</span> <span class="o">+</span> <span class="n">style</span><span class="p">)</span>
     <span class="n">s</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span>
-    <span class="n">print_color</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+    <span class="n">print_color</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">_stdout</span><span class="p">)</span>
 
 
 <span class="k">def</span> <span class="nf">_str_colors</span><span class="p">(</span><span class="n">cmap</span><span class="p">,</span> <span class="n">cols</span><span class="p">):</span>
@@ -685,41 +718,83 @@
     <span class="k">return</span> <span class="n">toks</span>
 
 
-<span class="k">def</span> <span class="nf">_colors</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
-    <span class="n">columns</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">shutil</span><span class="o">.</span><span class="n">get_terminal_size</span><span class="p">()</span>
-    <span class="n">columns</span> <span class="o">-=</span> <span class="nb">int</span><span class="p">(</span><span class="n">ON_WINDOWS</span><span class="p">)</span>
-    <span class="n">style_stash</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;XONSH_COLOR_STYLE&quot;</span><span class="p">]</span>
+<div class="viewcode-block" id="xonfig_color_completer"><a class="viewcode-back" href="../../api/xonfig.html#xonsh.xonfig.xonfig_color_completer">[docs]</a><span class="k">def</span> <span class="nf">xonfig_color_completer</span><span class="p">(</span><span class="o">*</span><span class="n">_</span><span class="p">,</span> <span class="o">**</span><span class="n">__</span><span class="p">):</span>
+    <span class="k">yield from</span> <span class="n">color_style_names</span><span class="p">()</span></div>
 
-    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">style</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">style</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">color_style_names</span><span class="p">():</span>
-            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Invalid style: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">style</span><span class="p">))</span>
+
+<span class="k">def</span> <span class="nf">_colors</span><span class="p">(</span>
+    <span class="n">style</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Arg</span><span class="p">(</span><span class="n">nargs</span><span class="o">=</span><span class="s2">&quot;?&quot;</span><span class="p">,</span> <span class="n">completer</span><span class="o">=</span><span class="n">xonfig_color_completer</span><span class="p">)]</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Preview color style</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    style</span>
+<span class="sd">        name of the style to preview. If not given, current style name is used.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">columns</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">shutil</span><span class="o">.</span><span class="n">get_terminal_size</span><span class="p">()</span>
+    <span class="n">columns</span> <span class="o">-=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">bool</span><span class="p">(</span><span class="n">ON_WINDOWS</span><span class="p">))</span>
+    <span class="n">style_stash</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;XONSH_COLOR_STYLE&quot;</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">style</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">style</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">color_style_names</span><span class="p">():</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Invalid style: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">style</span><span class="p">))</span>
             <span class="k">return</span>
-        <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;XONSH_COLOR_STYLE&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">style</span>
+        <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;XONSH_COLOR_STYLE&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">style</span>
 
     <span class="n">color_map</span> <span class="o">=</span> <span class="n">color_style</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">color_map</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Empty color map - using non-interactive shell?&quot;</span><span class="p">)</span>
+        <span class="k">return</span>
     <span class="n">akey</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">color_map</span><span class="p">))</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">akey</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
         <span class="n">s</span> <span class="o">=</span> <span class="n">_str_colors</span><span class="p">(</span><span class="n">color_map</span><span class="p">,</span> <span class="n">columns</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">s</span> <span class="o">=</span> <span class="n">_tok_colors</span><span class="p">(</span><span class="n">color_map</span><span class="p">,</span> <span class="n">columns</span><span class="p">)</span>
     <span class="n">print_color</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
-    <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;XONSH_COLOR_STYLE&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">style_stash</span>
+    <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;XONSH_COLOR_STYLE&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">style_stash</span>
 
 
-<span class="k">def</span> <span class="nf">_tutorial</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
+<span class="k">def</span> <span class="nf">_tutorial</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Launch tutorial in browser.&quot;&quot;&quot;</span>
     <span class="kn">import</span> <span class="nn">webbrowser</span>
 
     <span class="n">webbrowser</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="s2">&quot;http://xon.sh/tutorial.html&quot;</span><span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_web</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
+<span class="k">def</span> <span class="nf">_web</span><span class="p">(</span>
+    <span class="n">_args</span><span class="p">,</span>
+    <span class="n">browser</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Launch configurator in browser.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    browser : --nb, --no-browser</span>
+<span class="sd">        don&#39;t open browser</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
     <span class="kn">import</span> <span class="nn">subprocess</span>
 
-    <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">([</span><span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">,</span> <span class="s2">&quot;-m&quot;</span><span class="p">,</span> <span class="s2">&quot;xonsh.webconfig&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">args</span><span class="o">.</span><span class="n">orig_args</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+    <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">([</span><span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">,</span> <span class="s2">&quot;-m&quot;</span><span class="p">,</span> <span class="s2">&quot;xonsh.webconfig&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">_args</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
 
 
-<span class="k">def</span> <span class="nf">_jupyter_kernel</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;Make xonsh available as a Jupyter kernel.&quot;&quot;&quot;</span>
+<span class="k">def</span> <span class="nf">_jupyter_kernel</span><span class="p">(</span>
+    <span class="n">user</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">prefix</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">root</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Generate xonsh kernel for jupyter.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    user : -u, --user</span>
+<span class="sd">        Install kernel spec in user config directory.</span>
+<span class="sd">    prefix : -p, --prefix</span>
+<span class="sd">        Installation prefix for bin, lib, etc.</span>
+<span class="sd">    root : -r, --root</span>
+<span class="sd">        Install relative to this alternate root directory.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="kn">from</span> <span class="nn">jupyter_client.kernelspec</span> <span class="kn">import</span> <span class="n">KernelSpecManager</span><span class="p">,</span> <span class="n">NoSuchKernel</span>
     <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
@@ -727,9 +802,7 @@
 
     <span class="n">ksm</span> <span class="o">=</span> <span class="n">KernelSpecManager</span><span class="p">()</span>
 
-    <span class="n">root</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">root</span>
-    <span class="n">prefix</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">prefix</span> <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">prefix</span> <span class="k">else</span> <span class="n">sys</span><span class="o">.</span><span class="n">prefix</span>
-    <span class="n">user</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">user</span>
+    <span class="n">prefix</span> <span class="o">=</span> <span class="n">prefix</span> <span class="ow">or</span> <span class="n">sys</span><span class="o">.</span><span class="n">prefix</span>
     <span class="n">spec</span> <span class="o">=</span> <span class="p">{</span>
         <span class="s2">&quot;argv&quot;</span><span class="p">:</span> <span class="p">[</span>
             <span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">,</span>
@@ -783,87 +856,25 @@
         <span class="k">return</span> <span class="mi">0</span>
 
 
-<span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-<span class="k">def</span> <span class="nf">_xonfig_create_parser</span><span class="p">():</span>
-    <span class="n">p</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span>
-        <span class="n">prog</span><span class="o">=</span><span class="s2">&quot;xonfig&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Manages xonsh configuration.&quot;</span>
-    <span class="p">)</span>
-    <span class="n">subp</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">add_subparsers</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s2">&quot;action&quot;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s2">&quot;action&quot;</span><span class="p">)</span>
-    <span class="n">info</span> <span class="o">=</span> <span class="n">subp</span><span class="o">.</span><span class="n">add_parser</span><span class="p">(</span>
-        <span class="s2">&quot;info&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;displays configuration information, &quot;</span> <span class="s2">&quot;default action&quot;</span><span class="p">)</span>
-    <span class="p">)</span>
-    <span class="n">info</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--json&quot;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;reports results as json&quot;</span>
-    <span class="p">)</span>
-    <span class="n">web</span> <span class="o">=</span> <span class="n">subp</span><span class="o">.</span><span class="n">add_parser</span><span class="p">(</span><span class="s2">&quot;web&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Launch configurator in browser.&quot;</span><span class="p">)</span>
-    <span class="n">web</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--no-browser&quot;</span><span class="p">,</span>
-        <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_false&quot;</span><span class="p">,</span>
-        <span class="n">dest</span><span class="o">=</span><span class="s2">&quot;browser&quot;</span><span class="p">,</span>
-        <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;don&#39;t open browser&quot;</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="n">wiz</span> <span class="o">=</span> <span class="n">subp</span><span class="o">.</span><span class="n">add_parser</span><span class="p">(</span><span class="s2">&quot;wizard&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Launch configurator in terminal&quot;</span><span class="p">)</span>
-    <span class="n">wiz</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--file&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;config file location, default=$XONSHRC&quot;</span>
-    <span class="p">)</span>
-    <span class="n">wiz</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--confirm&quot;</span><span class="p">,</span>
-        <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span>
-        <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;confirm that the wizard should be run.&quot;</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="n">sty</span> <span class="o">=</span> <span class="n">subp</span><span class="o">.</span><span class="n">add_parser</span><span class="p">(</span><span class="s2">&quot;styles&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;prints available xonsh color styles&quot;</span><span class="p">)</span>
-    <span class="n">sty</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--json&quot;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;reports results as json&quot;</span>
-    <span class="p">)</span>
-    <span class="n">colors</span> <span class="o">=</span> <span class="n">subp</span><span class="o">.</span><span class="n">add_parser</span><span class="p">(</span><span class="s2">&quot;colors&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;preview color style&quot;</span><span class="p">)</span>
-    <span class="n">colors</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;style&quot;</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="s2">&quot;?&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;style to preview, default: &lt;current&gt;&quot;</span>
-    <span class="p">)</span>
-    <span class="n">subp</span><span class="o">.</span><span class="n">add_parser</span><span class="p">(</span><span class="s2">&quot;tutorial&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Launch tutorial in browser.&quot;</span><span class="p">)</span>
-    <span class="n">kern</span> <span class="o">=</span> <span class="n">subp</span><span class="o">.</span><span class="n">add_parser</span><span class="p">(</span><span class="s2">&quot;jupyter-kernel&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Generate xonsh kernel for jupyter.&quot;</span><span class="p">)</span>
-    <span class="n">kern</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--user&quot;</span><span class="p">,</span>
-        <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span>
-        <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Install kernel spec in user config directory.&quot;</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="n">kern</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--root&quot;</span><span class="p">,</span>
-        <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Install relative to this alternate root directory.&quot;</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="n">kern</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;--prefix&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Installation prefix for bin, lib, etc.&quot;</span>
-    <span class="p">)</span>
+<div class="viewcode-block" id="XonfigAlias"><a class="viewcode-back" href="../../api/xonfig.html#xonsh.xonfig.XonfigAlias">[docs]</a><span class="k">class</span> <span class="nc">XonfigAlias</span><span class="p">(</span><span class="n">ArgParserAlias</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Manage xonsh configuration.&quot;&quot;&quot;</span>
 
-    <span class="k">return</span> <span class="n">p</span>
+<div class="viewcode-block" id="XonfigAlias.build"><a class="viewcode-back" href="../../api/xonfig.html#xonsh.xonfig.XonfigAlias.build">[docs]</a>    <span class="k">def</span> <span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">parser</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">create_parser</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s2">&quot;xonfig&quot;</span><span class="p">)</span>
+        <span class="c1"># register as default action</span>
+        <span class="n">add_args</span><span class="p">(</span><span class="n">parser</span><span class="p">,</span> <span class="n">_info</span><span class="p">,</span> <span class="n">allowed_params</span><span class="o">=</span><span class="p">())</span>
+        <span class="n">parser</span><span class="o">.</span><span class="n">add_command</span><span class="p">(</span><span class="n">_info</span><span class="p">)</span>
+        <span class="n">parser</span><span class="o">.</span><span class="n">add_command</span><span class="p">(</span><span class="n">_web</span><span class="p">)</span>
+        <span class="n">parser</span><span class="o">.</span><span class="n">add_command</span><span class="p">(</span><span class="n">_wizard</span><span class="p">)</span>
+        <span class="n">parser</span><span class="o">.</span><span class="n">add_command</span><span class="p">(</span><span class="n">_styles</span><span class="p">)</span>
+        <span class="n">parser</span><span class="o">.</span><span class="n">add_command</span><span class="p">(</span><span class="n">_colors</span><span class="p">)</span>
+        <span class="n">parser</span><span class="o">.</span><span class="n">add_command</span><span class="p">(</span><span class="n">_tutorial</span><span class="p">)</span>
+        <span class="n">parser</span><span class="o">.</span><span class="n">add_command</span><span class="p">(</span><span class="n">_jupyter_kernel</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">parser</span></div></div>
 
 
-<span class="n">XONFIG_MAIN_ACTIONS</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;info&quot;</span><span class="p">:</span> <span class="n">_info</span><span class="p">,</span>
-    <span class="s2">&quot;web&quot;</span><span class="p">:</span> <span class="n">_web</span><span class="p">,</span>
-    <span class="s2">&quot;wizard&quot;</span><span class="p">:</span> <span class="n">_wizard</span><span class="p">,</span>
-    <span class="s2">&quot;styles&quot;</span><span class="p">:</span> <span class="n">_styles</span><span class="p">,</span>
-    <span class="s2">&quot;colors&quot;</span><span class="p">:</span> <span class="n">_colors</span><span class="p">,</span>
-    <span class="s2">&quot;tutorial&quot;</span><span class="p">:</span> <span class="n">_tutorial</span><span class="p">,</span>
-    <span class="s2">&quot;jupyter-kernel&quot;</span><span class="p">:</span> <span class="n">_jupyter_kernel</span><span class="p">,</span>
-<span class="p">}</span>
-
-
-<div class="viewcode-block" id="xonfig_main"><a class="viewcode-back" href="../../api/xonfig.html#xonsh.xonfig.xonfig_main">[docs]</a><span class="k">def</span> <span class="nf">xonfig_main</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;Main xonfig entry point.&quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">args</span> <span class="ow">or</span> <span class="p">(</span>
-        <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">XONFIG_MAIN_ACTIONS</span> <span class="ow">and</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;-h&quot;</span><span class="p">,</span> <span class="s2">&quot;--help&quot;</span><span class="p">}</span>
-    <span class="p">):</span>
-        <span class="n">args</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;info&quot;</span><span class="p">)</span>
-    <span class="n">parser</span> <span class="o">=</span> <span class="n">_xonfig_create_parser</span><span class="p">()</span>
-    <span class="n">ns</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
-    <span class="n">ns</span><span class="o">.</span><span class="n">orig_args</span> <span class="o">=</span> <span class="n">args</span>
-    <span class="k">if</span> <span class="n">ns</span><span class="o">.</span><span class="n">action</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># apply default action</span>
-        <span class="n">ns</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">([</span><span class="s2">&quot;info&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">args</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">XONFIG_MAIN_ACTIONS</span><span class="p">[</span><span class="n">ns</span><span class="o">.</span><span class="n">action</span><span class="p">](</span><span class="n">ns</span><span class="p">)</span></div>
+<span class="n">xonfig_main</span> <span class="o">=</span> <span class="n">XonfigAlias</span><span class="p">()</span>
 
 
 <span class="nd">@lazyobject</span>
@@ -872,7 +883,7 @@
 
 
 <span class="k">def</span> <span class="nf">_align_string</span><span class="p">(</span><span class="n">string</span><span class="p">,</span> <span class="n">align</span><span class="o">=</span><span class="s2">&quot;&lt;&quot;</span><span class="p">,</span> <span class="n">fill</span><span class="o">=</span><span class="s2">&quot; &quot;</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="mi">80</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot; Align and pad a color formatted string &quot;&quot;&quot;</span>
+    <span class="sd">&quot;&quot;&quot;Align and pad a color formatted string&quot;&quot;&quot;</span>
     <span class="n">linelen</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">STRIP_COLOR_RE</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">string</span><span class="p">))</span>
     <span class="n">padlen</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">width</span> <span class="o">-</span> <span class="n">linelen</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">align</span> <span class="o">==</span> <span class="s2">&quot;^&quot;</span><span class="p">:</span>
@@ -899,7 +910,6 @@
         <span class="s2">&quot;Piggy glanced nervously into hell and cradled the xonsh&quot;</span><span class="p">,</span>
         <span class="s2">&quot;The xonsh is a symbol&quot;</span><span class="p">,</span>
         <span class="s2">&quot;It is pronounced conch&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;The shell, bourne again&quot;</span><span class="p">,</span>
         <span class="s2">&quot;Snailed it&quot;</span><span class="p">,</span>
         <span class="s2">&quot;Starfish loves you&quot;</span><span class="p">,</span>
         <span class="s2">&quot;Come snail away&quot;</span><span class="p">,</span>
@@ -920,21 +930,20 @@
         <span class="s2">&quot;Python-powered, cross-platform, Unix-gazing shell&quot;</span><span class="p">,</span>
         <span class="s2">&quot;Tab completion in Alderaan places&quot;</span><span class="p">,</span>
         <span class="s2">&quot;This fix was trickier than expected&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;The unholy cross of Bash/Python&quot;</span><span class="p">,</span>
     <span class="p">]</span>
 
 
 <span class="c1"># list of strings or tuples (string, align, fill)</span>
 <span class="n">WELCOME_MSG</span> <span class="o">=</span> <span class="p">[</span>
     <span class="s2">&quot;&quot;</span><span class="p">,</span>
-    <span class="p">(</span><span class="s2">&quot;{{INTENSE_WHITE}}Welcome to the xonsh shell (</span><span class="si">{version}</span><span class="s2">){{RESET}}&quot;</span><span class="p">,</span> <span class="s2">&quot;^&quot;</span><span class="p">,</span> <span class="s2">&quot; &quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;Welcome to the xonsh shell </span><span class="si">{version}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot;^&quot;</span><span class="p">,</span> <span class="s2">&quot; &quot;</span><span class="p">),</span>
     <span class="s2">&quot;&quot;</span><span class="p">,</span>
     <span class="p">(</span><span class="s2">&quot;{{INTENSE_RED}}~{{RESET}} </span><span class="si">{tagline}</span><span class="s2"> {{INTENSE_RED}}~{{RESET}}&quot;</span><span class="p">,</span> <span class="s2">&quot;^&quot;</span><span class="p">,</span> <span class="s2">&quot; &quot;</span><span class="p">),</span>
     <span class="s2">&quot;&quot;</span><span class="p">,</span>
     <span class="p">(</span><span class="s2">&quot;{{INTENSE_BLACK}}&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;&quot;</span><span class="p">,</span> <span class="s2">&quot;-&quot;</span><span class="p">),</span>
     <span class="s2">&quot;&quot;</span><span class="p">,</span>
     <span class="p">(</span>
-        <span class="s2">&quot;{{INTENSE_BLACK}}Create ~/.xonshrc file manually or use xonfig to suppress the welcome screen&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;{{INTENSE_BLACK}}Create ~/.xonshrc file manually or use xonfig to suppress the welcome message&quot;</span><span class="p">,</span>
         <span class="s2">&quot;^&quot;</span><span class="p">,</span>
         <span class="s2">&quot; &quot;</span><span class="p">,</span>
     <span class="p">),</span>
@@ -942,6 +951,7 @@
     <span class="s2">&quot;{{INTENSE_BLACK}}Start from commands:&quot;</span><span class="p">,</span>
     <span class="s2">&quot;  {{GREEN}}xonfig{{RESET}} web         {{INTENSE_BLACK}}# Run the configuration tool in the browser to create ~/.xonshrc {{RESET}}&quot;</span><span class="p">,</span>
     <span class="s2">&quot;  {{GREEN}}xonfig{{RESET}} tutorial    {{INTENSE_BLACK}}# Open the xonsh tutorial in the browser{{RESET}}&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;[SHELL_TYPE_WARNING]&quot;</span><span class="p">,</span>
     <span class="s2">&quot;&quot;</span><span class="p">,</span>
     <span class="p">(</span><span class="s2">&quot;{{INTENSE_BLACK}}&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;&quot;</span><span class="p">,</span> <span class="s2">&quot;-&quot;</span><span class="p">),</span>
     <span class="s2">&quot;&quot;</span><span class="p">,</span>
@@ -949,14 +959,24 @@
 
 
 <div class="viewcode-block" id="print_welcome_screen"><a class="viewcode-back" href="../../api/xonfig.html#xonsh.xonfig.print_welcome_screen">[docs]</a><span class="k">def</span> <span class="nf">print_welcome_screen</span><span class="p">():</span>
+    <span class="n">shell_type</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;SHELL_TYPE&quot;</span><span class="p">)</span>
     <span class="n">subst</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">tagline</span><span class="o">=</span><span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">TAGLINES</span><span class="p">)),</span> <span class="n">version</span><span class="o">=</span><span class="n">XONSH_VERSION</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="n">WELCOME_MSG</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">elem</span> <span class="o">==</span> <span class="s2">&quot;[SHELL_TYPE_WARNING]&quot;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">shell_type</span> <span class="o">!=</span> <span class="s2">&quot;prompt_toolkit&quot;</span><span class="p">:</span>
+                <span class="n">print_color</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n{{</span><span class="s2">INTENSE_BLACK</span><span class="se">}}</span><span class="s2">You are currently using the </span><span class="si">{</span><span class="n">shell_type</span><span class="si">}</span><span class="s2"> backend. &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;For interactive tab-completion, on-the-fly syntax highlighting, and more, install prompt_toolkit by running:</span><span class="se">\n\n</span><span class="s2">&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;  </span><span class="se">{{</span><span class="s2">GREEN</span><span class="se">}}</span><span class="s2">xpip</span><span class="se">{{</span><span class="s2">RESET</span><span class="se">}}</span><span class="s2"> install -U &#39;xonsh[full]&#39;&quot;</span>
+                <span class="p">)</span>
+            <span class="k">continue</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">elem</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
             <span class="n">elem</span> <span class="o">=</span> <span class="p">(</span><span class="n">elem</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
         <span class="n">line</span> <span class="o">=</span> <span class="n">elem</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="o">**</span><span class="n">subst</span><span class="p">)</span>
         <span class="n">termwidth</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">get_terminal_size</span><span class="p">()</span><span class="o">.</span><span class="n">columns</span>
         <span class="n">line</span> <span class="o">=</span> <span class="n">_align_string</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">elem</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">elem</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">width</span><span class="o">=</span><span class="n">termwidth</span><span class="p">)</span>
-        <span class="n">print_color</span><span class="p">(</span><span class="n">line</span><span class="p">)</span></div>
+        <span class="n">print_color</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+    <span class="n">print_color</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span></div>
 </pre></div>
 
             <div class="clearer"></div>
@@ -1010,7 +1030,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.9.26 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.xonfig</a></li> 
@@ -1020,7 +1040,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.5.2.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.0.0.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>

@@ -7,14 +7,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xonsh.completer &#8212; xonsh 0.9.26 documentation</title>
-    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
-    <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
+    <title>xonsh.completer &#8212; xonsh 0.11.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/numpy_friendly.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
     
-    <script id="documentation_options" data-url_root="../../" src="../../_static/documentation_options.js"></script>
+    <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
     <script src="../../_static/jquery.js"></script>
     <script src="../../_static/underscore.js"></script>
     <script src="../../_static/doctools.js"></script>
@@ -55,7 +55,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.9.26 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.completer</a></li> 
@@ -72,16 +72,38 @@
   <h1>Source code for xonsh.completer</h1><div class="highlight"><pre>
 <span></span><span class="c1"># -*- coding: utf-8 -*-</span>
 <span class="sd">&quot;&quot;&quot;A (tab-)completer for xonsh.&quot;&quot;&quot;</span>
-<span class="kn">import</span> <span class="nn">builtins</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">typing</span> <span class="k">as</span> <span class="nn">tp</span>
 <span class="kn">import</span> <span class="nn">collections.abc</span> <span class="k">as</span> <span class="nn">cabc</span>
 
+<span class="kn">from</span> <span class="nn">xonsh.completers.tools</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">is_contextual_completer</span><span class="p">,</span>
+    <span class="n">Completion</span><span class="p">,</span>
+    <span class="n">RichCompletion</span><span class="p">,</span>
+    <span class="n">apply_lprefix</span><span class="p">,</span>
+    <span class="n">is_exclusive_completer</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
+<span class="kn">from</span> <span class="nn">xonsh.parsers.completion_context</span> <span class="kn">import</span> <span class="n">CompletionContext</span><span class="p">,</span> <span class="n">CompletionContextParser</span>
 <span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="n">print_exception</span>
 
 
 <div class="viewcode-block" id="Completer"><a class="viewcode-back" href="../../api/completer.html#xonsh.completer.Completer">[docs]</a><span class="k">class</span> <span class="nc">Completer</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;This provides a list of optional completions for the xonsh shell.&quot;&quot;&quot;</span>
 
-<div class="viewcode-block" id="Completer.complete"><a class="viewcode-back" href="../../api/completer.html#xonsh.completer.Completer.complete">[docs]</a>    <span class="k">def</span> <span class="nf">complete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prefix</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">begidx</span><span class="p">,</span> <span class="n">endidx</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">context_parser</span> <span class="o">=</span> <span class="n">CompletionContextParser</span><span class="p">()</span>
+
+<div class="viewcode-block" id="Completer.complete"><a class="viewcode-back" href="../../api/completer.html#xonsh.completer.Completer.complete">[docs]</a>    <span class="k">def</span> <span class="nf">complete</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">prefix</span><span class="p">,</span>
+        <span class="n">line</span><span class="p">,</span>
+        <span class="n">begidx</span><span class="p">,</span>
+        <span class="n">endidx</span><span class="p">,</span>
+        <span class="n">ctx</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">multiline_text</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">cursor_index</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Complete the string, given a possible execution context.</span>
 
 <span class="sd">        Parameters</span>
@@ -94,8 +116,14 @@
 <span class="sd">            The index in line that prefix starts on.</span>
 <span class="sd">        endidx : int</span>
 <span class="sd">            The index in line that prefix ends on.</span>
-<span class="sd">        ctx : Iterable of str (ie dict, set, etc), optional</span>
+<span class="sd">        ctx : dict, optional</span>
 <span class="sd">            Names in the current execution context.</span>
+<span class="sd">        multiline_text : str</span>
+<span class="sd">            The complete multiline text. Needed to get completion context.</span>
+<span class="sd">        cursor_index : int</span>
+<span class="sd">            The current cursor&#39;s index in the multiline text.</span>
+<span class="sd">            May be ``len(multiline_text)`` for cursor at the end.</span>
+<span class="sd">            Needed to get completion context.</span>
 
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
@@ -104,31 +132,169 @@
 <span class="sd">        lprefix : int</span>
 <span class="sd">            Length of the prefix to be replaced in the completion.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="n">multiline_text</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">cursor_index</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">completion_context</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Optional</span><span class="p">[</span>
+                <span class="n">CompletionContext</span>
+            <span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">context_parser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span>
+                <span class="n">multiline_text</span><span class="p">,</span>
+                <span class="n">cursor_index</span><span class="p">,</span>
+                <span class="n">ctx</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">completion_context</span> <span class="o">=</span> <span class="kc">None</span>
+
         <span class="n">ctx</span> <span class="o">=</span> <span class="n">ctx</span> <span class="ow">or</span> <span class="p">{}</span>
-        <span class="k">for</span> <span class="n">func</span> <span class="ow">in</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">completers</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">complete_from_context</span><span class="p">(</span>
+            <span class="n">completion_context</span><span class="p">,</span>
+            <span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">begidx</span><span class="p">,</span> <span class="n">endidx</span><span class="p">,</span> <span class="n">ctx</span><span class="p">),</span>
+        <span class="p">)</span></div>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_format_completion</span><span class="p">(</span>
+        <span class="n">completion</span><span class="p">,</span>
+        <span class="n">completion_context</span><span class="p">,</span>
+        <span class="n">completing_contextual_command</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+        <span class="n">lprefix</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">custom_lprefix</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">tp</span><span class="o">.</span><span class="n">Tuple</span><span class="p">[</span><span class="n">Completion</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">completing_contextual_command</span>
+            <span class="ow">and</span> <span class="n">completion_context</span><span class="o">.</span><span class="n">command</span><span class="o">.</span><span class="n">is_after_closing_quote</span>
+        <span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">            The cursor is appending to a closed string literal, i.e. cursor at the end of ``ls &quot;/usr/&quot;``.</span>
+<span class="sd">            1. The closing quote will be appended to all completions.</span>
+<span class="sd">                I.e the completion ``/usr/bin`` will turn into ``/usr/bin&quot;``</span>
+<span class="sd">                To prevent this behavior, a completer can return a ``RichCompletion`` with ``append_closing_quote=False``.</span>
+<span class="sd">            2. If not specified, lprefix will cover the closing prefix.</span>
+<span class="sd">                I.e for ``ls &quot;/usr/&quot;``, the default lprefix will be 6 to include the closing quote.</span>
+<span class="sd">                To prevent this behavior, a completer can return a different lprefix or specify it inside ``RichCompletion``.</span>
+<span class="sd">            &quot;&quot;&quot;</span>
+            <span class="n">closing_quote</span> <span class="o">=</span> <span class="n">completion_context</span><span class="o">.</span><span class="n">command</span><span class="o">.</span><span class="n">closing_quote</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">custom_lprefix</span><span class="p">:</span>
+                <span class="n">lprefix</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">closing_quote</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">closing_quote</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">completion</span><span class="p">,</span> <span class="n">RichCompletion</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="n">completion</span><span class="o">.</span><span class="n">append_closing_quote</span><span class="p">:</span>
+                        <span class="n">completion</span> <span class="o">=</span> <span class="n">completion</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span>
+                            <span class="n">value</span><span class="o">=</span><span class="n">completion</span><span class="o">.</span><span class="n">value</span> <span class="o">+</span> <span class="n">closing_quote</span>
+                        <span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">completion</span> <span class="o">=</span> <span class="n">completion</span> <span class="o">+</span> <span class="n">closing_quote</span>
+
+        <span class="n">completion</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">apply_lprefix</span><span class="p">([</span><span class="n">completion</span><span class="p">],</span> <span class="n">lprefix</span><span class="p">))[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="nb">isinstance</span><span class="p">(</span><span class="n">completion</span><span class="p">,</span> <span class="n">RichCompletion</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="n">completion</span><span class="o">.</span><span class="n">append_space</span>
+            <span class="ow">and</span> <span class="ow">not</span> <span class="n">completion</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">)</span>
+        <span class="p">):</span>
+            <span class="c1"># append spaces AFTER appending closing quote</span>
+            <span class="n">completion</span> <span class="o">=</span> <span class="n">completion</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="n">completion</span><span class="o">.</span><span class="n">value</span> <span class="o">+</span> <span class="s2">&quot; &quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">completion</span><span class="p">,</span> <span class="n">lprefix</span>
+
+<div class="viewcode-block" id="Completer.generate_completions"><a class="viewcode-back" href="../../api/completer.html#xonsh.completer.Completer.generate_completions">[docs]</a>    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">generate_completions</span><span class="p">(</span>
+        <span class="n">completion_context</span><span class="p">,</span> <span class="n">old_completer_args</span><span class="p">,</span> <span class="n">trace</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">tp</span><span class="o">.</span><span class="n">Iterator</span><span class="p">[</span><span class="n">tp</span><span class="o">.</span><span class="n">Tuple</span><span class="p">[</span><span class="n">Completion</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">func</span> <span class="ow">in</span> <span class="n">XSH</span><span class="o">.</span><span class="n">completers</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="n">out</span> <span class="o">=</span> <span class="n">func</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">begidx</span><span class="p">,</span> <span class="n">endidx</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">is_contextual_completer</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="n">completion_context</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="n">out</span> <span class="o">=</span> <span class="n">func</span><span class="p">(</span><span class="n">completion_context</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">old_completer_args</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="n">out</span> <span class="o">=</span> <span class="n">func</span><span class="p">(</span><span class="o">*</span><span class="n">old_completer_args</span><span class="p">)</span>
             <span class="k">except</span> <span class="ne">StopIteration</span><span class="p">:</span>
-                <span class="k">return</span> <span class="nb">set</span><span class="p">(),</span> <span class="nb">len</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
+                <span class="c1"># completer requested to stop collecting completions</span>
+                <span class="k">break</span>
             <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
                 <span class="n">print_exception</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Completer </span><span class="si">{</span><span class="n">func</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> raises exception when get &quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;(prefix=</span><span class="si">{</span><span class="nb">repr</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span><span class="si">}</span><span class="s2">, line=</span><span class="si">{</span><span class="nb">repr</span><span class="p">(</span><span class="n">line</span><span class="p">)</span><span class="si">}</span><span class="s2">, begidx=</span><span class="si">{</span><span class="nb">repr</span><span class="p">(</span><span class="n">begidx</span><span class="p">)</span><span class="si">}</span><span class="s2">, endidx=</span><span class="si">{</span><span class="nb">repr</span><span class="p">(</span><span class="n">endidx</span><span class="p">)</span><span class="si">}</span><span class="s2">):</span><span class="se">\n</span><span class="s2">&quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;Completer </span><span class="si">{</span><span class="n">func</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> raises exception when gets &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;old_args=</span><span class="si">{</span><span class="n">old_completer_args</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2"> / completion_context=</span><span class="si">{</span><span class="n">completion_context</span><span class="si">!r}</span><span class="s2">:</span><span class="se">\n</span><span class="s2">&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="si">}</span><span class="s2"> - </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span>
                 <span class="p">)</span>
-                <span class="k">return</span> <span class="nb">set</span><span class="p">(),</span> <span class="nb">len</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
+                <span class="k">continue</span>
+
+            <span class="n">completing_contextual_command</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">is_contextual_completer</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
+                <span class="ow">and</span> <span class="n">completion_context</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="ow">and</span> <span class="n">completion_context</span><span class="o">.</span><span class="n">command</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="p">)</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Sequence</span><span class="p">):</span>
                 <span class="n">res</span><span class="p">,</span> <span class="n">lprefix</span> <span class="o">=</span> <span class="n">out</span>
+                <span class="n">custom_lprefix</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">res</span> <span class="o">=</span> <span class="n">out</span>
-                <span class="n">lprefix</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">res</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">custom_lprefix</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="k">if</span> <span class="n">completing_contextual_command</span><span class="p">:</span>
+                    <span class="n">lprefix</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">completion_context</span><span class="o">.</span><span class="n">command</span><span class="o">.</span><span class="n">prefix</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="n">old_completer_args</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">lprefix</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">old_completer_args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">lprefix</span> <span class="o">=</span> <span class="mi">0</span>
 
-                <span class="k">def</span> <span class="nf">sortkey</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
-                    <span class="k">return</span> <span class="n">s</span><span class="o">.</span><span class="n">lstrip</span><span class="p">(</span><span class="s1">&#39;&#39;&#39;&#39;&quot;&#39;&#39;&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">res</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
 
-                <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">res</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">sortkey</span><span class="p">)),</span> <span class="n">lprefix</span>
-        <span class="k">return</span> <span class="nb">set</span><span class="p">(),</span> <span class="n">lprefix</span></div></div>
+            <span class="n">items</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="n">res</span><span class="p">:</span>
+                <span class="n">comp</span> <span class="o">=</span> <span class="n">Completer</span><span class="o">.</span><span class="n">_format_completion</span><span class="p">(</span>
+                    <span class="n">comp</span><span class="p">,</span>
+                    <span class="n">completion_context</span><span class="p">,</span>
+                    <span class="n">completing_contextual_command</span><span class="p">,</span>
+                    <span class="n">lprefix</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">,</span>
+                    <span class="n">custom_lprefix</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">items</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">comp</span><span class="p">)</span>
+                <span class="k">yield</span> <span class="n">comp</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">items</span><span class="p">:</span>  <span class="c1"># empty completion</span>
+                <span class="k">continue</span>
+
+            <span class="k">if</span> <span class="n">trace</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;TRACE COMPLETIONS: Got </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">items</span><span class="p">)</span><span class="si">}</span><span class="s2"> results&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot; from </span><span class="si">{</span><span class="s1">&#39;&#39;</span> <span class="k">if</span> <span class="n">is_exclusive_completer</span><span class="p">(</span><span class="n">func</span><span class="p">)</span> <span class="k">else</span> <span class="s1">&#39;non-&#39;</span><span class="si">}</span><span class="s2">exclusive completer &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39;:&quot;</span>
+                <span class="p">)</span>
+                <span class="n">sys</span><span class="o">.</span><span class="n">displayhook</span><span class="p">(</span><span class="n">items</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">is_exclusive_completer</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+                <span class="c1"># we got completions for an exclusive completer</span>
+                <span class="k">break</span></div>
+
+<div class="viewcode-block" id="Completer.complete_from_context"><a class="viewcode-back" href="../../api/completer.html#xonsh.completer.Completer.complete_from_context">[docs]</a>    <span class="k">def</span> <span class="nf">complete_from_context</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">completion_context</span><span class="p">,</span> <span class="n">old_completer_args</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">trace</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_TRACE_COMPLETIONS&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">trace</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">TRACE COMPLETIONS: Getting completions with context:&quot;</span><span class="p">)</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">displayhook</span><span class="p">(</span><span class="n">completion_context</span><span class="p">)</span>
+        <span class="n">lprefix</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">completions</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">query_limit</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;COMPLETION_QUERY_LIMIT&quot;</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">generate_completions</span><span class="p">(</span>
+            <span class="n">completion_context</span><span class="p">,</span>
+            <span class="n">old_completer_args</span><span class="p">,</span>
+            <span class="n">trace</span><span class="p">,</span>
+        <span class="p">):</span>
+            <span class="n">completion</span><span class="p">,</span> <span class="n">lprefix</span> <span class="o">=</span> <span class="n">comp</span>
+            <span class="n">completions</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">completion</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">query_limit</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">completions</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">query_limit</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">trace</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span>
+                        <span class="s2">&quot;TRACE COMPLETIONS: Stopped after $COMPLETION_QUERY_LIMIT reached.&quot;</span>
+                    <span class="p">)</span>
+                <span class="k">break</span>
+
+        <span class="k">def</span> <span class="nf">sortkey</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">s</span><span class="o">.</span><span class="n">lstrip</span><span class="p">(</span><span class="s1">&#39;&#39;&#39;&#39;&quot;&#39;&#39;&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+
+        <span class="c1"># the last completer&#39;s lprefix is returned. other lprefix values are inside the RichCompletions.</span>
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">completions</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">sortkey</span><span class="p">)),</span> <span class="n">lprefix</span></div></div>
 </pre></div>
 
             <div class="clearer"></div>
@@ -182,7 +348,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.9.26 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.completer</a></li> 
@@ -192,7 +358,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.5.2.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.0.0.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>

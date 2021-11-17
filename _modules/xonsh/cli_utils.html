@@ -7,14 +7,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xonsh.cli_utils &#8212; xonsh 0.9.26 documentation</title>
-    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
-    <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
+    <title>xonsh.cli_utils &#8212; xonsh 0.11.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/numpy_friendly.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
     
-    <script id="documentation_options" data-url_root="../../" src="../../_static/documentation_options.js"></script>
+    <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
     <script src="../../_static/jquery.js"></script>
     <script src="../../_static/underscore.js"></script>
     <script src="../../_static/doctools.js"></script>
@@ -55,7 +55,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.9.26 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.cli_utils</a></li> 
@@ -71,113 +71,467 @@
             
   <h1>Source code for xonsh.cli_utils</h1><div class="highlight"><pre>
 <span></span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">small functions to create argparser CLI from functions.</span>
+<span class="sd">helper functions and classes to create argparse CLI from functions.</span>
+
+<span class="sd">Examples</span>
+<span class="sd"> please see :py:class:`xonsh.completers.completer.CompleterAlias` class</span>
 <span class="sd">&quot;&quot;&quot;</span>
 
 <span class="kn">import</span> <span class="nn">argparse</span> <span class="k">as</span> <span class="nn">ap</span>
+<span class="kn">import</span> <span class="nn">inspect</span>
 <span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">sys</span>
 <span class="kn">import</span> <span class="nn">typing</span> <span class="k">as</span> <span class="nn">tp</span>
+<span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">defaultdict</span>
+
+<span class="n">TYPING_ANNOTATED_AVAILABLE</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="sd">&quot;&quot;&quot;One can import ``Annotated`` from this module</span>
+<span class="sd">which adds a stub when it is not available in ``typing``/``typing_extensions`` modules.&quot;&quot;&quot;</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Annotated</span>  <span class="c1"># noqa</span>
+
+    <span class="n">TYPING_ANNOTATED_AVAILABLE</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span> <span class="nn">typing_extensions</span> <span class="kn">import</span> <span class="n">Annotated</span>  <span class="c1"># type: ignore</span>
+
+        <span class="n">TYPING_ANNOTATED_AVAILABLE</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+        <span class="n">T</span> <span class="o">=</span> <span class="n">tp</span><span class="o">.</span><span class="n">TypeVar</span><span class="p">(</span><span class="s2">&quot;T&quot;</span><span class="p">)</span>  <span class="c1"># Declare type variable</span>
+
+        <span class="k">class</span> <span class="nc">_AnnotatedMeta</span><span class="p">(</span><span class="nb">type</span><span class="p">):</span>
+            <span class="k">def</span> <span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Tuple</span><span class="p">[</span><span class="n">T</span><span class="p">,</span> <span class="n">tp</span><span class="o">.</span><span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">T</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">tp</span><span class="o">.</span><span class="n">TYPE_CHECKING</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">item</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+                <span class="k">return</span> <span class="n">item</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="k">class</span> <span class="nc">Annotated</span><span class="p">(</span><span class="n">metaclass</span><span class="o">=</span><span class="n">_AnnotatedMeta</span><span class="p">):</span>  <span class="c1"># type: ignore</span>
+            <span class="k">pass</span>
 
 
-<div class="viewcode-block" id="_get_func_doc"><a class="viewcode-back" href="../../api/cli_utils.html#xonsh.cli_utils._get_func_doc">[docs]</a><span class="k">def</span> <span class="nf">_get_func_doc</span><span class="p">(</span><span class="n">doc</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-    <span class="n">lines</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
-    <span class="k">if</span> <span class="s2">&quot;Parameters&quot;</span> <span class="ow">in</span> <span class="n">lines</span><span class="p">:</span>
-        <span class="n">idx</span> <span class="o">=</span> <span class="n">lines</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">&quot;Parameters&quot;</span><span class="p">)</span>
-        <span class="n">lines</span> <span class="o">=</span> <span class="n">lines</span><span class="p">[:</span><span class="n">idx</span><span class="p">]</span>
-    <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">linesep</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span></div>
+<span class="k">class</span> <span class="nc">ArgCompleter</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Gives a structure to the argparse completers&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;return dynamic completers for the given action.&quot;&quot;&quot;</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span>
 
 
-<div class="viewcode-block" id="_from_index_of"><a class="viewcode-back" href="../../api/cli_utils.html#xonsh.cli_utils._from_index_of">[docs]</a><span class="k">def</span> <span class="nf">_from_index_of</span><span class="p">(</span><span class="n">container</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-    <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">container</span><span class="p">:</span>
-        <span class="n">idx</span> <span class="o">=</span> <span class="n">container</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">idx</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">container</span><span class="p">):</span>
-            <span class="k">return</span> <span class="n">container</span><span class="p">[</span><span class="n">idx</span> <span class="o">+</span> <span class="mi">1</span> <span class="p">:]</span>
-    <span class="k">return</span> <span class="p">[]</span></div>
+<div class="viewcode-block" id="Arg"><a class="viewcode-back" href="../../api/cli_utils.html#xonsh.cli_utils.Arg">[docs]</a><span class="k">def</span> <span class="nf">Arg</span><span class="p">(</span>
+    <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">completer</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Union</span><span class="p">[</span><span class="n">ArgCompleter</span><span class="p">,</span> <span class="n">tp</span><span class="o">.</span><span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">tp</span><span class="o">.</span><span class="n">Iterator</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+<span class="p">):</span>
+    <span class="c1"># converting to tuple because of limitation with hashing args in py3.6</span>
+    <span class="c1"># after dropping py36 support, the dict can be returned</span>
+    <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;completer&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">completer</span>
+    <span class="k">return</span> <span class="n">args</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">kwargs</span><span class="o">.</span><span class="n">items</span><span class="p">())</span></div>
 
 
-<div class="viewcode-block" id="_get_param_doc"><a class="viewcode-back" href="../../api/cli_utils.html#xonsh.cli_utils._get_param_doc">[docs]</a><span class="k">def</span> <span class="nf">_get_param_doc</span><span class="p">(</span><span class="n">doc</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">param</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-    <span class="n">lines</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">splitlines</span><span class="p">())</span>
-    <span class="k">if</span> <span class="s2">&quot;Parameters&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">lines</span><span class="p">:</span>
-        <span class="k">return</span> <span class="s2">&quot;&quot;</span>
+<div class="viewcode-block" id="NumpyDoc"><a class="viewcode-back" href="../../api/cli_utils.html#xonsh.cli_utils.NumpyDoc">[docs]</a><span class="k">class</span> <span class="nc">NumpyDoc</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Represent parsed function docstring&quot;&quot;&quot;</span>
 
-    <span class="n">par_doc</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">lin</span> <span class="ow">in</span> <span class="n">_from_index_of</span><span class="p">(</span><span class="n">lines</span><span class="p">,</span> <span class="n">param</span><span class="p">):</span>
-        <span class="k">if</span> <span class="n">lin</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">lin</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">):</span>
-            <span class="k">break</span>
-        <span class="n">par_doc</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">lin</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">linesep</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">par_doc</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span></div>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">func</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Parse the function docstring and return its help content</span>
 
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        func</span>
+<span class="sd">            a callable/object that holds docstring</span>
+<span class="sd">        &quot;&quot;&quot;</span>
 
-<div class="viewcode-block" id="get_doc"><a class="viewcode-back" href="../../api/cli_utils.html#xonsh.cli_utils.get_doc">[docs]</a><span class="k">def</span> <span class="nf">get_doc</span><span class="p">(</span><span class="n">func</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Callable</span><span class="p">,</span> <span class="n">parameter</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;Parse the function docstring and return its help content</span>
+        <span class="n">doc</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getdoc</span><span class="p">(</span><span class="n">func</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">description</span><span class="p">,</span> <span class="n">rest</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_func_doc</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
 
-<span class="sd">    Parameters</span>
-<span class="sd">    ----------</span>
-<span class="sd">    func</span>
-<span class="sd">        a callable object that holds docstring</span>
-<span class="sd">    parameter</span>
-<span class="sd">        name of the function parameter to parse doc for</span>
+        <span class="n">params</span><span class="p">,</span> <span class="n">rest</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_param_doc</span><span class="p">(</span><span class="n">rest</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">params</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">flags</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">head</span><span class="p">,</span> <span class="n">lines</span> <span class="ow">in</span> <span class="n">params</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">parts</span> <span class="o">=</span> <span class="p">[</span><span class="n">st</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">st</span> <span class="ow">in</span> <span class="n">head</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)]</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+                <span class="n">name</span><span class="p">,</span> <span class="n">flag</span> <span class="o">=</span> <span class="n">parts</span>
+                <span class="k">if</span> <span class="n">flag</span> <span class="ow">and</span> <span class="n">flag</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;-&quot;</span><span class="p">):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">flags</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">st</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">st</span> <span class="ow">in</span> <span class="n">flag</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">)]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">name</span> <span class="o">=</span> <span class="n">parts</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
 
-<span class="sd">    Returns</span>
-<span class="sd">    -------</span>
-<span class="sd">    str</span>
-<span class="sd">        doc of the parameter/function</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="kn">import</span> <span class="nn">inspect</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span>
 
-    <span class="n">doc</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getdoc</span><span class="p">(</span><span class="n">func</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
-    <span class="k">if</span> <span class="n">parameter</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">_get_param_doc</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">parameter</span><span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">_get_func_doc</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">epilog</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">rest</span><span class="p">)</span>
+
+<div class="viewcode-block" id="NumpyDoc.join"><a class="viewcode-back" href="../../api/cli_utils.html#xonsh.cli_utils.NumpyDoc.join">[docs]</a>    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">join</span><span class="p">(</span><span class="n">lines</span><span class="p">):</span>
+        <span class="c1"># remove any extra noise after parse</span>
+        <span class="k">return</span> <span class="n">inspect</span><span class="o">.</span><span class="n">cleandoc</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">linesep</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">))</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="NumpyDoc.get_func_doc"><a class="viewcode-back" href="../../api/cli_utils.html#xonsh.cli_utils.NumpyDoc.get_func_doc">[docs]</a>    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">get_func_doc</span><span class="p">(</span><span class="n">doc</span><span class="p">):</span>
+        <span class="n">lines</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+        <span class="n">token</span> <span class="o">=</span> <span class="s2">&quot;Parameters&quot;</span>
+        <span class="k">if</span> <span class="n">token</span> <span class="ow">in</span> <span class="n">lines</span><span class="p">:</span>
+            <span class="n">idx</span> <span class="o">=</span> <span class="n">lines</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">token</span><span class="p">)</span>
+            <span class="n">desc</span> <span class="o">=</span> <span class="n">lines</span><span class="p">[:</span><span class="n">idx</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">desc</span> <span class="o">=</span> <span class="n">lines</span>
+            <span class="n">idx</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">NumpyDoc</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">desc</span><span class="p">),</span> <span class="n">lines</span><span class="p">[</span><span class="n">idx</span> <span class="o">+</span> <span class="mi">2</span> <span class="p">:]</span></div>
+
+<div class="viewcode-block" id="NumpyDoc.get_param_doc"><a class="viewcode-back" href="../../api/cli_utils.html#xonsh.cli_utils.NumpyDoc.get_param_doc">[docs]</a>    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">get_param_doc</span><span class="p">(</span><span class="n">lines</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="n">docs</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">tp</span><span class="o">.</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">list</span><span class="p">)</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">while</span> <span class="n">lines</span><span class="p">:</span>
+            <span class="c1"># check new section by checking next line</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">lines</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span> <span class="o">==</span> <span class="p">{</span><span class="s2">&quot;-&quot;</span><span class="p">}):</span>
+                <span class="k">break</span>
+
+            <span class="n">lin</span> <span class="o">=</span> <span class="n">lines</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">lin</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="k">if</span> <span class="n">lin</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">name</span><span class="p">:</span>
+                <span class="n">docs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">lin</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">name</span> <span class="o">=</span> <span class="n">lin</span>
+
+        <span class="k">return</span> <span class="n">docs</span><span class="p">,</span> <span class="n">lines</span></div></div>
 
 
 <span class="n">_FUNC_NAME</span> <span class="o">=</span> <span class="s2">&quot;_func_&quot;</span>
 
 
+<span class="k">def</span> <span class="nf">_get_args_kwargs</span><span class="p">(</span><span class="n">annot</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">tp</span><span class="o">.</span><span class="n">Tuple</span><span class="p">[</span><span class="n">tp</span><span class="o">.</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">tp</span><span class="o">.</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">tp</span><span class="o">.</span><span class="n">Any</span><span class="p">]]:</span>
+    <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">{}</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">annot</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
+        <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="n">annot</span>
+    <span class="k">elif</span> <span class="n">TYPING_ANNOTATED_AVAILABLE</span> <span class="ow">and</span> <span class="s2">&quot;Annotated[&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">annot</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">annot</span><span class="p">,</span> <span class="s2">&quot;__metadata__&quot;</span><span class="p">):</span>
+            <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="n">annot</span><span class="o">.</span><span class="n">__metadata__</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="kn">from</span> <span class="nn">typing_extensions</span> <span class="kn">import</span> <span class="n">get_args</span>
+
+            <span class="n">_</span><span class="p">,</span> <span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span> <span class="o">=</span> <span class="n">get_args</span><span class="p">(</span><span class="n">annot</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">kwargs</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
+        <span class="n">kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span>
+
+
+<div class="viewcode-block" id="add_args"><a class="viewcode-back" href="../../api/cli_utils.html#xonsh.cli_utils.add_args">[docs]</a><span class="k">def</span> <span class="nf">add_args</span><span class="p">(</span>
+    <span class="n">parser</span><span class="p">:</span> <span class="n">ap</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">,</span> <span class="n">func</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Callable</span><span class="p">,</span> <span class="n">allowed_params</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">doc</span><span class="o">=</span><span class="kc">None</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Using the function&#39;s annotation add arguments to the parser</span>
+<span class="sd">    param:Arg(*args, **kw) -&gt; parser.add_argument(*args, *kw)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># call this function when this sub-command is selected</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">set_defaults</span><span class="p">(</span><span class="o">**</span><span class="p">{</span><span class="n">_FUNC_NAME</span><span class="p">:</span> <span class="n">func</span><span class="p">})</span>
+    <span class="n">doc</span> <span class="o">=</span> <span class="n">doc</span> <span class="ow">or</span> <span class="n">NumpyDoc</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
+    <span class="n">sign</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">signature</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">sign</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
+            <span class="n">allowed_params</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">allowed_params</span>
+        <span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="n">flags</span><span class="p">,</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="n">_get_args_kwargs</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">annotation</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">flags</span><span class="p">:</span>  <span class="c1"># load from docstring</span>
+            <span class="n">flags</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">flags</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">flags</span><span class="p">:</span>  <span class="c1"># optional argument. eg. --option</span>
+            <span class="n">kwargs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;dest&quot;</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>  <span class="c1"># positional argument</span>
+            <span class="n">flags</span> <span class="o">=</span> <span class="p">[</span><span class="n">name</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">inspect</span><span class="o">.</span><span class="n">Parameter</span><span class="o">.</span><span class="n">empty</span> <span class="o">!=</span> <span class="n">param</span><span class="o">.</span><span class="n">default</span><span class="p">:</span>
+            <span class="n">kwargs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="n">param</span><span class="o">.</span><span class="n">default</span><span class="p">)</span>
+
+            <span class="c1"># for booleans set action automatically</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="n">flags</span>
+                <span class="ow">and</span> <span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">default</span><span class="p">)</span> <span class="o">==</span> <span class="nb">bool</span><span class="p">)</span>
+                <span class="ow">and</span> <span class="p">(</span><span class="s2">&quot;action&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">)</span>
+                <span class="ow">and</span> <span class="p">(</span><span class="s2">&quot;type&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">)</span>
+            <span class="p">):</span>
+                <span class="c1"># opposite of default value</span>
+                <span class="n">act_name</span> <span class="o">=</span> <span class="s2">&quot;store_false&quot;</span> <span class="k">if</span> <span class="n">param</span><span class="o">.</span><span class="n">default</span> <span class="k">else</span> <span class="s2">&quot;store_true&quot;</span>
+                <span class="n">kwargs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;action&quot;</span><span class="p">,</span> <span class="n">act_name</span><span class="p">)</span>
+
+        <span class="c1"># help can be set by passing help argument otherwise inferred from docstring</span>
+        <span class="n">kwargs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;help&quot;</span><span class="p">,</span> <span class="n">doc</span><span class="o">.</span><span class="n">params</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">))</span>
+
+        <span class="n">completer</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;completer&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">action</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="o">*</span><span class="n">flags</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">completer</span><span class="p">:</span>
+            <span class="n">action</span><span class="o">.</span><span class="n">completer</span> <span class="o">=</span> <span class="n">completer</span>  <span class="c1"># type: ignore</span>
+        <span class="n">action</span><span class="o">.</span><span class="n">help</span> <span class="o">=</span> <span class="n">action</span><span class="o">.</span><span class="n">help</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">action</span><span class="o">.</span><span class="n">default</span> <span class="ow">and</span> <span class="s2">&quot;</span><span class="si">%(default)s</span><span class="s2">&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">action</span><span class="o">.</span><span class="n">help</span><span class="p">:</span>
+            <span class="n">action</span><span class="o">.</span><span class="n">help</span> <span class="o">+=</span> <span class="n">os</span><span class="o">.</span><span class="n">linesep</span> <span class="o">+</span> <span class="s2">&quot; (default: </span><span class="si">%(default)s</span><span class="s2">)&quot;</span>
+        <span class="k">if</span> <span class="n">action</span><span class="o">.</span><span class="n">type</span> <span class="ow">and</span> <span class="s2">&quot;</span><span class="si">%(type)s</span><span class="s2">&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">action</span><span class="o">.</span><span class="n">help</span><span class="p">:</span>
+            <span class="n">action</span><span class="o">.</span><span class="n">help</span> <span class="o">+=</span> <span class="s2">&quot; (type: </span><span class="si">%(type)s</span><span class="s2">)&quot;</span></div>
+
+
 <div class="viewcode-block" id="make_parser"><a class="viewcode-back" href="../../api/cli_utils.html#xonsh.cli_utils.make_parser">[docs]</a><span class="k">def</span> <span class="nf">make_parser</span><span class="p">(</span>
-    <span class="n">func</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Callable</span><span class="p">,</span>
-    <span class="n">subparser</span><span class="p">:</span> <span class="n">ap</span><span class="o">.</span><span class="n">_SubParsersAction</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="n">params</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">tp</span><span class="o">.</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">tp</span><span class="o">.</span><span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="o">**</span><span class="n">kwargs</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ap.ArgumentParser&quot;</span><span class="p">:</span>
+    <span class="n">func</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Union</span><span class="p">[</span><span class="n">tp</span><span class="o">.</span><span class="n">Callable</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
+    <span class="n">empty_help</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ArgParser&quot;</span><span class="p">:</span>
     <span class="sd">&quot;&quot;&quot;A bare-bones argparse builder from functions&quot;&quot;&quot;</span>
-
-    <span class="n">doc</span> <span class="o">=</span> <span class="n">get_doc</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
-    <span class="n">kwargs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;formatter_class&quot;</span><span class="p">,</span> <span class="n">ap</span><span class="o">.</span><span class="n">RawTextHelpFormatter</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">subparser</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">kwargs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;description&quot;</span><span class="p">,</span> <span class="n">doc</span><span class="p">)</span>
-        <span class="n">parser</span> <span class="o">=</span> <span class="n">ap</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+    <span class="n">doc</span> <span class="o">=</span> <span class="n">NumpyDoc</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
+    <span class="k">if</span> <span class="s2">&quot;description&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
+        <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;description&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">description</span>
+    <span class="k">if</span> <span class="s2">&quot;epilog&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">doc</span><span class="o">.</span><span class="n">epilog</span><span class="p">:</span>
+            <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;epilog&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">epilog</span>
+    <span class="n">parser</span> <span class="o">=</span> <span class="n">ArgParser</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">empty_help</span><span class="p">:</span>
         <span class="n">parser</span><span class="o">.</span><span class="n">set_defaults</span><span class="p">(</span>
-            <span class="o">**</span><span class="p">{</span><span class="n">_FUNC_NAME</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">stdout</span><span class="p">:</span> <span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">(</span><span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)}</span>
+            <span class="o">**</span><span class="p">{</span><span class="n">_FUNC_NAME</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">stdout</span><span class="o">=</span><span class="kc">None</span><span class="p">:</span> <span class="n">parser</span><span class="o">.</span><span class="n">print_help</span><span class="p">(</span><span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)}</span>
         <span class="p">)</span>
-        <span class="k">return</span> <span class="n">parser</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">parser</span> <span class="o">=</span> <span class="n">subparser</span><span class="o">.</span><span class="n">add_parser</span><span class="p">(</span>
-            <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;prog&quot;</span><span class="p">,</span> <span class="n">func</span><span class="o">.</span><span class="vm">__name__</span><span class="p">),</span>
-            <span class="n">help</span><span class="o">=</span><span class="n">doc</span><span class="p">,</span>
-            <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="n">parser</span><span class="o">.</span><span class="n">set_defaults</span><span class="p">(</span><span class="o">**</span><span class="p">{</span><span class="n">_FUNC_NAME</span><span class="p">:</span> <span class="n">func</span><span class="p">})</span>
-
-        <span class="k">if</span> <span class="n">params</span><span class="p">:</span>
-            <span class="k">for</span> <span class="n">par</span><span class="p">,</span> <span class="n">args</span> <span class="ow">in</span> <span class="n">params</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-                <span class="n">args</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;help&quot;</span><span class="p">,</span> <span class="n">get_doc</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">par</span><span class="p">))</span>
-                <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="n">par</span><span class="p">,</span> <span class="o">**</span><span class="n">args</span><span class="p">)</span>
-
-        <span class="k">return</span> <span class="n">parser</span></div>
+    <span class="k">return</span> <span class="n">parser</span></div>
 
 
-<div class="viewcode-block" id="dispatch"><a class="viewcode-back" href="../../api/cli_utils.html#xonsh.cli_utils.dispatch">[docs]</a><span class="k">def</span> <span class="nf">dispatch</span><span class="p">(</span><span class="o">**</span><span class="n">ns</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;call the sub-command selected by user&quot;&quot;&quot;</span>
-    <span class="kn">import</span> <span class="nn">inspect</span>
+<span class="k">class</span> <span class="nc">RstHelpFormatter</span><span class="p">(</span><span class="n">ap</span><span class="o">.</span><span class="n">RawTextHelpFormatter</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Highlight help string as rst&quot;&quot;&quot;</span>
 
-    <span class="n">func</span> <span class="o">=</span> <span class="n">ns</span><span class="p">[</span><span class="n">_FUNC_NAME</span><span class="p">]</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="kn">from</span> <span class="nn">pygments.formatters.terminal</span> <span class="kn">import</span> <span class="n">TerminalFormatter</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">formatter</span> <span class="o">=</span> <span class="n">TerminalFormatter</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">start_section</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">heading</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="kn">from</span> <span class="nn">pygments.token</span> <span class="kn">import</span> <span class="n">Generic</span>
+
+        <span class="n">heading</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">colorize</span><span class="p">((</span><span class="n">Generic</span><span class="o">.</span><span class="n">Heading</span><span class="p">,</span> <span class="n">heading</span><span class="p">))</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">start_section</span><span class="p">(</span><span class="n">heading</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_get_help_string</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">action</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">markup_rst</span><span class="p">(</span><span class="n">action</span><span class="o">.</span><span class="n">help</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">colorize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">tokens</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="kn">from</span> <span class="nn">pygments</span> <span class="kn">import</span> <span class="nb">format</span>
+
+        <span class="k">return</span> <span class="nb">format</span><span class="p">(</span><span class="n">tokens</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">formatter</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">markup_rst</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">):</span>
+        <span class="kn">from</span> <span class="nn">pygments</span> <span class="kn">import</span> <span class="n">highlight</span>
+        <span class="kn">from</span> <span class="nn">pygments.lexers.markup</span> <span class="kn">import</span> <span class="n">RstLexer</span>
+
+        <span class="k">return</span> <span class="n">highlight</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="n">RstLexer</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">formatter</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_format_text</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">):</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_format_text</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">text</span><span class="p">:</span>
+            <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">markup_rst</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">text</span>
+
+    <span class="k">def</span> <span class="nf">_format_usage</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">usage</span><span class="p">,</span> <span class="n">actions</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="n">prefix</span><span class="p">):</span>
+        <span class="kn">from</span> <span class="nn">pygments.token</span> <span class="kn">import</span> <span class="n">Name</span><span class="p">,</span> <span class="n">Generic</span>
+
+        <span class="n">text</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_format_usage</span><span class="p">(</span><span class="n">usage</span><span class="p">,</span> <span class="n">actions</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="n">prefix</span><span class="p">)</span>
+        <span class="n">parts</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_prog</span><span class="p">,</span> <span class="n">maxsplit</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span> <span class="ow">and</span> <span class="nb">all</span><span class="p">(</span><span class="n">parts</span><span class="p">):</span>
+            <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">colorize</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">Generic</span><span class="o">.</span><span class="n">Heading</span><span class="p">,</span> <span class="n">parts</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
+                <span class="p">(</span><span class="n">Name</span><span class="o">.</span><span class="n">Function</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prog</span><span class="p">),</span>
+                <span class="p">(</span><span class="n">Name</span><span class="o">.</span><span class="n">Attribute</span><span class="p">,</span> <span class="n">parts</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>  <span class="c1"># from _format_actions_usage</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">text</span>
+
+    <span class="k">def</span> <span class="nf">_format_action_invocation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">action</span><span class="p">):</span>
+        <span class="kn">from</span> <span class="nn">pygments.token</span> <span class="kn">import</span> <span class="n">Name</span>
+
+        <span class="n">text</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_format_action_invocation</span><span class="p">(</span><span class="n">action</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">colorize</span><span class="p">((</span><span class="n">Name</span><span class="o">.</span><span class="n">Attribute</span><span class="p">,</span> <span class="n">text</span><span class="p">))</span>
+
+
+<span class="k">def</span> <span class="nf">get_argparse_formatter_class</span><span class="p">():</span>
+    <span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
+    <span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="kn">import</span> <span class="n">HAS_PYGMENTS</span>
+
+    <span class="k">if</span> <span class="p">(</span>
+        <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="p">,</span> <span class="s2">&quot;stderr&quot;</span><span class="p">)</span>
+        <span class="ow">and</span> <span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="o">.</span><span class="n">isatty</span><span class="p">()</span>
+        <span class="ow">and</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_INTERACTIVE&quot;</span><span class="p">)</span>
+        <span class="ow">and</span> <span class="n">HAS_PYGMENTS</span>
+    <span class="p">):</span>
+        <span class="k">return</span> <span class="n">RstHelpFormatter</span>
+    <span class="k">return</span> <span class="n">ap</span><span class="o">.</span><span class="n">RawTextHelpFormatter</span>
+
+
+<div class="viewcode-block" id="ArgParser"><a class="viewcode-back" href="../../api/cli_utils.html#xonsh.cli_utils.ArgParser">[docs]</a><span class="k">class</span> <span class="nc">ArgParser</span><span class="p">(</span><span class="n">ap</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Sub-class of ArgumentParser with special methods to nest commands&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">if</span> <span class="s2">&quot;formatter_class&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
+            <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;formatter_class&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_argparse_formatter_class</span><span class="p">()</span>
+
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">commands</span> <span class="o">=</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="ArgParser.add_command"><a class="viewcode-back" href="../../api/cli_utils.html#xonsh.cli_utils.ArgParser.add_command">[docs]</a>    <span class="k">def</span> <span class="nf">add_command</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">func</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Callable</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Optional</span><span class="p">[</span><span class="n">tp</span><span class="o">.</span><span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">            create a sub-parser and call this function during dispatch</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        func</span>
+<span class="sd">            a type-annotated function that will be used to create ArgumentParser instance.</span>
+<span class="sd">            All parameters that start with ``_`` will not be added to parser arguments.</span>
+<span class="sd">            Use _stdout, _stack ... to receive them from callable-alias/commands.</span>
+<span class="sd">            Use _parser to get the generated parser instance.</span>
+<span class="sd">            Use _args to get what is passed from sys.argv</span>
+<span class="sd">            Use _parsed to get result of ``parser.parse_args``</span>
+<span class="sd">        args</span>
+<span class="sd">            if given only add these arguments to the parser.</span>
+<span class="sd">            Otherwise all parameters to the function without `_` prefixed</span>
+<span class="sd">            in their name gets added to the parser.</span>
+<span class="sd">        kwargs</span>
+<span class="sd">            passed to ``subparser.add_parser`` call</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            result from ``subparser.add_parser``</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">commands</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">commands</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">add_subparsers</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s2">&quot;commands&quot;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s2">&quot;command&quot;</span><span class="p">)</span>
+
+        <span class="n">doc</span> <span class="o">=</span> <span class="n">NumpyDoc</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
+        <span class="n">kwargs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;description&quot;</span><span class="p">,</span> <span class="n">doc</span><span class="o">.</span><span class="n">description</span><span class="p">)</span>
+        <span class="n">kwargs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;help&quot;</span><span class="p">,</span> <span class="n">doc</span><span class="o">.</span><span class="n">description</span><span class="p">)</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;prog&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">name</span><span class="p">:</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="n">func</span><span class="o">.</span><span class="vm">__name__</span><span class="o">.</span><span class="n">lstrip</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">,</span> <span class="s2">&quot;-&quot;</span><span class="p">)</span>
+        <span class="n">parser</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">commands</span><span class="o">.</span><span class="n">add_parser</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="n">add_args</span><span class="p">(</span><span class="n">parser</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">allowed_params</span><span class="o">=</span><span class="n">args</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">parser</span></div></div>
+
+
+<span class="k">def</span> <span class="nf">_dispatch_func</span><span class="p">(</span><span class="n">func</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Callable</span><span class="p">,</span> <span class="n">ns</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">tp</span><span class="o">.</span><span class="n">Any</span><span class="p">]):</span>
+    <span class="sd">&quot;&quot;&quot;Final dispatch to the function based on signature.&quot;&quot;&quot;</span>
     <span class="n">sign</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">signature</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
     <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">sign</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-        <span class="n">kwargs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">ns</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
-    <span class="k">return</span> <span class="n">func</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+        <span class="n">default</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="c1"># sometimes the args are skipped in the parser.</span>
+        <span class="c1"># like ones having _ prefix(private to the function), or some special cases like exclusive group.</span>
+        <span class="c1"># it is better to fill the defaults from paramspec when available.</span>
+        <span class="k">if</span> <span class="n">param</span><span class="o">.</span><span class="n">default</span> <span class="o">!=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">Parameter</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="n">default</span> <span class="o">=</span> <span class="n">param</span><span class="o">.</span><span class="n">default</span>
+        <span class="n">kwargs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">ns</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">default</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">func</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="dispatch"><a class="viewcode-back" href="../../api/cli_utils.html#xonsh.cli_utils.dispatch">[docs]</a><span class="k">def</span> <span class="nf">dispatch</span><span class="p">(</span><span class="n">parser</span><span class="p">:</span> <span class="n">ap</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">lenient</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="o">**</span><span class="n">ns</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Call the underlying function with arguments parsed from sys.argv</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    parser</span>
+<span class="sd">        root parser</span>
+<span class="sd">    args</span>
+<span class="sd">        sys.argv as parsed by Alias</span>
+<span class="sd">    lenient</span>
+<span class="sd">        if True, then use parser_know_args and pass the extra arguments as `_unparsed`</span>
+<span class="sd">    ns</span>
+<span class="sd">        a dict that will be passed to underlying function</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="n">lenient</span><span class="p">:</span>
+        <span class="n">parsed</span><span class="p">,</span> <span class="n">unparsed</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_known_args</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+        <span class="n">ns</span><span class="p">[</span><span class="s2">&quot;_unparsed&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">unparsed</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">parsed</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+    <span class="n">ns</span><span class="p">[</span><span class="s2">&quot;_parsed&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">parsed</span>
+    <span class="n">ns</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">vars</span><span class="p">(</span><span class="n">parsed</span><span class="p">))</span>
+
+    <span class="n">func</span> <span class="o">=</span> <span class="n">ns</span><span class="p">[</span><span class="n">_FUNC_NAME</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">_dispatch_func</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">ns</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ArgParserAlias"><a class="viewcode-back" href="../../api/cli_utils.html#xonsh.cli_utils.ArgParserAlias">[docs]</a><span class="k">class</span> <span class="nc">ArgParserAlias</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Provides a structure to the Alias. The parser is lazily loaded.</span>
+
+<span class="sd">    can help create ``argparse.ArgumentParser`` parser from function</span>
+<span class="sd">    signature and dispatch the functions.</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    ---------</span>
+<span class="sd">        For usage please check ``xonsh.completers.completer.py`` module.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">threadable</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">threadable</span><span class="p">:</span>
+            <span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="n">unthreadable</span>
+
+            <span class="n">unthreadable</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_parser</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span> <span class="o">=</span> <span class="n">kwargs</span>
+
+<div class="viewcode-block" id="ArgParserAlias.build"><a class="viewcode-back" href="../../api/cli_utils.html#xonsh.cli_utils.ArgParserAlias.build">[docs]</a>    <span class="k">def</span> <span class="nf">build</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Sub-classes should return constructed ArgumentParser&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">create_parser</span><span class="p">(</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span></div>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">parser</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parser</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_parser</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">build</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parser</span>
+
+<div class="viewcode-block" id="ArgParserAlias.create_parser"><a class="viewcode-back" href="../../api/cli_utils.html#xonsh.cli_utils.ArgParserAlias.create_parser">[docs]</a>    <span class="k">def</span> <span class="nf">create_parser</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">func</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">has_args</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">allowed_params</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;create root parser&quot;&quot;&quot;</span>
+        <span class="n">func</span> <span class="o">=</span> <span class="n">func</span> <span class="ow">or</span> <span class="bp">self</span>
+        <span class="n">has_args</span> <span class="o">=</span> <span class="n">has_args</span> <span class="ow">or</span> <span class="nb">bool</span><span class="p">(</span><span class="n">allowed_params</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">has_args</span><span class="p">:</span>
+            <span class="n">kwargs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;empty_help&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+        <span class="n">parser</span> <span class="o">=</span> <span class="n">make_parser</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">has_args</span><span class="p">:</span>
+            <span class="n">add_args</span><span class="p">(</span><span class="n">parser</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">allowed_params</span><span class="o">=</span><span class="n">allowed_params</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">parser</span></div>
+
+    <span class="k">def</span> <span class="fm">__call__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">args</span><span class="p">,</span>
+        <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">stdout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">stderr</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">spec</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">stack</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="k">return</span> <span class="n">dispatch</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">parser</span><span class="p">,</span>
+            <span class="n">args</span><span class="p">,</span>
+            <span class="n">_parser</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">parser</span><span class="p">,</span>
+            <span class="n">_args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span>
+            <span class="n">_stdin</span><span class="o">=</span><span class="n">stdin</span><span class="p">,</span>
+            <span class="n">_stdout</span><span class="o">=</span><span class="n">stdout</span><span class="p">,</span>
+            <span class="n">_stderr</span><span class="o">=</span><span class="n">stderr</span><span class="p">,</span>
+            <span class="n">_spec</span><span class="o">=</span><span class="n">spec</span><span class="p">,</span>
+            <span class="n">_stack</span><span class="o">=</span><span class="n">stack</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s2">&quot;Arg&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;ArgParserAlias&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Annotated&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;ArgParser&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;make_parser&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;add_args&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;NumpyDoc&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;dispatch&quot;</span><span class="p">,</span>
+<span class="p">)</span>
 </pre></div>
 
             <div class="clearer"></div>
@@ -231,7 +585,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.9.26 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.cli_utils</a></li> 
@@ -241,7 +595,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.5.2.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.0.0.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>

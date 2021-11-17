@@ -7,14 +7,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xonsh.completers.tools &#8212; xonsh 0.9.26 documentation</title>
-    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
-    <link rel="stylesheet" href="../../../_static/numpy_friendly.css" type="text/css" />
+    <title>xonsh.completers.tools &#8212; xonsh 0.11.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/numpy_friendly.css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
     
-    <script id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+    <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
     <script src="../../../_static/jquery.js"></script>
     <script src="../../../_static/underscore.js"></script>
     <script src="../../../_static/doctools.js"></script>
@@ -55,7 +55,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../contents.html">xonsh 0.9.26 documentation</a> &#187;</li>
+    <li><a href="../../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.completers.tools</a></li> 
@@ -71,8 +71,14 @@
             
   <h1>Source code for xonsh.completers.tools</h1><div class="highlight"><pre>
 <span></span><span class="sd">&quot;&quot;&quot;Xonsh completer tools.&quot;&quot;&quot;</span>
-<span class="kn">import</span> <span class="nn">builtins</span>
+<span class="kn">import</span> <span class="nn">inspect</span>
 <span class="kn">import</span> <span class="nn">textwrap</span>
+<span class="kn">import</span> <span class="nn">typing</span> <span class="k">as</span> <span class="nn">tp</span>
+<span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">wraps</span>
+
+<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
+<span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="kn">import</span> <span class="n">lazyobject</span>
+<span class="kn">from</span> <span class="nn">xonsh.parsers.completion_context</span> <span class="kn">import</span> <span class="n">CompletionContext</span><span class="p">,</span> <span class="n">CommandContext</span>
 
 
 <span class="k">def</span> <span class="nf">_filter_normal</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
@@ -88,7 +94,7 @@
 <span class="sd">    Return an appropriate filtering function for completions, given the valid</span>
 <span class="sd">    of $CASE_SENSITIVE_COMPLETIONS</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">csc</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;CASE_SENSITIVE_COMPLETIONS&quot;</span><span class="p">)</span>
+    <span class="n">csc</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;CASE_SENSITIVE_COMPLETIONS&quot;</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">csc</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">_filter_normal</span>
     <span class="k">else</span><span class="p">:</span>
@@ -106,54 +112,167 @@
 
 
 <div class="viewcode-block" id="RichCompletion"><a class="viewcode-back" href="../../../api/completers/tools.html#xonsh.completers.tools.RichCompletion">[docs]</a><span class="k">class</span> <span class="nc">RichCompletion</span><span class="p">(</span><span class="nb">str</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;A rich completion that completers can return instead of a string</span>
+    <span class="sd">&quot;&quot;&quot;A rich completion that completers can return instead of a string&quot;&quot;&quot;</span>
 
-<span class="sd">    Parameters</span>
-<span class="sd">    ----------</span>
-<span class="sd">    value : str</span>
-<span class="sd">        The completion&#39;s actual value.</span>
-<span class="sd">    prefix_len : int</span>
-<span class="sd">        Length of the prefix to be replaced in the completion.</span>
-<span class="sd">        If None, the default prefix len will be used.</span>
-<span class="sd">    display : str</span>
-<span class="sd">        Text to display in completion option list.</span>
-<span class="sd">        If None, ``value`` will be used.</span>
-<span class="sd">    description : str</span>
-<span class="sd">        Extra text to display when the completion is selected.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="k">def</span> <span class="fm">__new__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">prefix_len</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">display</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">style</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__new__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="n">completion</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__new__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
-
-        <span class="n">completion</span><span class="o">.</span><span class="n">prefix_len</span> <span class="o">=</span> <span class="n">prefix_len</span>
-        <span class="n">completion</span><span class="o">.</span><span class="n">display</span> <span class="o">=</span> <span class="n">display</span> <span class="ow">or</span> <span class="n">value</span>
-        <span class="n">completion</span><span class="o">.</span><span class="n">description</span> <span class="o">=</span> <span class="n">description</span>
-        <span class="n">completion</span><span class="o">.</span><span class="n">style</span> <span class="o">=</span> <span class="n">style</span>
-
+        <span class="c1"># ``str``&#39;s ``__new__`` doesn&#39;t call ``__init__``, so we&#39;ll call it ourselves</span>
+        <span class="bp">cls</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">completion</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">completion</span>
 
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">value</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">prefix_len</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">display</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">description</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
+        <span class="n">style</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
+        <span class="n">append_closing_quote</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">append_space</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        value :</span>
+<span class="sd">            The completion&#39;s actual value.</span>
+<span class="sd">        prefix_len :</span>
+<span class="sd">            Length of the prefix to be replaced in the completion.</span>
+<span class="sd">            If None, the default prefix len will be used.</span>
+<span class="sd">        display :</span>
+<span class="sd">            Text to display in completion option list instead of ``value``.</span>
+<span class="sd">            NOTE: If supplied, the common prefix with other completions won&#39;t be removed.</span>
+<span class="sd">        description :</span>
+<span class="sd">            Extra text to display when the completion is selected.</span>
+<span class="sd">        style :</span>
+<span class="sd">            Style to pass to prompt-toolkit&#39;s ``Completion`` object.</span>
+<span class="sd">        append_closing_quote :</span>
+<span class="sd">            Whether to append a closing quote to the completion if the cursor is after it.</span>
+<span class="sd">            See ``Completer.complete`` in ``xonsh/completer.py``</span>
+<span class="sd">        append_space :</span>
+<span class="sd">            Whether to append a space after the completion.</span>
+<span class="sd">            This is intended to work with ``appending_closing_quote``, so the space will be added correctly **after** the closing quote.</span>
+<span class="sd">            This is used in ``Completer.complete``.</span>
+<span class="sd">            An extra bonus is that the space won&#39;t show up in the ``display`` attribute.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">prefix_len</span> <span class="o">=</span> <span class="n">prefix_len</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">display</span> <span class="o">=</span> <span class="n">display</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">description</span> <span class="o">=</span> <span class="n">description</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">style</span> <span class="o">=</span> <span class="n">style</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">append_closing_quote</span> <span class="o">=</span> <span class="n">append_closing_quote</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">append_space</span> <span class="o">=</span> <span class="n">append_space</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">value</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
     <span class="k">def</span> <span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="s2">&quot;RichCompletion(</span><span class="si">{}</span><span class="s2">, prefix_len=</span><span class="si">{}</span><span class="s2">, display=</span><span class="si">{}</span><span class="s2">, description=</span><span class="si">{}</span><span class="s2">)&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
-            <span class="nb">repr</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="p">)),</span> <span class="bp">self</span><span class="o">.</span><span class="n">prefix_len</span><span class="p">,</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">display</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">description</span><span class="p">)</span>
-        <span class="p">)</span></div>
+        <span class="c1"># don&#39;t print default values</span>
+        <span class="n">attrs</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">=</span><span class="si">{</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">default</span> <span class="ow">in</span> <span class="n">RICH_COMPLETION_DEFAULTS</span>
+            <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span> <span class="o">!=</span> <span class="n">default</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;RichCompletion(</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="si">!r}</span><span class="s2">, </span><span class="si">{</span><span class="n">attrs</span><span class="si">}</span><span class="s2">)&quot;</span>
+
+<div class="viewcode-block" id="RichCompletion.replace"><a class="viewcode-back" href="../../../api/completers/tools.html#xonsh.completers.tools.RichCompletion.replace">[docs]</a>    <span class="k">def</span> <span class="nf">replace</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Create a new RichCompletion with replaced attributes&quot;&quot;&quot;</span>
+        <span class="n">default_kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
+            <span class="n">value</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+            <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">default_kwargs</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">RichCompletion</span><span class="p">(</span><span class="o">**</span><span class="n">default_kwargs</span><span class="p">)</span></div></div>
 
 
-<div class="viewcode-block" id="get_ptk_completer"><a class="viewcode-back" href="../../../api/completers/tools.html#xonsh.completers.tools.get_ptk_completer">[docs]</a><span class="k">def</span> <span class="nf">get_ptk_completer</span><span class="p">():</span>
-    <span class="sd">&quot;&quot;&quot;Get the current PromptToolkitCompleter</span>
+<span class="nd">@lazyobject</span>
+<span class="k">def</span> <span class="nf">RICH_COMPLETION_DEFAULTS</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;The ``__init__`` parameters&#39; default values (excluding ``self`` and ``value``).&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">[</span>
+        <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">param</span><span class="o">.</span><span class="n">default</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">inspect</span><span class="o">.</span><span class="n">signature</span><span class="p">(</span><span class="n">RichCompletion</span><span class="o">.</span><span class="fm">__init__</span><span class="p">)</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;self&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span>
+    <span class="p">]</span>
 
-<span class="sd">    This is usefull for completers that want to use</span>
-<span class="sd">    PromptToolkitCompleter.current_document (the current multiline document).</span>
 
-<span class="sd">    Call this function lazily since in &#39;.xonshrc&#39; the shell doesn&#39;t exist.</span>
+<span class="n">Completion</span> <span class="o">=</span> <span class="n">tp</span><span class="o">.</span><span class="n">Union</span><span class="p">[</span><span class="n">RichCompletion</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span>
+<span class="n">CompleterResult</span> <span class="o">=</span> <span class="n">tp</span><span class="o">.</span><span class="n">Union</span><span class="p">[</span><span class="n">tp</span><span class="o">.</span><span class="n">Set</span><span class="p">[</span><span class="n">Completion</span><span class="p">],</span> <span class="n">tp</span><span class="o">.</span><span class="n">Tuple</span><span class="p">[</span><span class="n">tp</span><span class="o">.</span><span class="n">Set</span><span class="p">[</span><span class="n">Completion</span><span class="p">],</span> <span class="nb">int</span><span class="p">],</span> <span class="kc">None</span><span class="p">]</span>
+<span class="n">ContextualCompleter</span> <span class="o">=</span> <span class="n">tp</span><span class="o">.</span><span class="n">Callable</span><span class="p">[[</span><span class="n">CompletionContext</span><span class="p">],</span> <span class="n">CompleterResult</span><span class="p">]</span>
 
-<span class="sd">    Returns</span>
-<span class="sd">    -------</span>
-<span class="sd">    The PromptToolkitCompleter if running with ptk, else returns None</span>
+
+<div class="viewcode-block" id="contextual_completer"><a class="viewcode-back" href="../../../api/completers/tools.html#xonsh.completers.tools.contextual_completer">[docs]</a><span class="k">def</span> <span class="nf">contextual_completer</span><span class="p">(</span><span class="n">func</span><span class="p">:</span> <span class="n">ContextualCompleter</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Decorator for a contextual completer</span>
+
+<span class="sd">    This is used to mark completers that want to use the parsed completion context.</span>
+<span class="sd">    See ``xonsh/parsers/completion_context.py``.</span>
+
+<span class="sd">    ``func`` receives a single CompletionContext object.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="n">__xonsh__</span><span class="o">.</span><span class="n">shell</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">__xonsh__</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">shell_type</span> <span class="o">!=</span> <span class="s2">&quot;prompt_toolkit&quot;</span><span class="p">:</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">contextual</span> <span class="o">=</span> <span class="kc">True</span>  <span class="c1"># type: ignore</span>
+    <span class="k">return</span> <span class="n">func</span></div>
+
+
+<div class="viewcode-block" id="is_contextual_completer"><a class="viewcode-back" href="../../../api/completers/tools.html#xonsh.completers.tools.is_contextual_completer">[docs]</a><span class="k">def</span> <span class="nf">is_contextual_completer</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+    <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="s2">&quot;contextual&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="contextual_command_completer"><a class="viewcode-back" href="../../../api/completers/tools.html#xonsh.completers.tools.contextual_command_completer">[docs]</a><span class="k">def</span> <span class="nf">contextual_command_completer</span><span class="p">(</span><span class="n">func</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Callable</span><span class="p">[[</span><span class="n">CommandContext</span><span class="p">],</span> <span class="n">CompleterResult</span><span class="p">]):</span>
+    <span class="sd">&quot;&quot;&quot;like ``contextual_completer``,</span>
+<span class="sd">    but will only run when completing a command and will directly receive the ``CommandContext`` object&quot;&quot;&quot;</span>
+
+    <span class="nd">@contextual_completer</span>
+    <span class="nd">@wraps</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_completer</span><span class="p">(</span><span class="n">context</span><span class="p">:</span> <span class="n">CompletionContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CompleterResult</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">context</span><span class="o">.</span><span class="n">command</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">func</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">command</span><span class="p">)</span>
         <span class="k">return</span> <span class="kc">None</span>
 
-    <span class="k">return</span> <span class="n">__xonsh__</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">pt_completer</span></div>
+    <span class="k">return</span> <span class="n">_completer</span></div>
+
+
+<div class="viewcode-block" id="contextual_command_completer_for"><a class="viewcode-back" href="../../../api/completers/tools.html#xonsh.completers.tools.contextual_command_completer_for">[docs]</a><span class="k">def</span> <span class="nf">contextual_command_completer_for</span><span class="p">(</span><span class="n">cmd</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;like ``contextual_command_completer``,</span>
+<span class="sd">    but will only run when completing the ``cmd`` command&quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">decor</span><span class="p">(</span><span class="n">func</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Callable</span><span class="p">[[</span><span class="n">CommandContext</span><span class="p">],</span> <span class="n">CompleterResult</span><span class="p">]):</span>
+        <span class="nd">@contextual_completer</span>
+        <span class="nd">@wraps</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
+        <span class="k">def</span> <span class="nf">_completer</span><span class="p">(</span><span class="n">context</span><span class="p">:</span> <span class="n">CompletionContext</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CompleterResult</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">context</span><span class="o">.</span><span class="n">command</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">context</span><span class="o">.</span><span class="n">command</span><span class="o">.</span><span class="n">completing_command</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">func</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">command</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="k">return</span> <span class="n">_completer</span>
+
+    <span class="k">return</span> <span class="n">decor</span></div>
+
+
+<div class="viewcode-block" id="non_exclusive_completer"><a class="viewcode-back" href="../../../api/completers/tools.html#xonsh.completers.tools.non_exclusive_completer">[docs]</a><span class="k">def</span> <span class="nf">non_exclusive_completer</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Decorator for a non-exclusive completer</span>
+
+<span class="sd">    This is used to mark completers that will be collected with other completer&#39;s results.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">func</span><span class="o">.</span><span class="n">non_exclusive</span> <span class="o">=</span> <span class="kc">True</span>  <span class="c1"># type: ignore</span>
+    <span class="k">return</span> <span class="n">func</span></div>
+
+
+<div class="viewcode-block" id="is_exclusive_completer"><a class="viewcode-back" href="../../../api/completers/tools.html#xonsh.completers.tools.is_exclusive_completer">[docs]</a><span class="k">def</span> <span class="nf">is_exclusive_completer</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+    <span class="k">return</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="s2">&quot;non_exclusive&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="apply_lprefix"><a class="viewcode-back" href="../../../api/completers/tools.html#xonsh.completers.tools.apply_lprefix">[docs]</a><span class="k">def</span> <span class="nf">apply_lprefix</span><span class="p">(</span><span class="n">comps</span><span class="p">,</span> <span class="n">lprefix</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">lprefix</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">comps</span>
+
+    <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="n">comps</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="n">RichCompletion</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">comp</span><span class="o">.</span><span class="n">prefix_len</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">yield</span> <span class="n">comp</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">prefix_len</span><span class="o">=</span><span class="n">lprefix</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># this comp has a custom prefix len</span>
+                <span class="k">yield</span> <span class="n">comp</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">yield</span> <span class="n">RichCompletion</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="n">prefix_len</span><span class="o">=</span><span class="n">lprefix</span><span class="p">)</span></div>
 </pre></div>
 
             <div class="clearer"></div>
@@ -207,7 +326,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../contents.html">xonsh 0.9.26 documentation</a> &#187;</li>
+    <li><a href="../../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.completers.tools</a></li> 
@@ -217,7 +336,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.5.2.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.0.0.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>

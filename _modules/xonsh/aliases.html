@@ -7,14 +7,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xonsh.aliases &#8212; xonsh 0.9.26 documentation</title>
-    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
-    <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
+    <title>xonsh.aliases &#8212; xonsh 0.11.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/numpy_friendly.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
     
-    <script id="documentation_options" data-url_root="../../" src="../../_static/documentation_options.js"></script>
+    <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
     <script src="../../_static/jquery.js"></script>
     <script src="../../_static/underscore.js"></script>
     <script src="../../_static/doctools.js"></script>
@@ -55,7 +55,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.9.26 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.aliases</a></li> 
@@ -77,9 +77,10 @@
 <span class="kn">import</span> <span class="nn">sys</span>
 <span class="kn">import</span> <span class="nn">inspect</span>
 <span class="kn">import</span> <span class="nn">argparse</span>
-<span class="kn">import</span> <span class="nn">builtins</span>
 <span class="kn">import</span> <span class="nn">collections.abc</span> <span class="k">as</span> <span class="nn">cabc</span>
+<span class="kn">import</span> <span class="nn">typing</span> <span class="k">as</span> <span class="nn">tp</span>
 
+<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
 <span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="kn">import</span> <span class="n">lazyobject</span>
 <span class="kn">from</span> <span class="nn">xonsh.dirstack</span> <span class="kn">import</span> <span class="n">cd</span><span class="p">,</span> <span class="n">pushd</span><span class="p">,</span> <span class="n">popd</span><span class="p">,</span> <span class="n">dirs</span><span class="p">,</span> <span class="n">_get_cwd</span>
 <span class="kn">from</span> <span class="nn">xonsh.environ</span> <span class="kn">import</span> <span class="n">locate_binary</span><span class="p">,</span> <span class="n">make_args_env</span>
@@ -94,6 +95,7 @@
     <span class="n">ON_OPENBSD</span><span class="p">,</span>
     <span class="n">ON_DRAGONFLY</span><span class="p">,</span>
     <span class="n">ON_POSIX</span><span class="p">,</span>
+    <span class="n">IN_APPIMAGE</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">XonshError</span><span class="p">,</span>
@@ -105,10 +107,12 @@
     <span class="n">ALIAS_KWARG_NAMES</span><span class="p">,</span>
     <span class="n">unthreadable</span><span class="p">,</span>
     <span class="n">print_color</span><span class="p">,</span>
+    <span class="n">to_repr_pretty_</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">xonsh.timings</span> <span class="kn">import</span> <span class="n">timeit_alias</span>
 <span class="kn">from</span> <span class="nn">xonsh.xontribs</span> <span class="kn">import</span> <span class="n">xontribs_main</span>
 <span class="kn">from</span> <span class="nn">xonsh.ast</span> <span class="kn">import</span> <span class="n">isexpression</span>
+<span class="kn">from</span> <span class="nn">xonsh.cli_utils</span> <span class="kn">import</span> <span class="n">ArgParserAlias</span><span class="p">,</span> <span class="n">Arg</span><span class="p">,</span> <span class="n">Annotated</span>
 
 <span class="kn">import</span> <span class="nn">xonsh.completers._aliases</span> <span class="k">as</span> <span class="nn">xca</span>
 <span class="kn">import</span> <span class="nn">xonsh.history.main</span> <span class="k">as</span> <span class="nn">xhm</span>
@@ -164,7 +168,7 @@
         <span class="k">if</span> <span class="n">callable</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
             <span class="k">return</span> <span class="n">partial_eval_alias</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">acc_args</span><span class="o">=</span><span class="n">acc_args</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">expand_path</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">expand_path</span>
+            <span class="n">expand_path</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">expand_path</span>
             <span class="n">token</span><span class="p">,</span> <span class="o">*</span><span class="n">rest</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="n">expand_path</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">token</span> <span class="ow">in</span> <span class="n">seen_tokens</span> <span class="ow">or</span> <span class="n">token</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_raw</span><span class="p">:</span>
                 <span class="c1"># ^ Making sure things like `egrep=egrep --color=auto` works,</span>
@@ -179,15 +183,19 @@
                 <span class="n">acc_args</span> <span class="o">=</span> <span class="n">rest</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="n">acc_args</span><span class="p">)</span>
                 <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">eval_alias</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_raw</span><span class="p">[</span><span class="n">token</span><span class="p">],</span> <span class="n">seen_tokens</span><span class="p">,</span> <span class="n">acc_args</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="Aliases.expand_alias"><a class="viewcode-back" href="../../api/aliases.html#xonsh.aliases.Aliases.expand_alias">[docs]</a>    <span class="k">def</span> <span class="nf">expand_alias</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">line</span><span class="p">):</span>
+<div class="viewcode-block" id="Aliases.expand_alias"><a class="viewcode-back" href="../../api/aliases.html#xonsh.aliases.Aliases.expand_alias">[docs]</a>    <span class="k">def</span> <span class="nf">expand_alias</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">line</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">cursor_index</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
         <span class="sd">&quot;&quot;&quot;Expands any aliases present in line if alias does not point to a</span>
 <span class="sd">        builtin function and if alias is only a single command.</span>
+<span class="sd">        The command won&#39;t be expanded if the cursor&#39;s inside/behind it.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">word</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="k">if</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">builtins</span><span class="o">.</span><span class="n">aliases</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">word</span><span class="p">),</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Sequence</span><span class="p">):</span>
+        <span class="n">word</span> <span class="o">=</span> <span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">maxsplit</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[</span><span class="s2">&quot;&quot;</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">XSH</span><span class="o">.</span><span class="n">aliases</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">word</span><span class="p">),</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Sequence</span><span class="p">):</span>  <span class="c1"># type: ignore</span>
             <span class="n">word_idx</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">word</span><span class="p">)</span>
-            <span class="n">expansion</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">word</span><span class="p">))</span>
-            <span class="n">line</span> <span class="o">=</span> <span class="n">line</span><span class="p">[:</span><span class="n">word_idx</span><span class="p">]</span> <span class="o">+</span> <span class="n">expansion</span> <span class="o">+</span> <span class="n">line</span><span class="p">[</span><span class="n">word_idx</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">word</span><span class="p">)</span> <span class="p">:]</span>
+            <span class="n">word_edge</span> <span class="o">=</span> <span class="n">word_idx</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">word</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">cursor_index</span> <span class="o">&gt;</span> <span class="n">word_edge</span><span class="p">:</span>
+                <span class="c1"># the cursor isn&#39;t inside/behind the word</span>
+                <span class="n">expansion</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">word</span><span class="p">))</span>
+                <span class="n">line</span> <span class="o">=</span> <span class="n">line</span><span class="p">[:</span><span class="n">word_idx</span><span class="p">]</span> <span class="o">+</span> <span class="n">expansion</span> <span class="o">+</span> <span class="n">line</span><span class="p">[</span><span class="n">word_edge</span><span class="p">:]</span>
         <span class="k">return</span> <span class="n">line</span></div>
 
     <span class="c1">#</span>
@@ -205,7 +213,7 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">_raw</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">ExecAlias</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="n">f</span><span class="p">)</span>
             <span class="k">elif</span> <span class="n">isexpression</span><span class="p">(</span><span class="n">val</span><span class="p">):</span>
                 <span class="c1"># expansion substitution</span>
-                <span class="n">lexer</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">execer</span><span class="o">.</span><span class="n">parser</span><span class="o">.</span><span class="n">lexer</span>
+                <span class="n">lexer</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">execer</span><span class="o">.</span><span class="n">parser</span><span class="o">.</span><span class="n">lexer</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_raw</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="n">strip_simple_quotes</span><span class="p">,</span> <span class="n">lexer</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">val</span><span class="p">)))</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="c1"># need to exec alias</span>
@@ -251,14 +259,7 @@
             <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__module__</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_raw</span>
         <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">_repr_pretty_</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">cycle</span><span class="p">):</span>
-        <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{0}</span><span class="s2">.</span><span class="si">{1}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__module__</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
-        <span class="k">with</span> <span class="n">p</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">name</span> <span class="o">+</span> <span class="s2">&quot;(&quot;</span><span class="p">,</span> <span class="s2">&quot;)&quot;</span><span class="p">):</span>
-            <span class="k">if</span> <span class="n">cycle</span><span class="p">:</span>
-                <span class="n">p</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="s2">&quot;...&quot;</span><span class="p">)</span>
-            <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-                <span class="n">p</span><span class="o">.</span><span class="n">break_</span><span class="p">()</span>
-                <span class="n">p</span><span class="o">.</span><span class="n">pretty</span><span class="p">(</span><span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="p">))</span></div>
+    <span class="n">_repr_pretty_</span> <span class="o">=</span> <span class="n">to_repr_pretty_</span></div>
 
 
 <div class="viewcode-block" id="ExecAlias"><a class="viewcode-back" href="../../api/aliases.html#xonsh.aliases.ExecAlias">[docs]</a><span class="k">class</span> <span class="nc">ExecAlias</span><span class="p">:</span>
@@ -271,17 +272,26 @@
 <span class="sd">        src : str</span>
 <span class="sd">            Source code that will be</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">src</span> <span class="o">=</span> <span class="n">src</span> <span class="k">if</span> <span class="n">src</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="n">src</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">src</span> <span class="o">=</span> <span class="n">src</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">filename</span> <span class="o">=</span> <span class="n">filename</span>
 
     <span class="k">def</span> <span class="fm">__call__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">stdout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">spec</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">stack</span><span class="o">=</span><span class="kc">None</span>
     <span class="p">):</span>
-        <span class="n">execer</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">execer</span>
+        <span class="n">execer</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">execer</span>
         <span class="n">frame</span> <span class="o">=</span> <span class="n">stack</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>  <span class="c1"># execute as though we are at the call site</span>
-        <span class="n">execer</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">src</span><span class="p">,</span> <span class="n">glbs</span><span class="o">=</span><span class="n">frame</span><span class="o">.</span><span class="n">f_globals</span><span class="p">,</span> <span class="n">locs</span><span class="o">=</span><span class="n">frame</span><span class="o">.</span><span class="n">f_locals</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span>
-        <span class="p">)</span>
+
+        <span class="n">alias_args</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;args&quot;</span><span class="p">:</span> <span class="n">args</span><span class="p">}</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">a</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
+            <span class="n">alias_args</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;arg</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">a</span>
+
+        <span class="k">with</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">swap</span><span class="p">(</span><span class="n">alias_args</span><span class="p">):</span>
+            <span class="n">execer</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">src</span><span class="p">,</span>
+                <span class="n">glbs</span><span class="o">=</span><span class="n">frame</span><span class="o">.</span><span class="n">f_globals</span><span class="p">,</span>
+                <span class="n">locs</span><span class="o">=</span><span class="n">frame</span><span class="o">.</span><span class="n">f_locals</span><span class="p">,</span>
+                <span class="n">filename</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">,</span>
+            <span class="p">)</span>
 
     <span class="k">def</span> <span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="s2">&quot;ExecAlias(</span><span class="si">{0!r}</span><span class="s2">, filename=</span><span class="si">{1!r}</span><span class="s2">)&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">src</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">)</span></div>
@@ -421,14 +431,14 @@
     <span class="k">if</span> <span class="ow">not</span> <span class="n">clean_jobs</span><span class="p">():</span>
         <span class="c1"># Do not exit if jobs not cleaned up</span>
         <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
-    <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">exit</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">XSH</span><span class="o">.</span><span class="n">exit</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="nb">print</span><span class="p">()</span>  <span class="c1"># gimme a newline</span>
     <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span></div>
 
 
 <div class="viewcode-block" id="xonsh_reset"><a class="viewcode-back" href="../../api/aliases.html#xonsh.aliases.xonsh_reset">[docs]</a><span class="k">def</span> <span class="nf">xonsh_reset</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot; Clears __xonsh__.ctx&quot;&quot;&quot;</span>
-    <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">ctx</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span></div>
+    <span class="sd">&quot;&quot;&quot;Clears __xonsh__.ctx&quot;&quot;&quot;</span>
+    <span class="n">XSH</span><span class="o">.</span><span class="n">ctx</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span></div>
 
 
 <span class="nd">@lazyobject</span>
@@ -560,7 +570,7 @@
 
 <div class="viewcode-block" id="source_foreign"><a class="viewcode-back" href="../../api/aliases.html#xonsh.aliases.source_foreign">[docs]</a><span class="k">def</span> <span class="nf">source_foreign</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">stdout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Sources a file written in a foreign shell language.&quot;&quot;&quot;</span>
-    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
     <span class="n">ns</span> <span class="o">=</span> <span class="n">_SOURCE_FOREIGN_PARSER</span><span class="o">.</span><span class="n">parse_args</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
     <span class="n">ns</span><span class="o">.</span><span class="n">suppress_skip_message</span> <span class="o">=</span> <span class="p">(</span>
         <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;FOREIGN_ALIASES_SUPPRESS_SKIP_MESSAGE&quot;</span><span class="p">)</span>
@@ -611,7 +621,7 @@
         <span class="k">if</span> <span class="n">k</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">fsenv</span><span class="p">:</span>
             <span class="n">env</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
     <span class="c1"># Update aliases</span>
-    <span class="n">baliases</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">aliases</span>
+    <span class="n">baliases</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">aliases</span>
     <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">fsaliases</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">baliases</span> <span class="ow">and</span> <span class="n">v</span> <span class="o">==</span> <span class="n">baliases</span><span class="p">[</span><span class="n">k</span><span class="p">]:</span>
             <span class="k">continue</span>  <span class="c1"># no change from original</span>
@@ -636,7 +646,7 @@
 <span class="sd">    If sourced file isn&#39;t found in cwd, search for file along $PATH to source</span>
 <span class="sd">    instead.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
     <span class="n">encoding</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_ENCODING&quot;</span><span class="p">)</span>
     <span class="n">errors</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_ENCODING_ERRORS&quot;</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">fname</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
@@ -663,11 +673,11 @@
             <span class="n">src</span> <span class="o">=</span> <span class="n">fp</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">src</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">):</span>
             <span class="n">src</span> <span class="o">+=</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span>
-        <span class="n">ctx</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">ctx</span>
+        <span class="n">ctx</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">ctx</span>
         <span class="n">updates</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;__file__&quot;</span><span class="p">:</span> <span class="n">fpath</span><span class="p">,</span> <span class="s2">&quot;__name__&quot;</span><span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">fpath</span><span class="p">)}</span>
         <span class="k">with</span> <span class="n">env</span><span class="o">.</span><span class="n">swap</span><span class="p">(</span><span class="o">**</span><span class="n">make_args_env</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="p">:])),</span> <span class="n">swap_values</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">updates</span><span class="p">):</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="n">builtins</span><span class="o">.</span><span class="n">execx</span><span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="s2">&quot;exec&quot;</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="n">fpath</span><span class="p">)</span>
+                <span class="n">XSH</span><span class="o">.</span><span class="n">builtins</span><span class="o">.</span><span class="n">execx</span><span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="s2">&quot;exec&quot;</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="n">fpath</span><span class="p">)</span>
             <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
                 <span class="n">print_color</span><span class="p">(</span>
                     <span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">You may be attempting to source non-xonsh file! &quot;</span>
@@ -697,28 +707,38 @@
     <span class="n">args</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;--envcmd=set&quot;</span><span class="p">)</span>
     <span class="n">args</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;--seterrpostcmd=if errorlevel 1 exit 1&quot;</span><span class="p">)</span>
     <span class="n">args</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;--use-tmpfile=1&quot;</span><span class="p">)</span>
-    <span class="k">with</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">swap</span><span class="p">(</span><span class="n">PROMPT</span><span class="o">=</span><span class="s2">&quot;$P$G&quot;</span><span class="p">):</span>
+    <span class="k">with</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">swap</span><span class="p">(</span><span class="n">PROMPT</span><span class="o">=</span><span class="s2">&quot;$P$G&quot;</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">source_foreign</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="n">stdin</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="xexec"><a class="viewcode-back" href="../../api/aliases.html#xonsh.aliases.xexec">[docs]</a><span class="k">def</span> <span class="nf">xexec</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;exec [-h|--help] [-cl] [-a name] command [args...]</span>
+<div class="viewcode-block" id="xexec_fn"><a class="viewcode-back" href="../../api/aliases.html#xonsh.aliases.xexec_fn">[docs]</a><span class="k">def</span> <span class="nf">xexec_fn</span><span class="p">(</span>
+    <span class="n">command</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="n">tp</span><span class="o">.</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">Arg</span><span class="p">(</span><span class="n">nargs</span><span class="o">=</span><span class="n">argparse</span><span class="o">.</span><span class="n">REMAINDER</span><span class="p">)],</span>
+    <span class="n">login</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">clean</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+    <span class="n">_stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;exec (also aliased as xexec) uses the os.execvpe() function to</span>
+<span class="sd">    replace the xonsh process with the specified program.</span>
 
-<span class="sd">    exec (also aliased as xexec) uses the os.execvpe() function to</span>
-<span class="sd">    replace the xonsh process with the specified program. This provides</span>
-<span class="sd">    the functionality of the bash &#39;exec&#39; builtin::</span>
+<span class="sd">    This provides the functionality of the bash &#39;exec&#39; builtin::</span>
 
 <span class="sd">        &gt;&gt;&gt; exec bash -l -i</span>
 <span class="sd">        bash $</span>
 
-<span class="sd">    The &#39;-h&#39; and &#39;--help&#39; options print this message and exit.</span>
-<span class="sd">    If the &#39;-l&#39; option is supplied, the shell places a dash at the</span>
-<span class="sd">    beginning of the zeroth argument passed to command to simulate login</span>
-<span class="sd">    shell.</span>
-<span class="sd">    The &#39;-c&#39; option causes command to be executed with an empty environment.</span>
-<span class="sd">    If &#39;-a&#39; is supplied, the shell passes name as the zeroth argument</span>
-<span class="sd">    to the executed command.</span>
-
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    command</span>
+<span class="sd">        program to launch along its arguments</span>
+<span class="sd">    login : -l, --login</span>
+<span class="sd">        the shell places a dash at the</span>
+<span class="sd">        beginning of the zeroth argument passed to command to simulate login</span>
+<span class="sd">        shell.</span>
+<span class="sd">    clean : -c, --clean</span>
+<span class="sd">        causes command to be executed with an empty environment.</span>
+<span class="sd">    name : -a, --name</span>
+<span class="sd">        the shell passes name as the zeroth argument</span>
+<span class="sd">        to the executed command.</span>
 
 <span class="sd">    Notes</span>
 <span class="sd">    -----</span>
@@ -730,66 +750,38 @@
 <span class="sd">    explicitly with ![exec command]. For more details, please see</span>
 <span class="sd">    http://xon.sh/faq.html#exec.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="k">return</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;xonsh: exec: no args specified</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-
-    <span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">add_help</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;-h&quot;</span><span class="p">,</span> <span class="s2">&quot;--help&quot;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">)</span>
-    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;-l&quot;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s2">&quot;login&quot;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">)</span>
-    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;-c&quot;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s2">&quot;clean&quot;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">)</span>
-    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;-a&quot;</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="s2">&quot;?&quot;</span><span class="p">)</span>
-    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;command&quot;</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="n">argparse</span><span class="o">.</span><span class="n">REMAINDER</span><span class="p">)</span>
-    <span class="n">args</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
-
-    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">help</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getdoc</span><span class="p">(</span><span class="n">xexec</span><span class="p">)</span>
-
-    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">command</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">command</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
         <span class="k">return</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;xonsh: exec: no command specified</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
 
-    <span class="n">command</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">command</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">args</span><span class="o">.</span><span class="n">command</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">name</span>
-    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">login</span><span class="p">:</span>
-        <span class="n">args</span><span class="o">.</span><span class="n">command</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;-</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">command</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">cmd</span> <span class="o">=</span> <span class="n">command</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">name</span><span class="p">:</span>
+        <span class="n">command</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">name</span>
+    <span class="k">if</span> <span class="n">login</span><span class="p">:</span>
+        <span class="n">command</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;-</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">command</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
 
     <span class="n">denv</span> <span class="o">=</span> <span class="p">{}</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">clean</span><span class="p">:</span>
-        <span class="n">denv</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">detype</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">clean</span><span class="p">:</span>
+        <span class="n">denv</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">detype</span><span class="p">()</span>
 
     <span class="k">try</span><span class="p">:</span>
-        <span class="n">os</span><span class="o">.</span><span class="n">execvpe</span><span class="p">(</span><span class="n">command</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">command</span><span class="p">,</span> <span class="n">denv</span><span class="p">)</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">execvpe</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">command</span><span class="p">,</span> <span class="n">denv</span><span class="p">)</span>
     <span class="k">except</span> <span class="ne">FileNotFoundError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
         <span class="k">return</span> <span class="p">(</span>
             <span class="kc">None</span><span class="p">,</span>
-            <span class="s2">&quot;xonsh: exec: file not found: </span><span class="si">{}</span><span class="s2">: </span><span class="si">{}</span><span class="s2">&quot;</span>
-            <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">args</span><span class="o">.</span><span class="n">command</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
+            <span class="s2">&quot;xonsh: exec: file not found: </span><span class="si">{}</span><span class="s2">: </span><span class="si">{}</span><span class="s2">&quot;</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">command</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
             <span class="mi">1</span><span class="p">,</span>
         <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="AWitchAWitch"><a class="viewcode-back" href="../../api/aliases.html#xonsh.aliases.AWitchAWitch">[docs]</a><span class="k">class</span> <span class="nc">AWitchAWitch</span><span class="p">(</span><span class="n">argparse</span><span class="o">.</span><span class="n">Action</span><span class="p">):</span>
-    <span class="n">SUPPRESS</span> <span class="o">=</span> <span class="s2">&quot;==SUPPRESS==&quot;</span>
-
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">option_strings</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="n">SUPPRESS</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">SUPPRESS</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
-    <span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
-            <span class="n">option_strings</span><span class="o">=</span><span class="n">option_strings</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="n">dest</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">default</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
-        <span class="p">)</span>
-
-    <span class="k">def</span> <span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">parser</span><span class="p">,</span> <span class="n">namespace</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">option_string</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-        <span class="kn">import</span> <span class="nn">webbrowser</span>
-
-        <span class="n">webbrowser</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="s2">&quot;https://github.com/xonsh/xonsh/commit/f49b400&quot;</span><span class="p">)</span>
-        <span class="n">parser</span><span class="o">.</span><span class="n">exit</span><span class="p">()</span></div>
+<span class="n">xexec</span> <span class="o">=</span> <span class="n">ArgParserAlias</span><span class="p">(</span><span class="n">func</span><span class="o">=</span><span class="n">xexec_fn</span><span class="p">,</span> <span class="n">has_args</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">prog</span><span class="o">=</span><span class="s2">&quot;xexec&quot;</span><span class="p">)</span>
 
 
-<div class="viewcode-block" id="xonfig"><a class="viewcode-back" href="../../api/aliases.html#xonsh.aliases.xonfig">[docs]</a><span class="k">def</span> <span class="nf">xonfig</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="nd">@lazyobject</span>
+<span class="k">def</span> <span class="nf">xonfig</span><span class="p">():</span>
     <span class="sd">&quot;&quot;&quot;Runs the xonsh configuration utility.&quot;&quot;&quot;</span>
     <span class="kn">from</span> <span class="nn">xonsh.xonfig</span> <span class="kn">import</span> <span class="n">xonfig_main</span>  <span class="c1"># lazy import</span>
 
-    <span class="k">return</span> <span class="n">xonfig_main</span><span class="p">(</span><span class="n">args</span><span class="p">)</span></div>
+    <span class="k">return</span> <span class="n">xonfig_main</span>
 
 
 <div class="viewcode-block" id="trace"><a class="viewcode-back" href="../../api/aliases.html#xonsh.aliases.trace">[docs]</a><span class="nd">@unthreadable</span>
@@ -813,9 +805,9 @@
 <span class="sd">    optional arguments:</span>
 <span class="sd">      -h, --help            show this help message and exit</span>
 
-<span class="sd">    Example:</span>
-<span class="sd">    -------</span>
-<span class="sd">      &gt;&gt;&gt; showcmd echo $USER can&#39;t hear &quot;the sea&quot;</span>
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+<span class="sd">      &gt;&gt;&gt; showcmd echo $USER &quot;can&#39;t&quot; hear &quot;the sea&quot;</span>
 <span class="sd">      [&#39;echo&#39;, &#39;I&#39;, &quot;can&#39;t&quot;, &#39;hear&#39;, &#39;the sea&#39;]</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;-h&quot;</span><span class="p">,</span> <span class="s2">&quot;--help&quot;</span><span class="p">}):</span>
@@ -837,7 +829,7 @@
 
     <span class="n">basecmd</span> <span class="o">=</span> <span class="p">[</span><span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">,</span> <span class="s2">&quot;-m&quot;</span><span class="p">,</span> <span class="s2">&quot;pip&quot;</span><span class="p">]</span>
     <span class="k">try</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">ON_WINDOWS</span> <span class="ow">or</span> <span class="n">IN_APPIMAGE</span><span class="p">:</span>
             <span class="c1"># XXX: Does windows have an installation mode that requires UAC?</span>
             <span class="k">return</span> <span class="n">basecmd</span>
         <span class="k">elif</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">access</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">),</span> <span class="n">os</span><span class="o">.</span><span class="n">W_OK</span><span class="p">):</span>
@@ -1008,7 +1000,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.9.26 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.aliases</a></li> 
@@ -1018,7 +1010,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.5.2.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.0.0.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>

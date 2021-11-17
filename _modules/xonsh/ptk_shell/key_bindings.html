@@ -7,7 +7,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xonsh.ptk_shell.key_bindings &#8212; xonsh 0.10.1.dev5.dev5 documentation</title>
+    <title>xonsh.ptk_shell.key_bindings &#8212; xonsh 0.11.0 documentation</title>
     <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/numpy_friendly.css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css" />
@@ -55,7 +55,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../contents.html">xonsh 0.10.1.dev5.dev5 documentation</a> &#187;</li>
+    <li><a href="../../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.ptk_shell.key_bindings</a></li> 
@@ -85,6 +85,7 @@
     <span class="n">IsSearching</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">prompt_toolkit.keys</span> <span class="kn">import</span> <span class="n">Keys</span>
+<span class="kn">from</span> <span class="nn">prompt_toolkit.input</span> <span class="kn">import</span> <span class="n">ansi_escape_sequences</span>
 <span class="kn">from</span> <span class="nn">prompt_toolkit.key_binding.key_bindings</span> <span class="kn">import</span> <span class="n">KeyBindings</span><span class="p">,</span> <span class="n">KeyBindingsBase</span>
 <span class="kn">from</span> <span class="nn">prompt_toolkit.key_binding.bindings.named_commands</span> <span class="kn">import</span> <span class="n">get_by_name</span>
 
@@ -95,6 +96,7 @@
     <span class="n">ends_with_colon_token</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
+<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="kn">import</span> <span class="n">ON_WINDOWS</span>
 <span class="kn">from</span> <span class="nn">xonsh.shell</span> <span class="kn">import</span> <span class="n">transform_command</span>
 
 <span class="n">DEDENT_TOKENS</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">([</span><span class="s2">&quot;raise&quot;</span><span class="p">,</span> <span class="s2">&quot;return&quot;</span><span class="p">,</span> <span class="s2">&quot;pass&quot;</span><span class="p">,</span> <span class="s2">&quot;break&quot;</span><span class="p">,</span> <span class="s2">&quot;continue&quot;</span><span class="p">])</span>
@@ -280,14 +282,45 @@
     <span class="n">buffer</span><span class="o">.</span><span class="n">selection_state</span> <span class="o">=</span> <span class="n">selection_state</span></div>
 
 
-<div class="viewcode-block" id="load_xonsh_bindings"><a class="viewcode-back" href="../../../api/ptk_shell/key_bindings.html#xonsh.ptk_shell.key_bindings.load_xonsh_bindings">[docs]</a><span class="k">def</span> <span class="nf">load_xonsh_bindings</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">KeyBindingsBase</span><span class="p">:</span>
+<div class="viewcode-block" id="load_xonsh_bindings"><a class="viewcode-back" href="../../../api/ptk_shell/key_bindings.html#xonsh.ptk_shell.key_bindings.load_xonsh_bindings">[docs]</a><span class="k">def</span> <span class="nf">load_xonsh_bindings</span><span class="p">(</span><span class="n">ptk_bindings</span><span class="p">:</span> <span class="n">KeyBindingsBase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">KeyBindingsBase</span><span class="p">:</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Load custom key bindings.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ptk_bindings :</span>
+<span class="sd">        The default prompt toolkit bindings. We need these to add aliases to them.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">key_bindings</span> <span class="o">=</span> <span class="n">KeyBindings</span><span class="p">()</span>
     <span class="n">handle</span> <span class="o">=</span> <span class="n">key_bindings</span><span class="o">.</span><span class="n">add</span>
     <span class="n">has_selection</span> <span class="o">=</span> <span class="n">HasSelection</span><span class="p">()</span>
     <span class="n">insert_mode</span> <span class="o">=</span> <span class="n">ViInsertMode</span><span class="p">()</span> <span class="o">|</span> <span class="n">EmacsInsertMode</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;XONSH_CTRL_BKSP_DELETION&quot;</span><span class="p">]:</span>
+        <span class="c1"># Not all terminal emulators emit the same keys for backspace, therefore</span>
+        <span class="c1"># ptk always maps backspace (&quot;\x7f&quot;) to ^H (&quot;\x08&quot;), and all the backspace bindings are registered for ^H.</span>
+        <span class="c1"># This means we can&#39;t re-map backspace and instead we register a new &quot;real-ctrl-bksp&quot; key.</span>
+        <span class="c1"># See https://github.com/xonsh/xonsh/issues/4407</span>
+
+        <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
+            <span class="c1"># On windows BKSP is &quot;\x08&quot; and CTRL-BKSP is &quot;\x7f&quot;</span>
+            <span class="n">REAL_CTRL_BKSP</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\x7f</span><span class="s2">&quot;</span>
+
+            <span class="c1"># PTK uses a second mapping</span>
+            <span class="kn">from</span> <span class="nn">prompt_toolkit.input</span> <span class="kn">import</span> <span class="n">win32</span> <span class="k">as</span> <span class="n">ptk_win32</span>
+
+            <span class="n">ptk_win32</span><span class="o">.</span><span class="n">ConsoleInputReader</span><span class="o">.</span><span class="n">mappings</span><span class="p">[</span><span class="sa">b</span><span class="s2">&quot;</span><span class="se">\x7f</span><span class="s2">&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">REAL_CTRL_BKSP</span>  <span class="c1"># type: ignore</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">REAL_CTRL_BKSP</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\x08</span><span class="s2">&quot;</span>
+
+        <span class="c1"># Prompt-toolkit allows using single-character keys that aren&#39;t in the `Keys` enum.</span>
+        <span class="n">ansi_escape_sequences</span><span class="o">.</span><span class="n">ANSI_SEQUENCES</span><span class="p">[</span><span class="n">REAL_CTRL_BKSP</span><span class="p">]</span> <span class="o">=</span> <span class="n">REAL_CTRL_BKSP</span>  <span class="c1"># type: ignore</span>
+        <span class="n">ansi_escape_sequences</span><span class="o">.</span><span class="n">REVERSE_ANSI_SEQUENCES</span><span class="p">[</span><span class="n">REAL_CTRL_BKSP</span><span class="p">]</span> <span class="o">=</span> <span class="n">REAL_CTRL_BKSP</span>  <span class="c1"># type: ignore</span>
+
+        <span class="nd">@handle</span><span class="p">(</span><span class="n">REAL_CTRL_BKSP</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=</span><span class="n">insert_mode</span><span class="p">)</span>
+        <span class="k">def</span> <span class="nf">delete_word</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
+            <span class="sd">&quot;&quot;&quot;Delete a single word (like ALT-backspace)&quot;&quot;&quot;</span>
+            <span class="n">get_by_name</span><span class="p">(</span><span class="s2">&quot;backward-kill-word&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
 
     <span class="nd">@handle</span><span class="p">(</span><span class="n">Keys</span><span class="o">.</span><span class="n">Tab</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=</span><span class="n">tab_insert_indent</span><span class="p">)</span>
     <span class="k">def</span> <span class="nf">insert_indent</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
@@ -461,6 +494,14 @@
             <span class="n">buff</span><span class="o">.</span><span class="n">cut_selection</span><span class="p">()</span>
         <span class="n">get_by_name</span><span class="p">(</span><span class="s2">&quot;yank&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
 
+    <span class="k">def</span> <span class="nf">create_alias</span><span class="p">(</span><span class="n">new_keys</span><span class="p">,</span> <span class="n">original_keys</span><span class="p">):</span>
+        <span class="n">bindings</span> <span class="o">=</span> <span class="n">ptk_bindings</span><span class="o">.</span><span class="n">get_bindings_for_keys</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">original_keys</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">original_binding</span> <span class="ow">in</span> <span class="n">bindings</span><span class="p">:</span>
+            <span class="n">handle</span><span class="p">(</span><span class="o">*</span><span class="n">new_keys</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=</span><span class="n">original_binding</span><span class="o">.</span><span class="n">filter</span><span class="p">)(</span><span class="n">original_binding</span><span class="o">.</span><span class="n">handler</span><span class="p">)</span>
+
+    <span class="c1"># Complete a single auto-suggestion word</span>
+    <span class="n">create_alias</span><span class="p">([</span><span class="n">Keys</span><span class="o">.</span><span class="n">ControlRight</span><span class="p">],</span> <span class="p">[</span><span class="s2">&quot;escape&quot;</span><span class="p">,</span> <span class="s2">&quot;f&quot;</span><span class="p">])</span>
+
     <span class="k">return</span> <span class="n">key_bindings</span></div>
 </pre></div>
 
@@ -477,7 +518,7 @@
   <h3 id="searchlabel">Quick search</h3>
     <div class="searchformwrapper">
     <form class="search" action="../../../search.html" method="get">
-      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="text" name="q" aria-labelledby="searchlabel" />
       <input type="submit" value="Go" />
     </form>
     </div>
@@ -515,7 +556,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../contents.html">xonsh 0.10.1.dev5.dev5 documentation</a> &#187;</li>
+    <li><a href="../../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.ptk_shell.key_bindings</a></li> 
@@ -525,7 +566,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.1.1.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.0.0.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>
