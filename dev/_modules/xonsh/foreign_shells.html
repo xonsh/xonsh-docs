@@ -7,14 +7,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xonsh.foreign_shells &#8212; xonsh 0.9.27.dev21 documentation</title>
-    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
-    <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
+    <title>xonsh.foreign_shells &#8212; xonsh 0.11.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/numpy_friendly.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
     
-    <script id="documentation_options" data-url_root="../../" src="../../_static/documentation_options.js"></script>
+    <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
     <script src="../../_static/jquery.js"></script>
     <script src="../../_static/underscore.js"></script>
     <script src="../../_static/doctools.js"></script>
@@ -55,7 +55,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.9.27.dev21 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.foreign_shells</a></li> 
@@ -70,24 +70,21 @@
           <div class="body" role="main">
             
   <h1>Source code for xonsh.foreign_shells</h1><div class="highlight"><pre>
-<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
-<span class="sd">&quot;&quot;&quot;Tools to help interface with foreign shells, such as Bash.&quot;&quot;&quot;</span>
+<span></span><span class="sd">&quot;&quot;&quot;Tools to help interface with foreign shells, such as Bash.&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">collections.abc</span> <span class="k">as</span> <span class="nn">cabc</span>
+<span class="kn">import</span> <span class="nn">functools</span>
 <span class="kn">import</span> <span class="nn">os</span>
 <span class="kn">import</span> <span class="nn">re</span>
-<span class="kn">import</span> <span class="nn">json</span>
 <span class="kn">import</span> <span class="nn">shlex</span>
+<span class="kn">import</span> <span class="nn">subprocess</span>
 <span class="kn">import</span> <span class="nn">sys</span>
 <span class="kn">import</span> <span class="nn">tempfile</span>
-<span class="kn">import</span> <span class="nn">builtins</span>
-<span class="kn">import</span> <span class="nn">subprocess</span>
 <span class="kn">import</span> <span class="nn">warnings</span>
-<span class="kn">import</span> <span class="nn">functools</span>
-<span class="kn">import</span> <span class="nn">collections.abc</span> <span class="k">as</span> <span class="nn">cabc</span>
 
+<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
 <span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="kn">import</span> <span class="n">lazyobject</span>
-<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="n">to_bool</span><span class="p">,</span> <span class="n">ensure_string</span>
-<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="kn">import</span> <span class="n">ON_WINDOWS</span><span class="p">,</span> <span class="n">ON_CYGWIN</span><span class="p">,</span> <span class="n">ON_MSYS</span>
-
+<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="kn">import</span> <span class="n">ON_CYGWIN</span><span class="p">,</span> <span class="n">ON_MSYS</span><span class="p">,</span> <span class="n">ON_WINDOWS</span>
+<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="n">ensure_string</span><span class="p">,</span> <span class="n">to_bool</span>
 
 <span class="n">COMMAND</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span><span class="si">{seterrprevcmd}</span><span class="s2"></span>
 <span class="si">{prevcmd}</span><span class="s2"></span>
@@ -103,62 +100,21 @@
 <span class="si">{postcmd}</span><span class="s2"></span>
 <span class="si">{seterrpostcmd}</span><span class="s2">&quot;&quot;&quot;</span>
 
-<span class="n">DEFAULT_BASH_FUNCSCMD</span> <span class="o">=</span> <span class="sa">r</span><span class="s2">&quot;&quot;&quot;# get function names from declare</span>
+<span class="n">DEFAULT_BASH_FUNCSCMD</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;# get function names from declare</span>
 <span class="s2">declstr=$(echo $(declare -F))</span>
 <span class="s2">read -r -a decls &lt;&lt;&lt; $declstr</span>
-<span class="s2">funcnames=&quot;&quot;</span>
 <span class="s2">for((n=0;n&lt;${#decls[@]};n++)); do</span>
 <span class="s2">  if (( $(($n % 3 )) == 2 )); then</span>
-<span class="s2">    # get every 3rd entry</span>
-<span class="s2">    funcnames=&quot;$funcnames $</span><span class="si">{decls[$n]}</span><span class="s2">&quot;</span>
+<span class="s2">    echo -n &quot;$</span><span class="si">{decls[$n]}</span><span class="s2"> &quot;</span>
 <span class="s2">  fi</span>
 <span class="s2">done</span>
-
-<span class="s2"># get functions locations: funcname lineno filename</span>
-<span class="s2">shopt -s extdebug</span>
-<span class="s2">namelocfilestr=$(declare -F $funcnames)</span>
-<span class="s2">shopt -u extdebug</span>
-
-<span class="s2"># print just names and files as JSON object</span>
-<span class="s2">read -r -a namelocfile &lt;&lt;&lt; $namelocfilestr</span>
-<span class="s2">sep=&quot; &quot;</span>
-<span class="s2">namefile=&quot;{&quot;</span>
-<span class="s2">while IFS=&#39;&#39; read -r line || [[ -n &quot;$line&quot; ]]; do</span>
-<span class="s2">  name=${line</span><span class="si">%%</span><span class="s2">&quot;$sep&quot;*}</span>
-<span class="s2">  locfile=${line#*&quot;$sep&quot;}</span>
-<span class="s2">  loc=${locfile</span><span class="si">%%</span><span class="s2">&quot;$sep&quot;*}</span>
-<span class="s2">  file=${locfile#*&quot;$sep&quot;}</span>
-<span class="s2">  namefile=&quot;$</span><span class="si">{namefile}</span><span class="s2">\&quot;$</span><span class="si">{name}</span><span class="s2">\&quot;:\&quot;${file//\\/\\\\}\&quot;,&quot;</span>
-<span class="s2">done &lt;&lt;&lt; &quot;$namelocfilestr&quot;</span>
-<span class="s2">if [[ &quot;{&quot; == &quot;$</span><span class="si">{namefile}</span><span class="s2">&quot; ]]; then</span>
-<span class="s2">  namefile=&quot;$</span><span class="si">{namefile}</span><span class="s2">}&quot;</span>
-<span class="s2">else</span>
-<span class="s2">  namefile=&quot;${namefile%?}}&quot;</span>
-<span class="s2">fi</span>
-<span class="s2">echo $namefile&quot;&quot;&quot;</span>
+<span class="s2">echo&quot;&quot;&quot;</span>
 
 <span class="n">DEFAULT_ZSH_FUNCSCMD</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;# get function names</span>
-<span class="s2">autoload -U is-at-least  # We&#39;ll need to version check zsh</span>
-<span class="s2">namefile=&quot;{&quot;</span>
 <span class="s2">for name in ${(ok)functions}; do</span>
-<span class="s2">  # force zsh to load the func in order to get the filename,</span>
-<span class="s2">  # but use +X so that it isn&#39;t executed.</span>
-<span class="s2">  autoload +X $name || continue</span>
-<span class="s2">  loc=$(whence -v $name)</span>
-<span class="s2">  loc=${(z)loc}</span>
-<span class="s2">  if is-at-least 5.2; then</span>
-<span class="s2">    file=$</span><span class="si">{loc[-1]}</span><span class="s2"></span>
-<span class="s2">  else</span>
-<span class="s2">    file=$</span><span class="si">{loc[7,-1]}</span><span class="s2"></span>
-<span class="s2">  fi</span>
-<span class="s2">  namefile=&quot;$</span><span class="si">{namefile}</span><span class="se">\\</span><span class="s2">&quot;$</span><span class="si">{name}</span><span class="se">\\</span><span class="s2">&quot;:</span><span class="se">\\</span><span class="s2">&quot;${(Q)file:A}</span><span class="se">\\</span><span class="s2">&quot;,&quot;</span>
+<span class="s2">  echo -n &quot;$name &quot;</span>
 <span class="s2">done</span>
-<span class="s2">if [[ &quot;{&quot; == &quot;$</span><span class="si">{namefile}</span><span class="s2">&quot; ]]; then</span>
-<span class="s2">  namefile=&quot;$</span><span class="si">{namefile}</span><span class="s2">}&quot;</span>
-<span class="s2">else</span>
-<span class="s2">  namefile=&quot;${namefile%?}}&quot;</span>
-<span class="s2">fi</span>
-<span class="s2">echo $</span><span class="si">{namefile}</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">echo&quot;&quot;&quot;</span>
 
 
 <span class="c1"># mapping of shell name aliases to keys in other lookup dictionaries.</span>
@@ -215,7 +171,7 @@
     <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;bash&quot;</span><span class="p">:</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;zsh&quot;</span><span class="p">:</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;cmd&quot;</span><span class="p">:</span> <span class="s2">&quot;if errorlevel 1 exit 1&quot;</span><span class="p">}</span>
 
 
-<div class="viewcode-block" id="foreign_shell_data"><a class="viewcode-back" href="../../api/foreign_shells.html#xonsh.foreign_shells.foreign_shell_data">[docs]</a><span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">()</span>
+<div class="viewcode-block" id="foreign_shell_data"><a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.foreign_shells.html#xonsh.foreign_shells.foreign_shell_data">[docs]</a><span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">()</span>
 <span class="k">def</span> <span class="nf">foreign_shell_data</span><span class="p">(</span>
     <span class="n">shell</span><span class="p">,</span>
     <span class="n">interactive</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -236,6 +192,7 @@
     <span class="n">seterrpostcmd</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="n">show</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
     <span class="n">dryrun</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">files</span><span class="o">=</span><span class="p">(),</span>
 <span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Extracts data from a foreign (non-xonsh) shells. Currently this gets</span>
 <span class="sd">    the environment, aliases, and functions but may be extended in the future.</span>
@@ -297,7 +254,8 @@
 <span class="sd">        Whether or not to display the script that will be run.</span>
 <span class="sd">    dryrun : bool, optional</span>
 <span class="sd">        Whether or not to actually run and process the command.</span>
-
+<span class="sd">    files : tuple of str, optional</span>
+<span class="sd">        Paths to source.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
@@ -348,8 +306,8 @@
         <span class="n">tmpfile</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">command</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s2">&quot;utf8&quot;</span><span class="p">))</span>
         <span class="n">tmpfile</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
         <span class="n">cmd</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">tmpfile</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">currenv</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="p">,</span> <span class="s2">&quot;env&quot;</span><span class="p">):</span>
-        <span class="n">currenv</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">detype</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">currenv</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="p">:</span>
+        <span class="n">currenv</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">detype</span><span class="p">()</span>
     <span class="k">elif</span> <span class="n">currenv</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">currenv</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">currenv</span><span class="p">)</span>
     <span class="k">try</span><span class="p">:</span>
@@ -370,8 +328,20 @@
         <span class="k">if</span> <span class="n">use_tmpfile</span><span class="p">:</span>
             <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">tmpfile</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
     <span class="n">env</span> <span class="o">=</span> <span class="n">parse_env</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
-    <span class="n">aliases</span> <span class="o">=</span> <span class="n">parse_aliases</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="n">shell</span><span class="p">,</span> <span class="n">sourcer</span><span class="o">=</span><span class="n">sourcer</span><span class="p">,</span> <span class="n">extra_args</span><span class="o">=</span><span class="n">extra_args</span><span class="p">)</span>
-    <span class="n">funcs</span> <span class="o">=</span> <span class="n">parse_funcs</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="n">shell</span><span class="p">,</span> <span class="n">sourcer</span><span class="o">=</span><span class="n">sourcer</span><span class="p">,</span> <span class="n">extra_args</span><span class="o">=</span><span class="n">extra_args</span><span class="p">)</span>
+    <span class="n">aliases</span> <span class="o">=</span> <span class="n">parse_aliases</span><span class="p">(</span>
+        <span class="n">s</span><span class="p">,</span>
+        <span class="n">shell</span><span class="o">=</span><span class="n">shell</span><span class="p">,</span>
+        <span class="n">sourcer</span><span class="o">=</span><span class="n">sourcer</span><span class="p">,</span>
+        <span class="n">files</span><span class="o">=</span><span class="n">files</span><span class="p">,</span>
+        <span class="n">extra_args</span><span class="o">=</span><span class="n">extra_args</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">funcs</span> <span class="o">=</span> <span class="n">parse_funcs</span><span class="p">(</span>
+        <span class="n">s</span><span class="p">,</span>
+        <span class="n">shell</span><span class="o">=</span><span class="n">shell</span><span class="p">,</span>
+        <span class="n">sourcer</span><span class="o">=</span><span class="n">sourcer</span><span class="p">,</span>
+        <span class="n">files</span><span class="o">=</span><span class="n">files</span><span class="p">,</span>
+        <span class="n">extra_args</span><span class="o">=</span><span class="n">extra_args</span><span class="p">,</span>
+    <span class="p">)</span>
     <span class="n">aliases</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">funcs</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">env</span><span class="p">,</span> <span class="n">aliases</span></div>
 
@@ -386,7 +356,7 @@
     <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s2">&quot;^([^=]+)=([^=]*|[^</span><span class="se">\n</span><span class="s2">]*)$&quot;</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">DOTALL</span> <span class="o">|</span> <span class="n">re</span><span class="o">.</span><span class="n">MULTILINE</span><span class="p">)</span>
 
 
-<div class="viewcode-block" id="parse_env"><a class="viewcode-back" href="../../api/foreign_shells.html#xonsh.foreign_shells.parse_env">[docs]</a><span class="k">def</span> <span class="nf">parse_env</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+<div class="viewcode-block" id="parse_env"><a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.foreign_shells.html#xonsh.foreign_shells.parse_env">[docs]</a><span class="k">def</span> <span class="nf">parse_env</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Parses the environment portion of string into a dict.&quot;&quot;&quot;</span>
     <span class="n">m</span> <span class="o">=</span> <span class="n">ENV_RE</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">m</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -409,7 +379,7 @@
     <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;;|`|\$\(&quot;</span><span class="p">)</span>
 
 
-<div class="viewcode-block" id="parse_aliases"><a class="viewcode-back" href="../../api/foreign_shells.html#xonsh.foreign_shells.parse_aliases">[docs]</a><span class="k">def</span> <span class="nf">parse_aliases</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">shell</span><span class="p">,</span> <span class="n">sourcer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">extra_args</span><span class="o">=</span><span class="p">()):</span>
+<div class="viewcode-block" id="parse_aliases"><a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.foreign_shells.html#xonsh.foreign_shells.parse_aliases">[docs]</a><span class="k">def</span> <span class="nf">parse_aliases</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">shell</span><span class="p">,</span> <span class="n">sourcer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">files</span><span class="o">=</span><span class="p">(),</span> <span class="n">extra_args</span><span class="o">=</span><span class="p">()):</span>
     <span class="sd">&quot;&quot;&quot;Parses the aliases portion of string into a dict.&quot;&quot;&quot;</span>
     <span class="n">m</span> <span class="o">=</span> <span class="n">ALIAS_RE</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">m</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -435,17 +405,17 @@
                 <span class="n">value</span> <span class="o">=</span> <span class="n">shlex</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="c1"># alias is more complex, use ExecAlias, but via shell</span>
-                <span class="n">filename</span> <span class="o">=</span> <span class="s2">&quot;&lt;foreign-shell-exec-alias:&quot;</span> <span class="o">+</span> <span class="n">key</span> <span class="o">+</span> <span class="s2">&quot;&gt;&quot;</span>
                 <span class="n">value</span> <span class="o">=</span> <span class="n">ForeignShellExecAlias</span><span class="p">(</span>
                     <span class="n">src</span><span class="o">=</span><span class="n">value</span><span class="p">,</span>
                     <span class="n">shell</span><span class="o">=</span><span class="n">shell</span><span class="p">,</span>
-                    <span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">,</span>
                     <span class="n">sourcer</span><span class="o">=</span><span class="n">sourcer</span><span class="p">,</span>
+                    <span class="n">files</span><span class="o">=</span><span class="n">files</span><span class="p">,</span>
                     <span class="n">extra_args</span><span class="o">=</span><span class="n">extra_args</span><span class="p">,</span>
                 <span class="p">)</span>
         <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
             <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="s1">&#39;could not parse alias &quot;</span><span class="si">{0}</span><span class="s1">&quot;: </span><span class="si">{1!r}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">exc</span><span class="p">),</span> <span class="ne">RuntimeWarning</span>
+                <span class="sa">f</span><span class="s1">&#39;could not parse alias &quot;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s1">&quot;: </span><span class="si">{</span><span class="n">exc</span><span class="si">!r}</span><span class="s1">&#39;</span><span class="p">,</span>
+                <span class="ne">RuntimeWarning</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="k">continue</span>
         <span class="n">aliases</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
@@ -459,7 +429,7 @@
     <span class="p">)</span>
 
 
-<div class="viewcode-block" id="parse_funcs"><a class="viewcode-back" href="../../api/foreign_shells.html#xonsh.foreign_shells.parse_funcs">[docs]</a><span class="k">def</span> <span class="nf">parse_funcs</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">shell</span><span class="p">,</span> <span class="n">sourcer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">extra_args</span><span class="o">=</span><span class="p">()):</span>
+<div class="viewcode-block" id="parse_funcs"><a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.foreign_shells.html#xonsh.foreign_shells.parse_funcs">[docs]</a><span class="k">def</span> <span class="nf">parse_funcs</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">shell</span><span class="p">,</span> <span class="n">sourcer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">files</span><span class="o">=</span><span class="p">(),</span> <span class="n">extra_args</span><span class="o">=</span><span class="p">()):</span>
     <span class="sd">&quot;&quot;&quot;Parses the funcs portion of a string into a dict of callable foreign</span>
 <span class="sd">    function wrappers.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -469,68 +439,51 @@
     <span class="n">g1</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
         <span class="n">g1</span> <span class="o">=</span> <span class="n">g1</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">sep</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">altsep</span><span class="p">)</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="n">namefiles</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">g1</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
-    <span class="k">except</span> <span class="n">json</span><span class="o">.</span><span class="n">decoder</span><span class="o">.</span><span class="n">JSONDecodeError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-        <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="s2">&quot;</span><span class="si">{0!r}</span><span class="se">\n\n</span><span class="s2">could not parse </span><span class="si">{1}</span><span class="s2"> functions:</span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="s2">&quot;  s  = </span><span class="si">{2!r}</span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="s2">&quot;  g1 = </span><span class="si">{3!r}</span><span class="se">\n\n</span><span class="s2">&quot;</span>
-            <span class="s2">&quot;Note: you may be seeing this error if you use zsh with &quot;</span>
-            <span class="s2">&quot;prezto. Prezto overwrites GNU coreutils functions (like echo) &quot;</span>
-            <span class="s2">&quot;with its own zsh functions. Please try disabling prezto.&quot;</span>
-        <span class="p">)</span>
-        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">exc</span><span class="p">,</span> <span class="n">shell</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="n">g1</span><span class="p">),</span> <span class="ne">RuntimeWarning</span><span class="p">)</span>
-        <span class="k">return</span> <span class="p">{}</span>
-    <span class="n">sourcer</span> <span class="o">=</span> <span class="n">DEFAULT_SOURCERS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">shell</span><span class="p">,</span> <span class="s2">&quot;source&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="n">sourcer</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">sourcer</span>
+    <span class="n">funcnames</span> <span class="o">=</span> <span class="n">g1</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
     <span class="n">funcs</span> <span class="o">=</span> <span class="p">{}</span>
-    <span class="k">for</span> <span class="n">funcname</span><span class="p">,</span> <span class="n">filename</span> <span class="ow">in</span> <span class="n">namefiles</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-        <span class="k">if</span> <span class="n">funcname</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">filename</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">funcname</span> <span class="ow">in</span> <span class="n">funcnames</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">funcname</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">):</span>
             <span class="k">continue</span>  <span class="c1"># skip private functions and invalid files</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isabs</span><span class="p">(</span><span class="n">filename</span><span class="p">):</span>
-            <span class="n">filename</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span>
         <span class="n">wrapper</span> <span class="o">=</span> <span class="n">ForeignShellFunctionAlias</span><span class="p">(</span>
             <span class="n">funcname</span><span class="o">=</span><span class="n">funcname</span><span class="p">,</span>
             <span class="n">shell</span><span class="o">=</span><span class="n">shell</span><span class="p">,</span>
             <span class="n">sourcer</span><span class="o">=</span><span class="n">sourcer</span><span class="p">,</span>
-            <span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">,</span>
+            <span class="n">files</span><span class="o">=</span><span class="n">files</span><span class="p">,</span>
             <span class="n">extra_args</span><span class="o">=</span><span class="n">extra_args</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="n">funcs</span><span class="p">[</span><span class="n">funcname</span><span class="p">]</span> <span class="o">=</span> <span class="n">wrapper</span>
     <span class="k">return</span> <span class="n">funcs</span></div>
 
 
-<div class="viewcode-block" id="ForeignShellBaseAlias"><a class="viewcode-back" href="../../api/foreign_shells.html#xonsh.foreign_shells.ForeignShellBaseAlias">[docs]</a><span class="k">class</span> <span class="nc">ForeignShellBaseAlias</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<div class="viewcode-block" id="ForeignShellBaseAlias"><a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.foreign_shells.html#xonsh.foreign_shells.ForeignShellBaseAlias">[docs]</a><span class="k">class</span> <span class="nc">ForeignShellBaseAlias</span><span class="p">:</span>
     <span class="sd">&quot;&quot;&quot;This class is responsible for calling foreign shell functions as if</span>
 <span class="sd">    they were aliases. This does not currently support taking stdin.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="n">INPUT</span> <span class="o">=</span> <span class="s2">&quot;echo ForeignShellBaseAlias </span><span class="si">{shell}</span><span class="s2"> </span><span class="si">{filename}</span><span class="s2"> </span><span class="si">{args}</span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="n">INPUT</span> <span class="o">=</span> <span class="s2">&quot;echo ForeignShellBaseAlias </span><span class="si">{shell}</span><span class="s2"> </span><span class="si">{args}</span><span class="se">\n</span><span class="s2">&quot;</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">shell</span><span class="p">,</span> <span class="n">filename</span><span class="p">,</span> <span class="n">sourcer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">extra_args</span><span class="o">=</span><span class="p">()):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">shell</span><span class="p">,</span> <span class="n">sourcer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">files</span><span class="o">=</span><span class="p">(),</span> <span class="n">extra_args</span><span class="o">=</span><span class="p">()):</span>
         <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        shell : str</span>
 <span class="sd">            Name or path to shell</span>
-<span class="sd">        filename : str</span>
-<span class="sd">            Where the function is defined, path to source.</span>
 <span class="sd">        sourcer : str or None, optional</span>
 <span class="sd">            Command to source foreign files with.</span>
+<span class="sd">        files : tuple of str, optional</span>
+<span class="sd">            Paths to source.</span>
 <span class="sd">        extra_args : tuple of str, optional</span>
 <span class="sd">            Additional command line options to pass into the shell.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">sourcer</span> <span class="o">=</span> <span class="n">DEFAULT_SOURCERS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">shell</span><span class="p">,</span> <span class="s2">&quot;source&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="n">sourcer</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">sourcer</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">shell</span> <span class="o">=</span> <span class="n">shell</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">filename</span> <span class="o">=</span> <span class="n">filename</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">sourcer</span> <span class="o">=</span> <span class="n">sourcer</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">files</span> <span class="o">=</span> <span class="n">files</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">extra_args</span> <span class="o">=</span> <span class="n">extra_args</span>
 
     <span class="k">def</span> <span class="nf">_input_kwargs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="p">{</span>
             <span class="s2">&quot;shell&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">shell</span><span class="p">,</span>
-            <span class="s2">&quot;filename&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">,</span>
-            <span class="s2">&quot;sourcer&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">sourcer</span><span class="p">,</span>
             <span class="s2">&quot;extra_args&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">extra_args</span><span class="p">,</span>
         <span class="p">}</span>
 
@@ -544,8 +497,10 @@
     <span class="p">):</span>
         <span class="n">args</span><span class="p">,</span> <span class="n">streaming</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_streaming</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
         <span class="nb">input</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">INPUT</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">args</span><span class="p">),</span> <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_input_kwargs</span><span class="p">())</span>
-        <span class="n">cmd</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">shell</span><span class="p">]</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">extra_args</span><span class="p">)</span> <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;-c&quot;</span><span class="p">,</span> <span class="nb">input</span><span class="p">]</span>
-        <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">files</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="nb">input</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">sourcer</span><span class="si">}</span><span class="s1"> &quot;</span><span class="si">{</span><span class="n">f</span><span class="si">}</span><span class="s1">&quot;</span><span class="se">\n</span><span class="s1">&#39;</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">files</span><span class="p">])</span> <span class="o">+</span> <span class="nb">input</span>
+        <span class="n">cmd</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">shell</span><span class="p">]</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">extra_args</span><span class="p">)</span> <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;-ic&quot;</span><span class="p">,</span> <span class="nb">input</span><span class="p">]</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
         <span class="n">denv</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">detype</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">streaming</span><span class="p">:</span>
             <span class="n">subprocess</span><span class="o">.</span><span class="n">check_call</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">denv</span><span class="p">)</span>
@@ -563,33 +518,28 @@
         <span class="k">return</span> <span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span>
             <span class="o">+</span> <span class="s2">&quot;(&quot;</span>
-            <span class="o">+</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
-                <span class="p">[</span>
-                    <span class="s2">&quot;</span><span class="si">{k}</span><span class="s2">=</span><span class="si">{v!r}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">k</span><span class="o">=</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="o">=</span><span class="n">v</span><span class="p">)</span>
-                    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_input_kwargs</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">())</span>
-                <span class="p">]</span>
-            <span class="p">)</span>
+            <span class="o">+</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2">=</span><span class="si">{</span><span class="n">v</span><span class="si">!r}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_input_kwargs</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">())])</span>
             <span class="o">+</span> <span class="s2">&quot;)&quot;</span>
         <span class="p">)</span>
 
     <span class="nd">@staticmethod</span>
     <span class="k">def</span> <span class="nf">_is_streaming</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Test and modify args if --xonsh-stream is present.&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="s2">&quot;--xonsh-stream&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">args</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">args</span><span class="p">,</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="s2">&quot;--xonsh-nostream&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">args</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">args</span><span class="p">,</span> <span class="kc">True</span>
         <span class="n">args</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
-        <span class="n">args</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="s2">&quot;--xonsh-stream&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">args</span><span class="p">,</span> <span class="kc">True</span></div>
+        <span class="n">args</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="s2">&quot;--xonsh-nostream&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">args</span><span class="p">,</span> <span class="kc">False</span></div>
 
 
-<div class="viewcode-block" id="ForeignShellFunctionAlias"><a class="viewcode-back" href="../../api/foreign_shells.html#xonsh.foreign_shells.ForeignShellFunctionAlias">[docs]</a><span class="k">class</span> <span class="nc">ForeignShellFunctionAlias</span><span class="p">(</span><span class="n">ForeignShellBaseAlias</span><span class="p">):</span>
+<div class="viewcode-block" id="ForeignShellFunctionAlias"><a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.foreign_shells.html#xonsh.foreign_shells.ForeignShellFunctionAlias">[docs]</a><span class="k">class</span> <span class="nc">ForeignShellFunctionAlias</span><span class="p">(</span><span class="n">ForeignShellBaseAlias</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;This class is responsible for calling foreign shell functions as if</span>
 <span class="sd">    they were aliases. This does not currently support taking stdin.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="n">INPUT</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="si">{sourcer}</span><span class="s1"> &quot;</span><span class="si">{filename}</span><span class="s1">&quot;</span><span class="se">\n</span><span class="s1">&#39;</span> <span class="s2">&quot;</span><span class="si">{funcname}</span><span class="s2"> </span><span class="si">{args}</span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="n">INPUT</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{funcname}</span><span class="s2"> </span><span class="si">{args}</span><span class="se">\n</span><span class="s2">&quot;</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">funcname</span><span class="p">,</span> <span class="n">shell</span><span class="p">,</span> <span class="n">filename</span><span class="p">,</span> <span class="n">sourcer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">extra_args</span><span class="o">=</span><span class="p">()):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">funcname</span><span class="p">,</span> <span class="n">shell</span><span class="p">,</span> <span class="n">sourcer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">files</span><span class="o">=</span><span class="p">(),</span> <span class="n">extra_args</span><span class="o">=</span><span class="p">()):</span>
         <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
@@ -597,15 +547,15 @@
 <span class="sd">            function name</span>
 <span class="sd">        shell : str</span>
 <span class="sd">            Name or path to shell</span>
-<span class="sd">        filename : str</span>
-<span class="sd">            Where the function is defined, path to source.</span>
 <span class="sd">        sourcer : str or None, optional</span>
 <span class="sd">            Command to source foreign files with.</span>
+<span class="sd">        files : tuple of str, optional</span>
+<span class="sd">            Paths to source.</span>
 <span class="sd">        extra_args : tuple of str, optional</span>
 <span class="sd">            Additional command line options to pass into the shell.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
-            <span class="n">shell</span><span class="o">=</span><span class="n">shell</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">,</span> <span class="n">sourcer</span><span class="o">=</span><span class="n">sourcer</span><span class="p">,</span> <span class="n">extra_args</span><span class="o">=</span><span class="n">extra_args</span>
+            <span class="n">shell</span><span class="o">=</span><span class="n">shell</span><span class="p">,</span> <span class="n">sourcer</span><span class="o">=</span><span class="n">sourcer</span><span class="p">,</span> <span class="n">files</span><span class="o">=</span><span class="n">files</span><span class="p">,</span> <span class="n">extra_args</span><span class="o">=</span><span class="n">extra_args</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">funcname</span> <span class="o">=</span> <span class="n">funcname</span>
 
@@ -615,7 +565,7 @@
         <span class="k">return</span> <span class="n">inp</span></div>
 
 
-<div class="viewcode-block" id="ForeignShellExecAlias"><a class="viewcode-back" href="../../api/foreign_shells.html#xonsh.foreign_shells.ForeignShellExecAlias">[docs]</a><span class="k">class</span> <span class="nc">ForeignShellExecAlias</span><span class="p">(</span><span class="n">ForeignShellBaseAlias</span><span class="p">):</span>
+<div class="viewcode-block" id="ForeignShellExecAlias"><a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.foreign_shells.html#xonsh.foreign_shells.ForeignShellExecAlias">[docs]</a><span class="k">class</span> <span class="nc">ForeignShellExecAlias</span><span class="p">(</span><span class="n">ForeignShellBaseAlias</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Provides a callable alias for source code in a foreign shell.&quot;&quot;&quot;</span>
 
     <span class="n">INPUT</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{src}</span><span class="s2"> </span><span class="si">{args}</span><span class="se">\n</span><span class="s2">&quot;</span>
@@ -624,8 +574,8 @@
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">src</span><span class="p">,</span>
         <span class="n">shell</span><span class="p">,</span>
-        <span class="n">filename</span><span class="o">=</span><span class="s2">&quot;&lt;foreign-shell-exec-alias&gt;&quot;</span><span class="p">,</span>
         <span class="n">sourcer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">files</span><span class="o">=</span><span class="p">(),</span>
         <span class="n">extra_args</span><span class="o">=</span><span class="p">(),</span>
     <span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;</span>
@@ -635,15 +585,15 @@
 <span class="sd">            Source code in the shell language</span>
 <span class="sd">        shell : str</span>
 <span class="sd">            Name or path to shell</span>
-<span class="sd">        filename : str</span>
-<span class="sd">            Where the function is defined, path to source.</span>
 <span class="sd">        sourcer : str or None, optional</span>
 <span class="sd">            Command to source foreign files with.</span>
+<span class="sd">        files : tuple of str, optional</span>
+<span class="sd">            Paths to source.</span>
 <span class="sd">        extra_args : tuple of str, optional</span>
 <span class="sd">            Additional command line options to pass into the shell.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
-            <span class="n">shell</span><span class="o">=</span><span class="n">shell</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">,</span> <span class="n">sourcer</span><span class="o">=</span><span class="n">sourcer</span><span class="p">,</span> <span class="n">extra_args</span><span class="o">=</span><span class="n">extra_args</span>
+            <span class="n">shell</span><span class="o">=</span><span class="n">shell</span><span class="p">,</span> <span class="n">sourcer</span><span class="o">=</span><span class="n">sourcer</span><span class="p">,</span> <span class="n">files</span><span class="o">=</span><span class="n">files</span><span class="p">,</span> <span class="n">extra_args</span><span class="o">=</span><span class="n">extra_args</span>
         <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">src</span> <span class="o">=</span> <span class="n">src</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
 
@@ -673,14 +623,13 @@
     <span class="p">)</span>
 
 
-<div class="viewcode-block" id="ensure_shell"><a class="viewcode-back" href="../../api/foreign_shells.html#xonsh.foreign_shells.ensure_shell">[docs]</a><span class="k">def</span> <span class="nf">ensure_shell</span><span class="p">(</span><span class="n">shell</span><span class="p">):</span>
+<div class="viewcode-block" id="ensure_shell"><a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.foreign_shells.html#xonsh.foreign_shells.ensure_shell">[docs]</a><span class="k">def</span> <span class="nf">ensure_shell</span><span class="p">(</span><span class="n">shell</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Ensures that a mapping follows the shell specification.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">shell</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">MutableMapping</span><span class="p">):</span>
         <span class="n">shell</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">shell</span><span class="p">)</span>
     <span class="n">shell_keys</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">shell</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">shell_keys</span> <span class="o">&lt;=</span> <span class="n">VALID_SHELL_PARAMS</span><span class="p">):</span>
-        <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;unknown shell keys: </span><span class="si">{0}</span><span class="s2">&quot;</span>
-        <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">shell_keys</span> <span class="o">-</span> <span class="n">VALID_SHELL_PARAMS</span><span class="p">))</span>
+        <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;unknown shell keys: </span><span class="si">{</span><span class="n">shell_keys</span> <span class="o">-</span> <span class="n">VALID_SHELL_PARAMS</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
     <span class="n">shell</span><span class="p">[</span><span class="s2">&quot;shell&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ensure_string</span><span class="p">(</span><span class="n">shell</span><span class="p">[</span><span class="s2">&quot;shell&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
     <span class="k">if</span> <span class="s2">&quot;interactive&quot;</span> <span class="ow">in</span> <span class="n">shell_keys</span><span class="p">:</span>
         <span class="n">shell</span><span class="p">[</span><span class="s2">&quot;interactive&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">to_bool</span><span class="p">(</span><span class="n">shell</span><span class="p">[</span><span class="s2">&quot;interactive&quot;</span><span class="p">])</span>
@@ -699,9 +648,9 @@
     <span class="k">if</span> <span class="s2">&quot;currenv&quot;</span> <span class="ow">in</span> <span class="n">shell_keys</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">shell</span><span class="p">[</span><span class="s2">&quot;currenv&quot;</span><span class="p">],</span> <span class="nb">tuple</span><span class="p">):</span>
         <span class="n">ce</span> <span class="o">=</span> <span class="n">shell</span><span class="p">[</span><span class="s2">&quot;currenv&quot;</span><span class="p">]</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ce</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Mapping</span><span class="p">):</span>
-            <span class="n">ce</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">([(</span><span class="n">ensure_string</span><span class="p">(</span><span class="n">k</span><span class="p">),</span> <span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">ce</span><span class="o">.</span><span class="n">items</span><span class="p">()])</span>
+            <span class="n">ce</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">((</span><span class="n">ensure_string</span><span class="p">(</span><span class="n">k</span><span class="p">),</span> <span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">ce</span><span class="o">.</span><span class="n">items</span><span class="p">())</span>
         <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ce</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Sequence</span><span class="p">):</span>
-            <span class="n">ce</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">([(</span><span class="n">ensure_string</span><span class="p">(</span><span class="n">k</span><span class="p">),</span> <span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">ce</span><span class="p">])</span>
+            <span class="n">ce</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">((</span><span class="n">ensure_string</span><span class="p">(</span><span class="n">k</span><span class="p">),</span> <span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">ce</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;unrecognized type for currenv&quot;</span><span class="p">)</span>
         <span class="n">shell</span><span class="p">[</span><span class="s2">&quot;currenv&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ce</span>
@@ -734,7 +683,7 @@
     <span class="k">return</span> <span class="n">shell</span></div>
 
 
-<div class="viewcode-block" id="load_foreign_envs"><a class="viewcode-back" href="../../api/foreign_shells.html#xonsh.foreign_shells.load_foreign_envs">[docs]</a><span class="k">def</span> <span class="nf">load_foreign_envs</span><span class="p">(</span><span class="n">shells</span><span class="p">):</span>
+<div class="viewcode-block" id="load_foreign_envs"><a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.foreign_shells.html#xonsh.foreign_shells.load_foreign_envs">[docs]</a><span class="k">def</span> <span class="nf">load_foreign_envs</span><span class="p">(</span><span class="n">shells</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Loads environments from foreign shells.</span>
 
 <span class="sd">    Parameters</span>
@@ -757,7 +706,7 @@
     <span class="k">return</span> <span class="n">env</span></div>
 
 
-<div class="viewcode-block" id="load_foreign_aliases"><a class="viewcode-back" href="../../api/foreign_shells.html#xonsh.foreign_shells.load_foreign_aliases">[docs]</a><span class="k">def</span> <span class="nf">load_foreign_aliases</span><span class="p">(</span><span class="n">shells</span><span class="p">):</span>
+<div class="viewcode-block" id="load_foreign_aliases"><a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.foreign_shells.html#xonsh.foreign_shells.load_foreign_aliases">[docs]</a><span class="k">def</span> <span class="nf">load_foreign_aliases</span><span class="p">(</span><span class="n">shells</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Loads aliases from foreign shells.</span>
 
 <span class="sd">    Parameters</span>
@@ -772,19 +721,18 @@
 <span class="sd">        A dictionary of the merged aliases.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">aliases</span> <span class="o">=</span> <span class="p">{}</span>
-    <span class="n">xonsh_aliases</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">aliases</span>
+    <span class="n">xonsh_aliases</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">aliases</span>
     <span class="k">for</span> <span class="n">shell</span> <span class="ow">in</span> <span class="n">shells</span><span class="p">:</span>
         <span class="n">shell</span> <span class="o">=</span> <span class="n">ensure_shell</span><span class="p">(</span><span class="n">shell</span><span class="p">)</span>
         <span class="n">_</span><span class="p">,</span> <span class="n">shaliases</span> <span class="o">=</span> <span class="n">foreign_shell_data</span><span class="p">(</span><span class="o">**</span><span class="n">shell</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;FOREIGN_ALIASES_OVERRIDE&quot;</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;FOREIGN_ALIASES_OVERRIDE&quot;</span><span class="p">):</span>
             <span class="n">shaliases</span> <span class="o">=</span> <span class="p">{}</span> <span class="k">if</span> <span class="n">shaliases</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">shaliases</span>
             <span class="k">for</span> <span class="n">alias</span> <span class="ow">in</span> <span class="nb">set</span><span class="p">(</span><span class="n">shaliases</span><span class="p">)</span> <span class="o">&amp;</span> <span class="nb">set</span><span class="p">(</span><span class="n">xonsh_aliases</span><span class="p">):</span>
                 <span class="k">del</span> <span class="n">shaliases</span><span class="p">[</span><span class="n">alias</span><span class="p">]</span>
-                <span class="k">if</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_DEBUG&quot;</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_DEBUG&quot;</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">1</span><span class="p">:</span>
                     <span class="nb">print</span><span class="p">(</span>
-                        <span class="s2">&quot;aliases: ignoring alias </span><span class="si">{!r}</span><span class="s2"> of shell </span><span class="si">{!r}</span><span class="s2"> &quot;</span>
-                        <span class="s2">&quot;which tries to override xonsh alias.&quot;</span>
-                        <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">alias</span><span class="p">,</span> <span class="n">shell</span><span class="p">[</span><span class="s2">&quot;shell&quot;</span><span class="p">]),</span>
+                        <span class="sa">f</span><span class="s2">&quot;aliases: ignoring alias </span><span class="si">{</span><span class="n">alias</span><span class="si">!r}</span><span class="s2"> of shell </span><span class="si">{</span><span class="n">shell</span><span class="p">[</span><span class="s1">&#39;shell&#39;</span><span class="p">]</span><span class="si">!r}</span><span class="s2"> &quot;</span>
+                        <span class="s2">&quot;which tries to override xonsh alias.&quot;</span><span class="p">,</span>
                         <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">,</span>
                     <span class="p">)</span>
         <span class="n">aliases</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">shaliases</span><span class="p">)</span>
@@ -804,7 +752,7 @@
   <h3 id="searchlabel">Quick search</h3>
     <div class="searchformwrapper">
     <form class="search" action="../../search.html" method="get">
-      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
       <input type="submit" value="Go" />
     </form>
     </div>
@@ -842,7 +790,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.9.27.dev21 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.foreign_shells</a></li> 
@@ -852,7 +800,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.5.2.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.4.0.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>

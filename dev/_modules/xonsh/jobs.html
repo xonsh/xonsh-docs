@@ -7,14 +7,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xonsh.jobs &#8212; xonsh 0.9.27.dev21 documentation</title>
-    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
-    <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
+    <title>xonsh.jobs &#8212; xonsh 0.11.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/numpy_friendly.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
     
-    <script id="documentation_options" data-url_root="../../" src="../../_static/documentation_options.js"></script>
+    <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
     <script src="../../_static/jquery.js"></script>
     <script src="../../_static/underscore.js"></script>
     <script src="../../_static/doctools.js"></script>
@@ -55,7 +55,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.9.27.dev21 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.jobs</a></li> 
@@ -70,25 +70,25 @@
           <div class="body" role="main">
             
   <h1>Source code for xonsh.jobs</h1><div class="highlight"><pre>
-<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
-<span class="sd">&quot;&quot;&quot;Job control for the xonsh shell.&quot;&quot;&quot;</span>
+<span></span><span class="sd">&quot;&quot;&quot;Job control for the xonsh shell.&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">collections</span>
+<span class="kn">import</span> <span class="nn">ctypes</span>
 <span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">signal</span>
+<span class="kn">import</span> <span class="nn">subprocess</span>
 <span class="kn">import</span> <span class="nn">sys</span>
 <span class="kn">import</span> <span class="nn">time</span>
-<span class="kn">import</span> <span class="nn">ctypes</span>
-<span class="kn">import</span> <span class="nn">signal</span>
-<span class="kn">import</span> <span class="nn">builtins</span>
-<span class="kn">import</span> <span class="nn">argparse</span>
-<span class="kn">import</span> <span class="nn">subprocess</span>
-<span class="kn">import</span> <span class="nn">collections</span>
 <span class="kn">import</span> <span class="nn">typing</span> <span class="k">as</span> <span class="nn">tp</span>
 
+<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
+<span class="kn">from</span> <span class="nn">xonsh.cli_utils</span> <span class="kn">import</span> <span class="n">Annotated</span><span class="p">,</span> <span class="n">Arg</span><span class="p">,</span> <span class="n">ArgParserAlias</span>
+<span class="kn">from</span> <span class="nn">xonsh.completers.tools</span> <span class="kn">import</span> <span class="n">RichCompletion</span>
 <span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="kn">import</span> <span class="n">LazyObject</span>
-<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="kn">import</span> <span class="n">FD_STDERR</span><span class="p">,</span> <span class="n">ON_DARWIN</span><span class="p">,</span> <span class="n">ON_WINDOWS</span><span class="p">,</span> <span class="n">ON_CYGWIN</span><span class="p">,</span> <span class="n">ON_MSYS</span><span class="p">,</span> <span class="n">LIBC</span>
+<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="kn">import</span> <span class="n">FD_STDERR</span><span class="p">,</span> <span class="n">LIBC</span><span class="p">,</span> <span class="n">ON_CYGWIN</span><span class="p">,</span> <span class="n">ON_DARWIN</span><span class="p">,</span> <span class="n">ON_MSYS</span><span class="p">,</span> <span class="n">ON_WINDOWS</span>
 <span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="n">unthreadable</span>
 
-
-<span class="n">tasks</span> <span class="o">=</span> <span class="n">LazyObject</span><span class="p">(</span><span class="n">collections</span><span class="o">.</span><span class="n">deque</span><span class="p">,</span> <span class="nb">globals</span><span class="p">(),</span> <span class="s2">&quot;tasks&quot;</span><span class="p">)</span>
+<span class="c1"># there is not much cost initing deque</span>
+<span class="n">tasks</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Deque</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">collections</span><span class="o">.</span><span class="n">deque</span><span class="p">()</span>
 <span class="c1"># Track time stamp of last exit command, so that two consecutive attempts to</span>
 <span class="c1"># exit can kill all jobs and exit.</span>
 <span class="n">_last_exit_time</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
@@ -108,7 +108,6 @@
             <span class="k">except</span> <span class="ne">ProcessLookupError</span><span class="p">:</span>
                 <span class="k">pass</span>
 
-
 <span class="k">elif</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
     <span class="k">pass</span>
 <span class="k">elif</span> <span class="n">ON_CYGWIN</span> <span class="ow">or</span> <span class="n">ON_MSYS</span><span class="p">:</span>
@@ -123,7 +122,6 @@
                     <span class="n">os</span><span class="o">.</span><span class="n">kill</span><span class="p">(</span><span class="n">pid</span><span class="p">,</span> <span class="n">signal</span><span class="p">)</span>
                 <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
                     <span class="k">pass</span>
-
 
 <span class="k">else</span><span class="p">:</span>
 
@@ -179,7 +177,6 @@
                     <span class="k">pass</span>  <span class="c1"># ignore error if process closed before we got here</span>
         <span class="k">return</span> <span class="n">wait_for_active_job</span><span class="p">(</span><span class="n">last_task</span><span class="o">=</span><span class="n">active_task</span><span class="p">)</span>
 
-
 <span class="k">else</span><span class="p">:</span>
 
     <span class="k">def</span> <span class="nf">_continue</span><span class="p">(</span><span class="n">job</span><span class="p">):</span>
@@ -189,7 +186,7 @@
     <span class="k">def</span> <span class="nf">_kill</span><span class="p">(</span><span class="n">job</span><span class="p">):</span>
         <span class="n">_send_signal</span><span class="p">(</span><span class="n">job</span><span class="p">,</span> <span class="n">signal</span><span class="o">.</span><span class="n">SIGKILL</span><span class="p">)</span>
 
-<div class="viewcode-block" id="ignore_sigtstp"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.ignore_sigtstp">[docs]</a>    <span class="k">def</span> <span class="nf">ignore_sigtstp</span><span class="p">():</span>
+<div class="viewcode-block" id="ignore_sigtstp"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.ignore_sigtstp">[docs]</a>    <span class="k">def</span> <span class="nf">ignore_sigtstp</span><span class="p">():</span>
         <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGTSTP</span><span class="p">,</span> <span class="n">signal</span><span class="o">.</span><span class="n">SIG_IGN</span><span class="p">)</span></div>
 
     <span class="n">_shell_pgrp</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getpgrp</span><span class="p">()</span>  <span class="c1"># type:ignore</span>
@@ -240,7 +237,7 @@
     <span class="c1"># give_terminal_to is a simplified version of:</span>
     <span class="c1">#    give_terminal_to from bash 4.3 source, jobs.c, line 4030</span>
     <span class="c1"># this will give the terminal to the process group pgid</span>
-<div class="viewcode-block" id="give_terminal_to"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.give_terminal_to">[docs]</a>    <span class="k">def</span> <span class="nf">give_terminal_to</span><span class="p">(</span><span class="n">pgid</span><span class="p">):</span>
+<div class="viewcode-block" id="give_terminal_to"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.give_terminal_to">[docs]</a>    <span class="k">def</span> <span class="nf">give_terminal_to</span><span class="p">(</span><span class="n">pgid</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">pgid</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">False</span>
         <span class="n">oldmask</span> <span class="o">=</span> <span class="n">_pthread_sigmask</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIG_BLOCK</span><span class="p">,</span> <span class="n">_block_when_giving</span><span class="p">)</span>
@@ -267,7 +264,7 @@
         <span class="k">finally</span><span class="p">:</span>
             <span class="n">_pthread_sigmask</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIG_SETMASK</span><span class="p">,</span> <span class="n">oldmask</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="wait_for_active_job"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.wait_for_active_job">[docs]</a>    <span class="k">def</span> <span class="nf">wait_for_active_job</span><span class="p">(</span><span class="n">last_task</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">backgrounded</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">return_error</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<div class="viewcode-block" id="wait_for_active_job"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.wait_for_active_job">[docs]</a>    <span class="k">def</span> <span class="nf">wait_for_active_job</span><span class="p">(</span><span class="n">last_task</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">backgrounded</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">return_error</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Wait for the active job to finish, to be killed by SIGINT, or to be</span>
 <span class="sd">        suspended by ctrl-z.</span>
@@ -314,8 +311,8 @@
     <span class="k">return</span> <span class="n">rtn</span>
 
 
-<div class="viewcode-block" id="get_next_task"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.get_next_task">[docs]</a><span class="k">def</span> <span class="nf">get_next_task</span><span class="p">():</span>
-    <span class="sd">&quot;&quot;&quot; Get the next active task and put it on top of the queue&quot;&quot;&quot;</span>
+<div class="viewcode-block" id="get_next_task"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.get_next_task">[docs]</a><span class="k">def</span> <span class="nf">get_next_task</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Get the next active task and put it on top of the queue&quot;&quot;&quot;</span>
     <span class="n">_clear_dead_jobs</span><span class="p">()</span>
     <span class="n">selected_task</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">for</span> <span class="n">tid</span> <span class="ow">in</span> <span class="n">tasks</span><span class="p">:</span>
@@ -330,8 +327,8 @@
     <span class="k">return</span> <span class="n">get_task</span><span class="p">(</span><span class="n">selected_task</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="get_task"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.get_task">[docs]</a><span class="k">def</span> <span class="nf">get_task</span><span class="p">(</span><span class="n">tid</span><span class="p">):</span>
-    <span class="k">return</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">all_jobs</span><span class="p">[</span><span class="n">tid</span><span class="p">]</span></div>
+<div class="viewcode-block" id="get_task"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.get_task">[docs]</a><span class="k">def</span> <span class="nf">get_task</span><span class="p">(</span><span class="n">tid</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">XSH</span><span class="o">.</span><span class="n">all_jobs</span><span class="p">[</span><span class="n">tid</span><span class="p">]</span></div>
 
 
 <span class="k">def</span> <span class="nf">_clear_dead_jobs</span><span class="p">():</span>
@@ -342,45 +339,50 @@
             <span class="n">to_remove</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">job</span> <span class="ow">in</span> <span class="n">to_remove</span><span class="p">:</span>
         <span class="n">tasks</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">job</span><span class="p">)</span>
-        <span class="k">del</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">all_jobs</span><span class="p">[</span><span class="n">job</span><span class="p">]</span>
+        <span class="k">del</span> <span class="n">XSH</span><span class="o">.</span><span class="n">all_jobs</span><span class="p">[</span><span class="n">job</span><span class="p">]</span>
 
 
-<div class="viewcode-block" id="print_one_job"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.print_one_job">[docs]</a><span class="k">def</span> <span class="nf">print_one_job</span><span class="p">(</span><span class="n">num</span><span class="p">,</span> <span class="n">outfile</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;Print a line describing job number ``num``.&quot;&quot;&quot;</span>
+<div class="viewcode-block" id="format_job_string"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.format_job_string">[docs]</a><span class="k">def</span> <span class="nf">format_job_string</span><span class="p">(</span><span class="n">num</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
     <span class="k">try</span><span class="p">:</span>
-        <span class="n">job</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">all_jobs</span><span class="p">[</span><span class="n">num</span><span class="p">]</span>
+        <span class="n">job</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">all_jobs</span><span class="p">[</span><span class="n">num</span><span class="p">]</span>
     <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
-        <span class="k">return</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span>
     <span class="n">pos</span> <span class="o">=</span> <span class="s2">&quot;+&quot;</span> <span class="k">if</span> <span class="n">tasks</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">num</span> <span class="k">else</span> <span class="s2">&quot;-&quot;</span> <span class="k">if</span> <span class="n">tasks</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">num</span> <span class="k">else</span> <span class="s2">&quot; &quot;</span>
     <span class="n">status</span> <span class="o">=</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span>
-    <span class="n">cmd</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;cmds&quot;</span><span class="p">]]</span>
-    <span class="n">cmd</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
+    <span class="n">cmd</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;cmds&quot;</span><span class="p">]])</span>
     <span class="n">pid</span> <span class="o">=</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;pids&quot;</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
     <span class="n">bg</span> <span class="o">=</span> <span class="s2">&quot; &amp;&quot;</span> <span class="k">if</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;bg&quot;</span><span class="p">]</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[</span><span class="si">{}</span><span class="s2">]</span><span class="si">{}</span><span class="s2"> </span><span class="si">{}</span><span class="s2">: </span><span class="si">{}{}</span><span class="s2"> (</span><span class="si">{}</span><span class="s2">)&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">num</span><span class="p">,</span> <span class="n">pos</span><span class="p">,</span> <span class="n">status</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">bg</span><span class="p">,</span> <span class="n">pid</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">outfile</span><span class="p">)</span></div>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">num</span><span class="si">}</span><span class="s2">]</span><span class="si">{</span><span class="n">pos</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">status</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">cmd</span><span class="si">}{</span><span class="n">bg</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">pid</span><span class="si">}</span><span class="s2">)&quot;</span></div>
 
 
-<div class="viewcode-block" id="get_next_job_number"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.get_next_job_number">[docs]</a><span class="k">def</span> <span class="nf">get_next_job_number</span><span class="p">():</span>
+<div class="viewcode-block" id="print_one_job"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.print_one_job">[docs]</a><span class="k">def</span> <span class="nf">print_one_job</span><span class="p">(</span><span class="n">num</span><span class="p">,</span> <span class="n">outfile</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Print a line describing job number ``num``.&quot;&quot;&quot;</span>
+    <span class="n">info</span> <span class="o">=</span> <span class="n">format_job_string</span><span class="p">(</span><span class="n">num</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">info</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">info</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">outfile</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="get_next_job_number"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.get_next_job_number">[docs]</a><span class="k">def</span> <span class="nf">get_next_job_number</span><span class="p">():</span>
     <span class="sd">&quot;&quot;&quot;Get the lowest available unique job number (for the next job created).&quot;&quot;&quot;</span>
     <span class="n">_clear_dead_jobs</span><span class="p">()</span>
     <span class="n">i</span> <span class="o">=</span> <span class="mi">1</span>
-    <span class="k">while</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">all_jobs</span><span class="p">:</span>
+    <span class="k">while</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">XSH</span><span class="o">.</span><span class="n">all_jobs</span><span class="p">:</span>
         <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>
     <span class="k">return</span> <span class="n">i</span></div>
 
 
-<div class="viewcode-block" id="add_job"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.add_job">[docs]</a><span class="k">def</span> <span class="nf">add_job</span><span class="p">(</span><span class="n">info</span><span class="p">):</span>
+<div class="viewcode-block" id="add_job"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.add_job">[docs]</a><span class="k">def</span> <span class="nf">add_job</span><span class="p">(</span><span class="n">info</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Add a new job to the jobs dictionary.&quot;&quot;&quot;</span>
     <span class="n">num</span> <span class="o">=</span> <span class="n">get_next_job_number</span><span class="p">()</span>
     <span class="n">info</span><span class="p">[</span><span class="s2">&quot;started&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
     <span class="n">info</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;running&quot;</span>
     <span class="n">tasks</span><span class="o">.</span><span class="n">appendleft</span><span class="p">(</span><span class="n">num</span><span class="p">)</span>
-    <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">all_jobs</span><span class="p">[</span><span class="n">num</span><span class="p">]</span> <span class="o">=</span> <span class="n">info</span>
-    <span class="k">if</span> <span class="n">info</span><span class="p">[</span><span class="s2">&quot;bg&quot;</span><span class="p">]</span> <span class="ow">and</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_INTERACTIVE&quot;</span><span class="p">):</span>
+    <span class="n">XSH</span><span class="o">.</span><span class="n">all_jobs</span><span class="p">[</span><span class="n">num</span><span class="p">]</span> <span class="o">=</span> <span class="n">info</span>
+    <span class="k">if</span> <span class="n">info</span><span class="p">[</span><span class="s2">&quot;bg&quot;</span><span class="p">]</span> <span class="ow">and</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_INTERACTIVE&quot;</span><span class="p">):</span>
         <span class="n">print_one_job</span><span class="p">(</span><span class="n">num</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="clean_jobs"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.clean_jobs">[docs]</a><span class="k">def</span> <span class="nf">clean_jobs</span><span class="p">():</span>
+<div class="viewcode-block" id="clean_jobs"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.clean_jobs">[docs]</a><span class="k">def</span> <span class="nf">clean_jobs</span><span class="p">():</span>
     <span class="sd">&quot;&quot;&quot;Clean up jobs for exiting shell</span>
 
 <span class="sd">    In non-interactive mode, kill all jobs.</span>
@@ -389,12 +391,12 @@
 <span class="sd">    warning if any exist, and return False. Otherwise, return True.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">jobs_clean</span> <span class="o">=</span> <span class="kc">True</span>
-    <span class="k">if</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;XONSH_INTERACTIVE&quot;</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;XONSH_INTERACTIVE&quot;</span><span class="p">]:</span>
         <span class="n">_clear_dead_jobs</span><span class="p">()</span>
 
-        <span class="k">if</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">all_jobs</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">all_jobs</span><span class="p">:</span>
             <span class="k">global</span> <span class="n">_last_exit_time</span>
-            <span class="n">hist</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">history</span>
+            <span class="n">hist</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">history</span>
             <span class="k">if</span> <span class="n">hist</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">hist</span><span class="o">.</span><span class="n">tss</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
                 <span class="n">last_cmd_start</span> <span class="o">=</span> <span class="n">hist</span><span class="o">.</span><span class="n">tss</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
             <span class="k">else</span><span class="p">:</span>
@@ -407,16 +409,16 @@
                 <span class="c1"># unfinished jobs in this case.</span>
                 <span class="n">kill_all_jobs</span><span class="p">()</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">all_jobs</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">XSH</span><span class="o">.</span><span class="n">all_jobs</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
                     <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;there are unfinished jobs&quot;</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;there is an unfinished job&quot;</span>
 
-                <span class="k">if</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;SHELL_TYPE&quot;</span><span class="p">]</span> <span class="o">!=</span> <span class="s2">&quot;prompt_toolkit&quot;</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;SHELL_TYPE&quot;</span><span class="p">]</span> <span class="o">!=</span> <span class="s2">&quot;prompt_toolkit&quot;</span><span class="p">:</span>
                     <span class="c1"># The Ctrl+D binding for prompt_toolkit already inserts a</span>
                     <span class="c1"># newline</span>
                     <span class="nb">print</span><span class="p">()</span>
-                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;xonsh: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">msg</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xonsh: </span><span class="si">{</span><span class="n">msg</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
                 <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;-&quot;</span> <span class="o">*</span> <span class="mi">5</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
                 <span class="n">jobs</span><span class="p">([],</span> <span class="n">stdout</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
                 <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;-&quot;</span> <span class="o">*</span> <span class="mi">5</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
@@ -432,16 +434,16 @@
     <span class="k">return</span> <span class="n">jobs_clean</span></div>
 
 
-<div class="viewcode-block" id="kill_all_jobs"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.kill_all_jobs">[docs]</a><span class="k">def</span> <span class="nf">kill_all_jobs</span><span class="p">():</span>
+<div class="viewcode-block" id="kill_all_jobs"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.kill_all_jobs">[docs]</a><span class="k">def</span> <span class="nf">kill_all_jobs</span><span class="p">():</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Send SIGKILL to all child processes (called when exiting xonsh).</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">_clear_dead_jobs</span><span class="p">()</span>
-    <span class="k">for</span> <span class="n">job</span> <span class="ow">in</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">all_jobs</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+    <span class="k">for</span> <span class="n">job</span> <span class="ow">in</span> <span class="n">XSH</span><span class="o">.</span><span class="n">all_jobs</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
         <span class="n">_kill</span><span class="p">(</span><span class="n">job</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="jobs"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.jobs">[docs]</a><span class="k">def</span> <span class="nf">jobs</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">stdout</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="jobs"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.jobs">[docs]</a><span class="k">def</span> <span class="nf">jobs</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">stdout</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    xonsh command: jobs</span>
 
@@ -453,7 +455,7 @@
     <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span></div>
 
 
-<div class="viewcode-block" id="resume_job"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.resume_job">[docs]</a><span class="k">def</span> <span class="nf">resume_job</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">wording</span><span class="p">):</span>
+<div class="viewcode-block" id="resume_job"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.resume_job">[docs]</a><span class="k">def</span> <span class="nf">resume_job</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">wording</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    used by fg and bg to resume a job either in the foreground or in the background.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -472,12 +474,12 @@
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">tid</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
         <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">IndexError</span><span class="p">):</span>
-            <span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;Invalid job: </span><span class="si">{}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Invalid job: </span><span class="si">{</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
 
-        <span class="k">if</span> <span class="n">tid</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">all_jobs</span><span class="p">:</span>
-            <span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;Invalid job: </span><span class="si">{}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">tid</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">XSH</span><span class="o">.</span><span class="n">all_jobs</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Invalid job: </span><span class="si">{</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2"> expects 0 or 1 arguments, not </span><span class="si">{}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">wording</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">))</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">wording</span><span class="si">}</span><span class="s2"> expects 0 or 1 arguments, not </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
 
     <span class="c1"># Put this one on top of the queue</span>
     <span class="n">tasks</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
@@ -486,13 +488,13 @@
     <span class="n">job</span> <span class="o">=</span> <span class="n">get_task</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
     <span class="n">job</span><span class="p">[</span><span class="s2">&quot;bg&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">job</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;running&quot;</span>
-    <span class="k">if</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_INTERACTIVE&quot;</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_INTERACTIVE&quot;</span><span class="p">):</span>
         <span class="n">print_one_job</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
     <span class="n">pipeline</span> <span class="o">=</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;pipeline&quot;</span><span class="p">]</span>
     <span class="n">pipeline</span><span class="o">.</span><span class="n">resume</span><span class="p">(</span><span class="n">job</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="fg"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.fg">[docs]</a><span class="nd">@unthreadable</span>
+<div class="viewcode-block" id="fg"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.fg">[docs]</a><span class="nd">@unthreadable</span>
 <span class="k">def</span> <span class="nf">fg</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    xonsh command: fg</span>
@@ -504,7 +506,7 @@
     <span class="k">return</span> <span class="n">resume_job</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">wording</span><span class="o">=</span><span class="s2">&quot;fg&quot;</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="bg"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.bg">[docs]</a><span class="k">def</span> <span class="nf">bg</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="bg"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.bg">[docs]</a><span class="k">def</span> <span class="nf">bg</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;xonsh command: bg</span>
 
 <span class="sd">    Resume execution of the currently active job in the background, or, if a</span>
@@ -519,53 +521,47 @@
         <span class="k">return</span> <span class="n">res</span></div>
 
 
-<div class="viewcode-block" id="disown"><a class="viewcode-back" href="../../api/jobs.html#xonsh.jobs.disown">[docs]</a><span class="k">def</span> <span class="nf">disown</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    xonsh command: disown</span>
+<div class="viewcode-block" id="job_id_completer"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.job_id_completer">[docs]</a><span class="k">def</span> <span class="nf">job_id_completer</span><span class="p">(</span><span class="n">xsh</span><span class="p">,</span> <span class="o">**</span><span class="n">_</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Return currently running jobs ids&quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">job_id</span> <span class="ow">in</span> <span class="n">xsh</span><span class="o">.</span><span class="n">all_jobs</span><span class="p">:</span>
+        <span class="k">yield</span> <span class="n">RichCompletion</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">job_id</span><span class="p">),</span> <span class="n">description</span><span class="o">=</span><span class="n">format_job_string</span><span class="p">(</span><span class="n">job_id</span><span class="p">))</span></div>
 
-<span class="sd">    Remove the specified jobs from the job table; the shell will no longer</span>
+
+<div class="viewcode-block" id="disown_fn"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.disown_fn">[docs]</a><span class="k">def</span> <span class="nf">disown_fn</span><span class="p">(</span>
+    <span class="n">job_ids</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span>
+        <span class="n">tp</span><span class="o">.</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="n">Arg</span><span class="p">(</span><span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="s2">&quot;*&quot;</span><span class="p">,</span> <span class="n">completer</span><span class="o">=</span><span class="n">job_id_completer</span><span class="p">)</span>
+    <span class="p">],</span>
+    <span class="n">force_auto_continue</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Remove the specified jobs from the job table; the shell will no longer</span>
 <span class="sd">    report their status, and will not complain if you try to exit an</span>
-<span class="sd">    interactive shell with them running or stopped. If no job is specified,</span>
-<span class="sd">    disown the current job.</span>
+<span class="sd">    interactive shell with them running or stopped.</span>
 
 <span class="sd">    If the jobs are currently stopped and the $AUTO_CONTINUE option is not set</span>
 <span class="sd">    ($AUTO_CONTINUE = False), a warning is printed containing information about</span>
 <span class="sd">    how to make them continue after they have been disowned.</span>
 
-<span class="sd">    Specifying the -c or --continue option for this command is equivalent to</span>
-<span class="sd">    setting $AUTO_CONTINUE=True.</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    job_ids</span>
+<span class="sd">        Jobs to act on or none to disown the current job</span>
+<span class="sd">    force_auto_continue : -c, --continue</span>
+<span class="sd">        Automatically continue stopped jobs when they are disowned, equivalent to setting $AUTO_CONTINUE=True</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="s2">&quot;disown&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="n">disown</span><span class="o">.</span><span class="vm">__doc__</span><span class="p">)</span>
-    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;job_ids&quot;</span><span class="p">,</span>
-        <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span>
-        <span class="n">nargs</span><span class="o">=</span><span class="s2">&quot;*&quot;</span><span class="p">,</span>
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Jobs to act on or none to use the current job&quot;</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
-        <span class="s2">&quot;-c&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;--continue&quot;</span><span class="p">,</span>
-        <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span>
-        <span class="n">dest</span><span class="o">=</span><span class="s2">&quot;force_auto_continue&quot;</span><span class="p">,</span>
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Automatically continue stopped jobs when they are disowned&quot;</span><span class="p">,</span>
-    <span class="p">)</span>
-
-    <span class="n">pargs</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">tasks</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
         <span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;There are no active jobs&quot;</span>
 
     <span class="n">messages</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="c1"># if args.job_ids is empty, use the active task</span>
-    <span class="k">for</span> <span class="n">tid</span> <span class="ow">in</span> <span class="n">pargs</span><span class="o">.</span><span class="n">job_ids</span> <span class="ow">or</span> <span class="p">[</span><span class="n">tasks</span><span class="p">[</span><span class="mi">0</span><span class="p">]]:</span>
+    <span class="k">for</span> <span class="n">tid</span> <span class="ow">in</span> <span class="n">job_ids</span> <span class="ow">or</span> <span class="p">[</span><span class="n">tasks</span><span class="p">[</span><span class="mi">0</span><span class="p">]]:</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">current_task</span> <span class="o">=</span> <span class="n">get_task</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
             <span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">tid</span><span class="si">}</span><span class="s2">&#39; is not a valid job ID&quot;</span>
 
-        <span class="n">auto_cont</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;AUTO_CONTINUE&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">auto_cont</span> <span class="ow">or</span> <span class="n">pargs</span><span class="o">.</span><span class="n">force_auto_continue</span><span class="p">:</span>
+        <span class="n">auto_cont</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;AUTO_CONTINUE&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">auto_cont</span> <span class="ow">or</span> <span class="n">force_auto_continue</span><span class="p">:</span>
             <span class="n">_continue</span><span class="p">(</span><span class="n">current_task</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">current_task</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;stopped&quot;</span><span class="p">:</span>
             <span class="n">messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
@@ -576,11 +572,14 @@
 
         <span class="c1"># Stop tracking this task</span>
         <span class="n">tasks</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
-        <span class="k">del</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">all_jobs</span><span class="p">[</span><span class="n">tid</span><span class="p">]</span>
+        <span class="k">del</span> <span class="n">XSH</span><span class="o">.</span><span class="n">all_jobs</span><span class="p">[</span><span class="n">tid</span><span class="p">]</span>
         <span class="n">messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Removed job </span><span class="si">{</span><span class="n">tid</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">current_task</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="n">messages</span><span class="p">:</span>
         <span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">messages</span><span class="p">)</span></div>
+
+
+<span class="n">disown</span> <span class="o">=</span> <span class="n">ArgParserAlias</span><span class="p">(</span><span class="n">prog</span><span class="o">=</span><span class="s2">&quot;disown&quot;</span><span class="p">,</span> <span class="n">func</span><span class="o">=</span><span class="n">disown_fn</span><span class="p">,</span> <span class="n">has_args</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </pre></div>
 
             <div class="clearer"></div>
@@ -596,7 +595,7 @@
   <h3 id="searchlabel">Quick search</h3>
     <div class="searchformwrapper">
     <form class="search" action="../../search.html" method="get">
-      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
       <input type="submit" value="Go" />
     </form>
     </div>
@@ -634,7 +633,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.9.27.dev21 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.jobs</a></li> 
@@ -644,7 +643,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.5.2.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.4.0.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>

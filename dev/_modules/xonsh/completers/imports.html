@@ -1,0 +1,363 @@
+
+
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>xonsh.completers.imports &#8212; xonsh 0.11.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/numpy_friendly.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
+    
+    <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+    <script src="../../../_static/jquery.js"></script>
+    <script src="../../../_static/underscore.js"></script>
+    <script src="../../../_static/doctools.js"></script>
+    <script src="../../../_static/runthis-client.min.js"></script>
+
+    
+    
+     
+        <script src="../../../_static/jquery.cookie.js"></script>
+    
+
+    
+     
+        <script src="../../../_static/cloud.base.js"></script>
+    
+
+    
+     
+        <script src="../../../_static/cloud.js"></script>
+    
+
+    <link rel="shortcut icon" href="../../../_static/magic_conch.ico"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+     
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="canonical" href="http://xon.sh/_modules/xonsh/completers/imports.html"/>
+
+  </head><body>
+    <div class="relbar-top">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">xonsh.completers.imports</a></li> 
+      </ul>
+    </div>
+    </div>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for xonsh.completers.imports</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Import statement completions.</span>
+<span class="sd">Contains modified code from the IPython project (at core/completerlib.py).</span>
+
+<span class="sd"># Copyright (c) IPython Development Team.</span>
+<span class="sd"># Distributed under the terms of the Modified BSD License.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">inspect</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">typing</span> <span class="k">as</span> <span class="nn">tp</span>
+<span class="kn">from</span> <span class="nn">importlib</span> <span class="kn">import</span> <span class="n">import_module</span>
+<span class="kn">from</span> <span class="nn">importlib.machinery</span> <span class="kn">import</span> <span class="n">all_suffixes</span>
+<span class="kn">from</span> <span class="nn">time</span> <span class="kn">import</span> <span class="n">time</span>
+<span class="kn">from</span> <span class="nn">zipimport</span> <span class="kn">import</span> <span class="n">zipimporter</span>
+
+<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
+<span class="kn">from</span> <span class="nn">xonsh.completers.tools</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">RichCompletion</span><span class="p">,</span>
+    <span class="n">contextual_completer</span><span class="p">,</span>
+    <span class="n">get_filter_function</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="kn">import</span> <span class="n">lazyobject</span>
+<span class="kn">from</span> <span class="nn">xonsh.parsers.completion_context</span> <span class="kn">import</span> <span class="n">CompletionContext</span>
+
+<span class="n">_suffixes</span> <span class="o">=</span> <span class="n">all_suffixes</span><span class="p">()</span>
+
+<span class="c1"># Time in seconds after which we give up</span>
+<span class="n">TIMEOUT_GIVEUP</span> <span class="o">=</span> <span class="mi">2</span>
+
+
+<span class="nd">@lazyobject</span>
+<span class="k">def</span> <span class="nf">IMPORT_RE</span><span class="p">():</span>
+    <span class="c1"># Regular expression for the python import statement</span>
+    <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
+        <span class="sa">r</span><span class="s2">&quot;(?P&lt;name&gt;[^\W\d]\w*?)&quot;</span>
+        <span class="sa">r</span><span class="s2">&quot;(?P&lt;package&gt;[/</span><span class="se">\\</span><span class="s2">]__init__)?&quot;</span>
+        <span class="sa">r</span><span class="s2">&quot;(?P&lt;suffix&gt;</span><span class="si">%s</span><span class="s2">)$&quot;</span> <span class="o">%</span> <span class="sa">r</span><span class="s2">&quot;|&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">_suffixes</span><span class="p">)</span>
+    <span class="p">)</span>
+
+
+<div class="viewcode-block" id="module_list"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.imports.html#xonsh.completers.imports.module_list">[docs]</a><span class="k">def</span> <span class="nf">module_list</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return the list containing the names of the modules available in the given</span>
+<span class="sd">    folder.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># sys.path has the cwd as an empty string, but isdir/listdir need it as &#39;.&#39;</span>
+    <span class="k">if</span> <span class="n">path</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="s2">&quot;.&quot;</span>
+
+    <span class="c1"># A few local constants to be used in loops below</span>
+    <span class="n">pjoin</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span>
+
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+        <span class="c1"># Build a list of all files in the directory and all files</span>
+        <span class="c1"># in its subdirectories. For performance reasons, do not</span>
+        <span class="c1"># recurse more than one level into subdirectories.</span>
+        <span class="n">files</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">root</span><span class="p">,</span> <span class="n">dirs</span><span class="p">,</span> <span class="n">nondirs</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">walk</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">followlinks</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+            <span class="n">subdir</span> <span class="o">=</span> <span class="n">root</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span> <span class="p">:]</span>
+            <span class="k">if</span> <span class="n">subdir</span><span class="p">:</span>
+                <span class="n">files</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">pjoin</span><span class="p">(</span><span class="n">subdir</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">nondirs</span><span class="p">)</span>
+                <span class="n">dirs</span><span class="p">[:]</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># Do not recurse into additional subdirectories.</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">files</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">nondirs</span><span class="p">)</span>
+
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">files</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">zipimporter</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">_files</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+        <span class="k">except</span><span class="p">:</span>  <span class="c1"># noqa</span>
+            <span class="n">files</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="c1"># Build a list of modules which match the import_re regex.</span>
+    <span class="n">modules</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">files</span><span class="p">:</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">IMPORT_RE</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">m</span><span class="p">:</span>
+            <span class="n">modules</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">))</span>
+    <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">modules</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="get_root_modules"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.imports.html#xonsh.completers.imports.get_root_modules">[docs]</a><span class="k">def</span> <span class="nf">get_root_modules</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns a list containing the names of all the modules available in the</span>
+<span class="sd">    folders of the pythonpath.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">rootmodules_cache</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">modules_cache</span>
+    <span class="n">rootmodules</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">builtin_module_names</span><span class="p">)</span>
+    <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">modules</span> <span class="o">=</span> <span class="n">rootmodules_cache</span><span class="p">[</span><span class="n">path</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">modules</span> <span class="o">=</span> <span class="n">module_list</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">modules</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="s2">&quot;__init__&quot;</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                <span class="k">pass</span>
+            <span class="k">if</span> <span class="n">path</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;.&quot;</span><span class="p">):</span>  <span class="c1"># cwd modules should not be cached</span>
+                <span class="n">rootmodules_cache</span><span class="p">[</span><span class="n">path</span><span class="p">]</span> <span class="o">=</span> <span class="n">modules</span>
+            <span class="k">if</span> <span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time</span> <span class="o">&gt;</span> <span class="n">TIMEOUT_GIVEUP</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">warning: Getting root modules is taking too long, we give up&quot;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="p">[]</span>
+        <span class="n">rootmodules</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">modules</span><span class="p">)</span>
+    <span class="n">rootmodules</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">rootmodules</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">rootmodules</span></div>
+
+
+<div class="viewcode-block" id="is_importable"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.imports.html#xonsh.completers.imports.is_importable">[docs]</a><span class="k">def</span> <span class="nf">is_importable</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">attr</span><span class="p">,</span> <span class="n">only_modules</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">only_modules</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">inspect</span><span class="o">.</span><span class="n">ismodule</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">attr</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="ow">not</span> <span class="p">(</span><span class="n">attr</span><span class="p">[:</span><span class="mi">2</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;__&quot;</span> <span class="ow">and</span> <span class="n">attr</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">:]</span> <span class="o">==</span> <span class="s2">&quot;__&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="is_possible_submodule"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.imports.html#xonsh.completers.imports.is_possible_submodule">[docs]</a><span class="k">def</span> <span class="nf">is_possible_submodule</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">attr</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">obj</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">attr</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+        <span class="c1"># Is possilby an unimported submodule</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+        <span class="c1"># https://github.com/ipython/ipython/issues/9678</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">return</span> <span class="n">inspect</span><span class="o">.</span><span class="n">ismodule</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="try_import"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.imports.html#xonsh.completers.imports.try_import">[docs]</a><span class="k">def</span> <span class="nf">try_import</span><span class="p">(</span><span class="n">mod</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">only_modules</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">tp</span><span class="o">.</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Try to import given module and return list of potential completions.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">mod</span> <span class="o">=</span> <span class="n">mod</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">import_module</span><span class="p">(</span><span class="n">mod</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[]</span>
+
+    <span class="n">m_is_init</span> <span class="o">=</span> <span class="s2">&quot;__init__&quot;</span> <span class="ow">in</span> <span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="s2">&quot;__file__&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+
+    <span class="n">completions</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="p">(</span><span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="s2">&quot;__file__&quot;</span><span class="p">))</span> <span class="ow">or</span> <span class="p">(</span><span class="ow">not</span> <span class="n">only_modules</span><span class="p">)</span> <span class="ow">or</span> <span class="n">m_is_init</span><span class="p">:</span>
+        <span class="n">completions</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">attr</span> <span class="k">for</span> <span class="n">attr</span> <span class="ow">in</span> <span class="nb">dir</span><span class="p">(</span><span class="n">m</span><span class="p">)</span> <span class="k">if</span> <span class="n">is_importable</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">attr</span><span class="p">,</span> <span class="n">only_modules</span><span class="p">)]</span>
+        <span class="p">)</span>
+
+    <span class="n">m_all</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="s2">&quot;__all__&quot;</span><span class="p">,</span> <span class="p">[])</span>
+    <span class="k">if</span> <span class="n">only_modules</span><span class="p">:</span>
+        <span class="n">completions</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">attr</span> <span class="k">for</span> <span class="n">attr</span> <span class="ow">in</span> <span class="n">m_all</span> <span class="k">if</span> <span class="n">is_possible_submodule</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">attr</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">completions</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">m_all</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">m_is_init</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">m</span><span class="o">.</span><span class="vm">__file__</span><span class="p">:</span>
+            <span class="n">completions</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">module_list</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="vm">__file__</span><span class="p">)))</span>
+    <span class="n">completions_set</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">completions</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="nb">str</span><span class="p">)}</span>
+    <span class="n">completions_set</span><span class="o">.</span><span class="n">discard</span><span class="p">(</span><span class="s2">&quot;__init__&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">completions_set</span><span class="p">)</span></div>
+
+
+<span class="c1">###############</span>
+<span class="c1"># Xonsh code: #</span>
+<span class="c1">###############</span>
+
+
+<div class="viewcode-block" id="filter_completions"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.imports.html#xonsh.completers.imports.filter_completions">[docs]</a><span class="k">def</span> <span class="nf">filter_completions</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">completions</span><span class="p">):</span>
+    <span class="n">filt</span> <span class="o">=</span> <span class="n">get_filter_function</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="n">completions</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">filt</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="n">prefix</span><span class="p">):</span>
+            <span class="k">yield</span> <span class="n">comp</span></div>
+
+
+<div class="viewcode-block" id="complete_import"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.imports.html#xonsh.completers.imports.complete_import">[docs]</a><span class="nd">@contextual_completer</span>
+<span class="k">def</span> <span class="nf">complete_import</span><span class="p">(</span><span class="n">context</span><span class="p">:</span> <span class="n">CompletionContext</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Completes module names and objects for &quot;import ...&quot; and &quot;from ... import</span>
+<span class="sd">    ...&quot;.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">command</span> <span class="ow">and</span> <span class="n">context</span><span class="o">.</span><span class="n">python</span><span class="p">):</span>
+        <span class="c1"># Imports are only possible in independent lines (not in `$()` or `@()`).</span>
+        <span class="c1"># This means it&#39;s python code, but also can be a command as far as the parser is concerned.</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="n">command</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">command</span>
+
+    <span class="k">if</span> <span class="n">command</span><span class="o">.</span><span class="n">opening_quote</span><span class="p">:</span>
+        <span class="c1"># can&#39;t have a quoted import</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="n">arg_index</span> <span class="o">=</span> <span class="n">command</span><span class="o">.</span><span class="n">arg_index</span>
+    <span class="n">prefix</span> <span class="o">=</span> <span class="n">command</span><span class="o">.</span><span class="n">prefix</span>
+    <span class="n">args</span> <span class="o">=</span> <span class="n">command</span><span class="o">.</span><span class="n">args</span>
+
+    <span class="k">if</span> <span class="n">arg_index</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">value</span> <span class="o">==</span> <span class="s2">&quot;from&quot;</span><span class="p">:</span>
+        <span class="c1"># completing module to import</span>
+        <span class="k">return</span> <span class="n">complete_module</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">arg_index</span> <span class="o">&gt;=</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">value</span> <span class="o">==</span> <span class="s2">&quot;import&quot;</span><span class="p">:</span>
+        <span class="c1"># completing module to import, might be multiple modules</span>
+        <span class="n">prefix</span> <span class="o">=</span> <span class="n">prefix</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">complete_module</span><span class="p">(</span><span class="n">prefix</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">arg_index</span> <span class="o">==</span> <span class="mi">2</span> <span class="ow">and</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">value</span> <span class="o">==</span> <span class="s2">&quot;from&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{</span><span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;import&quot;</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">)}</span>
+    <span class="k">if</span> <span class="n">arg_index</span> <span class="o">&gt;</span> <span class="mi">2</span> <span class="ow">and</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">value</span> <span class="o">==</span> <span class="s2">&quot;from&quot;</span> <span class="ow">and</span> <span class="n">args</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">value</span> <span class="o">==</span> <span class="s2">&quot;import&quot;</span><span class="p">:</span>
+        <span class="c1"># complete thing inside a module, might be multiple objects</span>
+        <span class="n">module</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">value</span>
+        <span class="n">prefix</span> <span class="o">=</span> <span class="n">prefix</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">filter_completions</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">try_import</span><span class="p">(</span><span class="n">module</span><span class="p">)),</span> <span class="nb">len</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">set</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="complete_module"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.imports.html#xonsh.completers.imports.complete_module">[docs]</a><span class="k">def</span> <span class="nf">complete_module</span><span class="p">(</span><span class="n">prefix</span><span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">prefix</span><span class="p">:</span>
+        <span class="n">modules</span> <span class="o">=</span> <span class="n">get_root_modules</span><span class="p">()</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">mod</span> <span class="o">=</span> <span class="n">prefix</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">mod</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">modules</span> <span class="o">=</span> <span class="n">get_root_modules</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">completion_list</span> <span class="o">=</span> <span class="n">try_import</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">mod</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span> <span class="n">only_modules</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">modules</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">mod</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="n">el</span><span class="p">])</span> <span class="k">for</span> <span class="n">el</span> <span class="ow">in</span> <span class="n">completion_list</span><span class="p">)</span>
+
+    <span class="k">yield from</span> <span class="n">filter_completions</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">modules</span><span class="p">)</span></div>
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+        <p class="logo"><a href="../../../contents.html" title="contents">
+          <img class="logo" src="../../../_static/ascii_conch_part_transparent_tight.png" alt="Logo"/>
+        </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+        </div>
+      </div>
+    
+    
+        <div class="sidebar-toggle-group no-js">
+            
+            <button class="sidebar-toggle" id="sidebar-hide" title="Hide the sidebar menu">
+                 «
+                <span class="show-for-small">hide menu</span>
+                
+            </button>
+            <button class="sidebar-toggle" id="sidebar-show" title="Show the sidebar menu">
+                
+                <span class="show-for-small">menu</span>
+                <span class="hide-for-small">sidebar</span>
+                 »
+            </button>
+        </div>
+    
+      <div class="clearer"></div>
+    </div>
+    <div class="relbar-bottom">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">xonsh.completers.imports</a></li> 
+      </ul>
+    </div>
+    </div>
+
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2015, Anthony Scopatz.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.4.0.
+    </div>
+    <!-- cloud_sptheme 1.4 -->
+  </body>
+</html>

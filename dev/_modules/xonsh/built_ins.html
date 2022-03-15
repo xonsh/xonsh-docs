@@ -7,14 +7,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xonsh.built_ins &#8212; xonsh 0.9.27.dev21 documentation</title>
-    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
-    <link rel="stylesheet" href="../../_static/numpy_friendly.css" type="text/css" />
+    <title>xonsh.built_ins &#8212; xonsh 0.11.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/numpy_friendly.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/custom.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
     
-    <script id="documentation_options" data-url_root="../../" src="../../_static/documentation_options.js"></script>
+    <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
     <script src="../../_static/jquery.js"></script>
     <script src="../../_static/underscore.js"></script>
     <script src="../../_static/doctools.js"></script>
@@ -55,7 +55,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.9.27.dev21 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.built_ins</a></li> 
@@ -70,47 +70,38 @@
           <div class="body" role="main">
             
   <h1>Source code for xonsh.built_ins</h1><div class="highlight"><pre>
-<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
-<span class="sd">&quot;&quot;&quot;The xonsh built-ins.</span>
+<span></span><span class="sd">&quot;&quot;&quot;The xonsh built-ins.</span>
 
 <span class="sd">Note that this module is named &#39;built_ins&#39; so as not to be confused with the</span>
 <span class="sd">special Python builtins module.</span>
 <span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">atexit</span>
+<span class="kn">import</span> <span class="nn">builtins</span>
+<span class="kn">import</span> <span class="nn">collections.abc</span> <span class="k">as</span> <span class="nn">cabc</span>
+<span class="kn">import</span> <span class="nn">contextlib</span>
+<span class="kn">import</span> <span class="nn">inspect</span>
+<span class="kn">import</span> <span class="nn">itertools</span>
 <span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">pathlib</span>
 <span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">signal</span>
 <span class="kn">import</span> <span class="nn">sys</span>
 <span class="kn">import</span> <span class="nn">types</span>
-<span class="kn">import</span> <span class="nn">signal</span>
-<span class="kn">import</span> <span class="nn">atexit</span>
-<span class="kn">import</span> <span class="nn">pathlib</span>
-<span class="kn">import</span> <span class="nn">inspect</span>
 <span class="kn">import</span> <span class="nn">warnings</span>
-<span class="kn">import</span> <span class="nn">builtins</span>
-<span class="kn">import</span> <span class="nn">itertools</span>
-<span class="kn">import</span> <span class="nn">contextlib</span>
-<span class="kn">import</span> <span class="nn">collections.abc</span> <span class="k">as</span> <span class="nn">cabc</span>
+<span class="kn">from</span> <span class="nn">ast</span> <span class="kn">import</span> <span class="n">AST</span>
 
-<span class="kn">from</span> <span class="nn">xonsh.ast</span> <span class="kn">import</span> <span class="n">AST</span>
-<span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="kn">import</span> <span class="n">LazyObject</span><span class="p">,</span> <span class="n">lazyobject</span>
 <span class="kn">from</span> <span class="nn">xonsh.inspectors</span> <span class="kn">import</span> <span class="n">Inspector</span>
-<span class="kn">from</span> <span class="nn">xonsh.aliases</span> <span class="kn">import</span> <span class="n">Aliases</span><span class="p">,</span> <span class="n">make_default_aliases</span>
-<span class="kn">from</span> <span class="nn">xonsh.environ</span> <span class="kn">import</span> <span class="n">Env</span><span class="p">,</span> <span class="n">default_env</span>
+<span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="kn">import</span> <span class="n">lazyobject</span>
 <span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="kn">import</span> <span class="n">ON_POSIX</span><span class="p">,</span> <span class="n">ON_WINDOWS</span>
 <span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">XonshCalledProcessError</span><span class="p">,</span>
+    <span class="n">XonshError</span><span class="p">,</span>
     <span class="n">expand_path</span><span class="p">,</span>
     <span class="n">globpath</span><span class="p">,</span>
-    <span class="n">XonshError</span><span class="p">,</span>
-    <span class="n">XonshCalledProcessError</span><span class="p">,</span>
     <span class="n">print_color</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">xonsh.commands_cache</span> <span class="kn">import</span> <span class="n">CommandsCache</span>
-<span class="kn">from</span> <span class="nn">xonsh.events</span> <span class="kn">import</span> <span class="n">events</span>
 
-<span class="kn">import</span> <span class="nn">xonsh.procs.specs</span>
-<span class="kn">import</span> <span class="nn">xonsh.completers.init</span>
-
-<span class="n">BUILTINS_LOADED</span> <span class="o">=</span> <span class="kc">False</span>
-<span class="n">INSPECTOR</span> <span class="o">=</span> <span class="n">LazyObject</span><span class="p">(</span><span class="n">Inspector</span><span class="p">,</span> <span class="nb">globals</span><span class="p">(),</span> <span class="s2">&quot;INSPECTOR&quot;</span><span class="p">)</span>
+<span class="n">INSPECTOR</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">()</span>
 
 <span class="n">warnings</span><span class="o">.</span><span class="n">filterwarnings</span><span class="p">(</span><span class="s2">&quot;once&quot;</span><span class="p">,</span> <span class="n">category</span><span class="o">=</span><span class="ne">DeprecationWarning</span><span class="p">)</span>
 
@@ -129,7 +120,7 @@
     <span class="k">return</span> <span class="n">sigs</span>
 
 
-<div class="viewcode-block" id="resetting_signal_handle"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.resetting_signal_handle">[docs]</a><span class="k">def</span> <span class="nf">resetting_signal_handle</span><span class="p">(</span><span class="n">sig</span><span class="p">,</span> <span class="n">f</span><span class="p">):</span>
+<div class="viewcode-block" id="resetting_signal_handle"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.resetting_signal_handle">[docs]</a><span class="k">def</span> <span class="nf">resetting_signal_handle</span><span class="p">(</span><span class="n">sig</span><span class="p">,</span> <span class="n">f</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Sets a new signal handle that will automatically restore the old value</span>
 <span class="sd">    once the new handle is finished.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -144,19 +135,21 @@
     <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">sig</span><span class="p">,</span> <span class="n">newh</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="helper"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.helper">[docs]</a><span class="k">def</span> <span class="nf">helper</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">):</span>
+<div class="viewcode-block" id="helper"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.helper">[docs]</a><span class="k">def</span> <span class="nf">helper</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Prints help about, and then returns that variable.&quot;&quot;&quot;</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">name</span> <span class="ow">or</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s2">&quot;__name__&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
     <span class="n">INSPECTOR</span><span class="o">.</span><span class="n">pinfo</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">oname</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">detail_level</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">x</span></div>
 
 
-<div class="viewcode-block" id="superhelper"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.superhelper">[docs]</a><span class="k">def</span> <span class="nf">superhelper</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">):</span>
+<div class="viewcode-block" id="superhelper"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.superhelper">[docs]</a><span class="k">def</span> <span class="nf">superhelper</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Prints help about, and then returns that variable.&quot;&quot;&quot;</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">name</span> <span class="ow">or</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s2">&quot;__name__&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
     <span class="n">INSPECTOR</span><span class="o">.</span><span class="n">pinfo</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">oname</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">detail_level</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">x</span></div>
 
 
-<div class="viewcode-block" id="reglob"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.reglob">[docs]</a><span class="k">def</span> <span class="nf">reglob</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">parts</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">i</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="reglob"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.reglob">[docs]</a><span class="k">def</span> <span class="nf">reglob</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">parts</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">i</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Regular expression-based globbing.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">parts</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">normpath</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
@@ -195,20 +188,20 @@
     <span class="k">return</span> <span class="n">paths</span></div>
 
 
-<div class="viewcode-block" id="path_literal"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.path_literal">[docs]</a><span class="k">def</span> <span class="nf">path_literal</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+<div class="viewcode-block" id="path_literal"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.path_literal">[docs]</a><span class="k">def</span> <span class="nf">path_literal</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
     <span class="n">s</span> <span class="o">=</span> <span class="n">expand_path</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">s</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="regexsearch"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.regexsearch">[docs]</a><span class="k">def</span> <span class="nf">regexsearch</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+<div class="viewcode-block" id="regexsearch"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.regexsearch">[docs]</a><span class="k">def</span> <span class="nf">regexsearch</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
     <span class="n">s</span> <span class="o">=</span> <span class="n">expand_path</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">reglob</span><span class="p">(</span><span class="n">s</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="globsearch"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.globsearch">[docs]</a><span class="k">def</span> <span class="nf">globsearch</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
-    <span class="n">csc</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;CASE_SENSITIVE_COMPLETIONS&quot;</span><span class="p">)</span>
-    <span class="n">glob_sorted</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;GLOB_SORTED&quot;</span><span class="p">)</span>
-    <span class="n">dotglob</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;DOTGLOB&quot;</span><span class="p">)</span>
+<div class="viewcode-block" id="globsearch"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.globsearch">[docs]</a><span class="k">def</span> <span class="nf">globsearch</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+    <span class="n">csc</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;CASE_SENSITIVE_COMPLETIONS&quot;</span><span class="p">)</span>
+    <span class="n">glob_sorted</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;GLOB_SORTED&quot;</span><span class="p">)</span>
+    <span class="n">dotglob</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;DOTGLOB&quot;</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">globpath</span><span class="p">(</span>
         <span class="n">s</span><span class="p">,</span>
         <span class="n">ignore_case</span><span class="o">=</span><span class="p">(</span><span class="ow">not</span> <span class="n">csc</span><span class="p">),</span>
@@ -218,7 +211,7 @@
     <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="pathsearch"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.pathsearch">[docs]</a><span class="k">def</span> <span class="nf">pathsearch</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="n">pymode</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">pathobj</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<div class="viewcode-block" id="pathsearch"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.pathsearch">[docs]</a><span class="k">def</span> <span class="nf">pathsearch</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="n">pymode</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">pathobj</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Takes a string and returns a list of file paths that match (regex, glob,</span>
 <span class="sd">    or arbitrary search function). If pathobj=True, the return is a list of</span>
@@ -234,51 +227,62 @@
     <span class="k">return</span> <span class="n">o</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">o</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span> <span class="k">else</span> <span class="n">no_match</span></div>
 
 
-<div class="viewcode-block" id="subproc_captured_stdout"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.subproc_captured_stdout">[docs]</a><span class="k">def</span> <span class="nf">subproc_captured_stdout</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="subproc_captured_stdout"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.subproc_captured_stdout">[docs]</a><span class="k">def</span> <span class="nf">subproc_captured_stdout</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Runs a subprocess, capturing the output. Returns the stdout</span>
 <span class="sd">    that was produced as a str.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="kn">import</span> <span class="nn">xonsh.procs.specs</span>
+
     <span class="k">return</span> <span class="n">xonsh</span><span class="o">.</span><span class="n">procs</span><span class="o">.</span><span class="n">specs</span><span class="o">.</span><span class="n">run_subproc</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="s2">&quot;stdout&quot;</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="n">envs</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="subproc_captured_inject"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.subproc_captured_inject">[docs]</a><span class="k">def</span> <span class="nf">subproc_captured_inject</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="subproc_captured_inject"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.subproc_captured_inject">[docs]</a><span class="k">def</span> <span class="nf">subproc_captured_inject</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Runs a subprocess, capturing the output. Returns a list of</span>
 <span class="sd">    whitespace-separated strings of the stdout that was produced.</span>
 <span class="sd">    The string is split using xonsh&#39;s lexer, rather than Python&#39;s str.split()</span>
 <span class="sd">    or shlex.split().</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span> <span class="nn">xonsh.procs.specs</span>
+
     <span class="n">o</span> <span class="o">=</span> <span class="n">xonsh</span><span class="o">.</span><span class="n">procs</span><span class="o">.</span><span class="n">specs</span><span class="o">.</span><span class="n">run_subproc</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="s2">&quot;object&quot;</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="n">envs</span><span class="p">)</span>
     <span class="n">o</span><span class="o">.</span><span class="n">end</span><span class="p">()</span>
     <span class="n">toks</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">o</span><span class="p">:</span>
         <span class="n">line</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">linesep</span><span class="p">)</span>
-        <span class="n">toks</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">execer</span><span class="o">.</span><span class="n">parser</span><span class="o">.</span><span class="n">lexer</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">line</span><span class="p">))</span>
+        <span class="n">toks</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">XSH</span><span class="o">.</span><span class="n">execer</span><span class="o">.</span><span class="n">parser</span><span class="o">.</span><span class="n">lexer</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">line</span><span class="p">))</span>
     <span class="k">return</span> <span class="n">toks</span></div>
 
 
-<div class="viewcode-block" id="subproc_captured_object"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.subproc_captured_object">[docs]</a><span class="k">def</span> <span class="nf">subproc_captured_object</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="subproc_captured_object"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.subproc_captured_object">[docs]</a><span class="k">def</span> <span class="nf">subproc_captured_object</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Runs a subprocess, capturing the output. Returns an instance of</span>
 <span class="sd">    CommandPipeline representing the completed command.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span> <span class="nn">xonsh.procs.specs</span>
+
     <span class="k">return</span> <span class="n">xonsh</span><span class="o">.</span><span class="n">procs</span><span class="o">.</span><span class="n">specs</span><span class="o">.</span><span class="n">run_subproc</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="s2">&quot;object&quot;</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="n">envs</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="subproc_captured_hiddenobject"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.subproc_captured_hiddenobject">[docs]</a><span class="k">def</span> <span class="nf">subproc_captured_hiddenobject</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="subproc_captured_hiddenobject"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.subproc_captured_hiddenobject">[docs]</a><span class="k">def</span> <span class="nf">subproc_captured_hiddenobject</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Runs a subprocess, capturing the output. Returns an instance of</span>
 <span class="sd">    HiddenCommandPipeline representing the completed command.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span> <span class="nn">xonsh.procs.specs</span>
+
     <span class="k">return</span> <span class="n">xonsh</span><span class="o">.</span><span class="n">procs</span><span class="o">.</span><span class="n">specs</span><span class="o">.</span><span class="n">run_subproc</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="s2">&quot;hiddenobject&quot;</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="n">envs</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="subproc_uncaptured"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.subproc_uncaptured">[docs]</a><span class="k">def</span> <span class="nf">subproc_uncaptured</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="subproc_uncaptured"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.subproc_uncaptured">[docs]</a><span class="k">def</span> <span class="nf">subproc_uncaptured</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Runs a subprocess, without capturing the output. Returns the stdout</span>
 <span class="sd">    that was produced as a str.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span> <span class="nn">xonsh.procs.specs</span>
+
     <span class="k">return</span> <span class="n">xonsh</span><span class="o">.</span><span class="n">procs</span><span class="o">.</span><span class="n">specs</span><span class="o">.</span><span class="n">run_subproc</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="n">envs</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="ensure_list_of_strs"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.ensure_list_of_strs">[docs]</a><span class="k">def</span> <span class="nf">ensure_list_of_strs</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<div class="viewcode-block" id="ensure_list_of_strs"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.ensure_list_of_strs">[docs]</a><span class="k">def</span> <span class="nf">ensure_list_of_strs</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Ensures that x is a list of strings.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
         <span class="n">rtn</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span><span class="p">]</span>
@@ -289,7 +293,7 @@
     <span class="k">return</span> <span class="n">rtn</span></div>
 
 
-<div class="viewcode-block" id="ensure_str_or_callable"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.ensure_str_or_callable">[docs]</a><span class="k">def</span> <span class="nf">ensure_str_or_callable</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<div class="viewcode-block" id="ensure_str_or_callable"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.ensure_str_or_callable">[docs]</a><span class="k">def</span> <span class="nf">ensure_str_or_callable</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Ensures that x is single string or function.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="n">callable</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">x</span>
@@ -301,7 +305,7 @@
     <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="list_of_strs_or_callables"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.list_of_strs_or_callables">[docs]</a><span class="k">def</span> <span class="nf">list_of_strs_or_callables</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<div class="viewcode-block" id="list_of_strs_or_callables"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.list_of_strs_or_callables">[docs]</a><span class="k">def</span> <span class="nf">list_of_strs_or_callables</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Ensures that x is a list of strings or functions.</span>
 <span class="sd">    This is called when using the ``@()`` operator to expand it&#39;s content.</span>
@@ -315,23 +319,23 @@
     <span class="k">return</span> <span class="n">rtn</span></div>
 
 
-<div class="viewcode-block" id="list_of_list_of_strs_outer_product"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.list_of_list_of_strs_outer_product">[docs]</a><span class="k">def</span> <span class="nf">list_of_list_of_strs_outer_product</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<div class="viewcode-block" id="list_of_list_of_strs_outer_product"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.list_of_list_of_strs_outer_product">[docs]</a><span class="k">def</span> <span class="nf">list_of_list_of_strs_outer_product</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Takes an outer product of a list of strings&quot;&quot;&quot;</span>
     <span class="n">lolos</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="n">ensure_list_of_strs</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span>
     <span class="n">rtn</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">los</span> <span class="ow">in</span> <span class="n">itertools</span><span class="o">.</span><span class="n">product</span><span class="p">(</span><span class="o">*</span><span class="n">lolos</span><span class="p">):</span>
         <span class="n">s</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">los</span><span class="p">)</span>
         <span class="k">if</span> <span class="s2">&quot;*&quot;</span> <span class="ow">in</span> <span class="n">s</span><span class="p">:</span>
-            <span class="n">rtn</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">s</span><span class="p">))</span>
+            <span class="n">rtn</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">XSH</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">s</span><span class="p">))</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">rtn</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">expand_path</span><span class="p">(</span><span class="n">s</span><span class="p">))</span>
+            <span class="n">rtn</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">XSH</span><span class="o">.</span><span class="n">expand_path</span><span class="p">(</span><span class="n">s</span><span class="p">))</span>
     <span class="k">return</span> <span class="n">rtn</span></div>
 
 
-<div class="viewcode-block" id="eval_fstring_field"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.eval_fstring_field">[docs]</a><span class="k">def</span> <span class="nf">eval_fstring_field</span><span class="p">(</span><span class="n">field</span><span class="p">):</span>
+<div class="viewcode-block" id="eval_fstring_field"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.eval_fstring_field">[docs]</a><span class="k">def</span> <span class="nf">eval_fstring_field</span><span class="p">(</span><span class="n">field</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Evaluates the argument in Xonsh context.&quot;&quot;&quot;</span>
-    <span class="n">res</span> <span class="o">=</span> <span class="n">__xonsh__</span><span class="o">.</span><span class="n">execer</span><span class="o">.</span><span class="n">eval</span><span class="p">(</span>
-        <span class="n">field</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span> <span class="n">glbs</span><span class="o">=</span><span class="nb">globals</span><span class="p">(),</span> <span class="n">locs</span><span class="o">=</span><span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">ctx</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="n">field</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">res</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">execer</span><span class="o">.</span><span class="n">eval</span><span class="p">(</span>
+        <span class="n">field</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span> <span class="n">glbs</span><span class="o">=</span><span class="nb">globals</span><span class="p">(),</span> <span class="n">locs</span><span class="o">=</span><span class="n">XSH</span><span class="o">.</span><span class="n">ctx</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="n">field</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
     <span class="p">)</span>
     <span class="k">return</span> <span class="n">res</span></div>
 
@@ -361,11 +365,11 @@
     <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
     <span class="n">kind</span> <span class="o">=</span> <span class="n">MACRO_FLAG_KINDS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">kind</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{0!r}</span><span class="s2"> not a recognized macro type.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">x</span><span class="si">!r}</span><span class="s2"> not a recognized macro type.&quot;</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">kind</span>
 
 
-<div class="viewcode-block" id="convert_macro_arg"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.convert_macro_arg">[docs]</a><span class="k">def</span> <span class="nf">convert_macro_arg</span><span class="p">(</span><span class="n">raw_arg</span><span class="p">,</span> <span class="n">kind</span><span class="p">,</span> <span class="n">glbs</span><span class="p">,</span> <span class="n">locs</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;&lt;arg&gt;&quot;</span><span class="p">,</span> <span class="n">macroname</span><span class="o">=</span><span class="s2">&quot;&lt;macro&gt;&quot;</span><span class="p">):</span>
+<div class="viewcode-block" id="convert_macro_arg"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.convert_macro_arg">[docs]</a><span class="k">def</span> <span class="nf">convert_macro_arg</span><span class="p">(</span><span class="n">raw_arg</span><span class="p">,</span> <span class="n">kind</span><span class="p">,</span> <span class="n">glbs</span><span class="p">,</span> <span class="n">locs</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;&lt;arg&gt;&quot;</span><span class="p">,</span> <span class="n">macroname</span><span class="o">=</span><span class="s2">&quot;&lt;macro&gt;&quot;</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Converts a string macro argument based on the requested kind.</span>
 
 <span class="sd">    Parameters</span>
@@ -397,7 +401,7 @@
     <span class="k">if</span> <span class="n">kind</span> <span class="ow">is</span> <span class="nb">str</span> <span class="ow">or</span> <span class="n">kind</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">raw_arg</span>  <span class="c1"># short circuit since there is nothing else to do</span>
     <span class="c1"># select from kind and convert</span>
-    <span class="n">execer</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">execer</span>
+    <span class="n">execer</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">execer</span>
     <span class="n">filename</span> <span class="o">=</span> <span class="n">macroname</span> <span class="o">+</span> <span class="s2">&quot;(&quot;</span> <span class="o">+</span> <span class="n">name</span> <span class="o">+</span> <span class="s2">&quot;)&quot;</span>
     <span class="k">if</span> <span class="n">kind</span> <span class="ow">is</span> <span class="n">AST</span><span class="p">:</span>
         <span class="n">ctx</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="nb">dir</span><span class="p">(</span><span class="n">builtins</span><span class="p">))</span> <span class="o">|</span> <span class="nb">set</span><span class="p">(</span><span class="n">glbs</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
@@ -427,7 +431,7 @@
     <span class="k">return</span> <span class="n">arg</span></div>
 
 
-<div class="viewcode-block" id="in_macro_call"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.in_macro_call">[docs]</a><span class="nd">@contextlib</span><span class="o">.</span><span class="n">contextmanager</span>
+<div class="viewcode-block" id="in_macro_call"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.in_macro_call">[docs]</a><span class="nd">@contextlib</span><span class="o">.</span><span class="n">contextmanager</span>
 <span class="k">def</span> <span class="nf">in_macro_call</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">glbs</span><span class="p">,</span> <span class="n">locs</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Attaches macro globals and locals temporarily to function as a</span>
 <span class="sd">    context manager.</span>
@@ -456,7 +460,7 @@
         <span class="n">f</span><span class="o">.</span><span class="n">macro_locals</span> <span class="o">=</span> <span class="n">prev_locs</span></div>
 
 
-<div class="viewcode-block" id="call_macro"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.call_macro">[docs]</a><span class="k">def</span> <span class="nf">call_macro</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">raw_args</span><span class="p">,</span> <span class="n">glbs</span><span class="p">,</span> <span class="n">locs</span><span class="p">):</span>
+<div class="viewcode-block" id="call_macro"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.call_macro">[docs]</a><span class="k">def</span> <span class="nf">call_macro</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">raw_args</span><span class="p">,</span> <span class="n">glbs</span><span class="p">,</span> <span class="n">locs</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Calls a function as a macro, returning its result.</span>
 
 <span class="sd">    Parameters</span>
@@ -510,7 +514,7 @@
         <span class="k">return</span> <span class="p">[],</span> <span class="p">{}</span>
     <span class="n">arglist</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">itertools</span><span class="o">.</span><span class="n">takewhile</span><span class="p">(</span><span class="n">_starts_as_arg</span><span class="p">,</span> <span class="n">raw_args</span><span class="p">))</span>
     <span class="n">kwarglist</span> <span class="o">=</span> <span class="n">raw_args</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">arglist</span><span class="p">)</span> <span class="p">:]</span>
-    <span class="n">execer</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">execer</span>
+    <span class="n">execer</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">execer</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">arglist</span><span class="p">:</span>
         <span class="n">args</span> <span class="o">=</span> <span class="n">arglist</span>
         <span class="n">kwargstr</span> <span class="o">=</span> <span class="s2">&quot;dict(</span><span class="si">{}</span><span class="s2">)&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">kwarglist</span><span class="p">))</span>
@@ -522,16 +526,15 @@
     <span class="k">else</span><span class="p">:</span>
         <span class="n">argstr</span> <span class="o">=</span> <span class="s2">&quot;(</span><span class="si">{}</span><span class="s2">,)&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">arglist</span><span class="p">))</span>
         <span class="n">kwargstr</span> <span class="o">=</span> <span class="s2">&quot;dict(</span><span class="si">{}</span><span class="s2">)&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">kwarglist</span><span class="p">))</span>
-        <span class="n">both</span> <span class="o">=</span> <span class="s2">&quot;(</span><span class="si">{}</span><span class="s2">, </span><span class="si">{}</span><span class="s2">)&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">argstr</span><span class="p">,</span> <span class="n">kwargstr</span><span class="p">)</span>
+        <span class="n">both</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="n">argstr</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">kwargstr</span><span class="si">}</span><span class="s2">)&quot;</span>
         <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="n">execer</span><span class="o">.</span><span class="n">eval</span><span class="p">(</span><span class="n">both</span><span class="p">,</span> <span class="n">glbs</span><span class="o">=</span><span class="n">glbs</span><span class="p">,</span> <span class="n">locs</span><span class="o">=</span><span class="n">locs</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span>
 
 
-<div class="viewcode-block" id="enter_macro"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.enter_macro">[docs]</a><span class="k">def</span> <span class="nf">enter_macro</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">raw_block</span><span class="p">,</span> <span class="n">glbs</span><span class="p">,</span> <span class="n">locs</span><span class="p">):</span>
+<div class="viewcode-block" id="enter_macro"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.enter_macro">[docs]</a><span class="k">def</span> <span class="nf">enter_macro</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">raw_block</span><span class="p">,</span> <span class="n">glbs</span><span class="p">,</span> <span class="n">locs</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Prepares to enter a context manager macro by attaching the contents</span>
 <span class="sd">    of the macro block, globals, and locals to the object. These modifications</span>
 <span class="sd">    are made in-place and the original object is returned.</span>
-
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
@@ -569,72 +572,81 @@
     <span class="k">return</span> <span class="n">obj</span></div>
 
 
-<div class="viewcode-block" id="load_builtins"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.load_builtins">[docs]</a><span class="k">def</span> <span class="nf">load_builtins</span><span class="p">(</span><span class="n">execer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;Loads the xonsh builtins into the Python builtins. Sets the</span>
-<span class="sd">    BUILTINS_LOADED variable to True.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">global</span> <span class="n">BUILTINS_LOADED</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s2">&quot;__xonsh__&quot;</span><span class="p">):</span>
-        <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span> <span class="o">=</span> <span class="n">XonshSession</span><span class="p">(</span><span class="n">execer</span><span class="o">=</span><span class="n">execer</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="n">ctx</span><span class="p">)</span>
-    <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">execer</span><span class="o">=</span><span class="n">execer</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="n">ctx</span><span class="p">)</span>
-    <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">link_builtins</span><span class="p">(</span><span class="n">execer</span><span class="o">=</span><span class="n">execer</span><span class="p">)</span>
-    <span class="n">BUILTINS_LOADED</span> <span class="o">=</span> <span class="kc">True</span></div>
-
-
-<span class="k">def</span> <span class="nf">_lastflush</span><span class="p">(</span><span class="n">s</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">f</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s2">&quot;__xonsh__&quot;</span><span class="p">):</span>
-        <span class="k">if</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">history</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">history</span><span class="o">.</span><span class="n">flush</span><span class="p">(</span><span class="n">at_exit</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-
-
-<div class="viewcode-block" id="unload_builtins"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.unload_builtins">[docs]</a><span class="k">def</span> <span class="nf">unload_builtins</span><span class="p">():</span>
-    <span class="sd">&quot;&quot;&quot;Removes the xonsh builtins from the Python builtins, if the</span>
-<span class="sd">    BUILTINS_LOADED is True, sets BUILTINS_LOADED to False, and returns.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">global</span> <span class="n">BUILTINS_LOADED</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s2">&quot;__xonsh__&quot;</span><span class="p">):</span>
-        <span class="n">BUILTINS_LOADED</span> <span class="o">=</span> <span class="kc">False</span>
-        <span class="k">return</span>
-    <span class="n">env</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="p">,</span> <span class="s2">&quot;env&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">Env</span><span class="p">):</span>
-        <span class="n">env</span><span class="o">.</span><span class="n">undo_replace_env</span><span class="p">()</span>
-    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="p">,</span> <span class="s2">&quot;pyexit&quot;</span><span class="p">):</span>
-        <span class="n">builtins</span><span class="o">.</span><span class="n">exit</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">pyexit</span>
-    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="p">,</span> <span class="s2">&quot;pyquit&quot;</span><span class="p">):</span>
-        <span class="n">builtins</span><span class="o">.</span><span class="n">quit</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">pyquit</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">BUILTINS_LOADED</span><span class="p">:</span>
-        <span class="k">return</span>
-    <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">unlink_builtins</span><span class="p">()</span>
-    <span class="nb">delattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s2">&quot;__xonsh__&quot;</span><span class="p">)</span>
-    <span class="n">BUILTINS_LOADED</span> <span class="o">=</span> <span class="kc">False</span></div>
-
-
-<div class="viewcode-block" id="xonsh_builtins"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.xonsh_builtins">[docs]</a><span class="nd">@contextlib</span><span class="o">.</span><span class="n">contextmanager</span>
+<div class="viewcode-block" id="xonsh_builtins"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.xonsh_builtins">[docs]</a><span class="nd">@contextlib</span><span class="o">.</span><span class="n">contextmanager</span>
 <span class="k">def</span> <span class="nf">xonsh_builtins</span><span class="p">(</span><span class="n">execer</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;A context manager for using the xonsh builtins only in a limited</span>
 <span class="sd">    scope. Likely useful in testing.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">load_builtins</span><span class="p">(</span><span class="n">execer</span><span class="o">=</span><span class="n">execer</span><span class="p">)</span>
+    <span class="n">XSH</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">execer</span><span class="o">=</span><span class="n">execer</span><span class="p">)</span>
     <span class="k">yield</span>
-    <span class="n">unload_builtins</span><span class="p">()</span></div>
+    <span class="n">XSH</span><span class="o">.</span><span class="n">unload</span><span class="p">()</span></div>
 
 
-<div class="viewcode-block" id="XonshSession"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.XonshSession">[docs]</a><span class="k">class</span> <span class="nc">XonshSession</span><span class="p">:</span>
+<div class="viewcode-block" id="XonshSession"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.XonshSession">[docs]</a><span class="k">class</span> <span class="nc">XonshSession</span><span class="p">:</span>
     <span class="sd">&quot;&quot;&quot;All components defining a xonsh session.&quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">execer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Parameters</span>
-<span class="sd">        ----------</span>
-<span class="sd">        execer : Execer, optional</span>
-<span class="sd">            Xonsh execution object, may be None to start</span>
-<span class="sd">        ctx : Mapping, optional</span>
-<span class="sd">            Context to start xonsh session with.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">execer</span> <span class="o">=</span> <span class="n">execer</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">ctx</span> <span class="o">=</span> <span class="p">{}</span> <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">ctx</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">execer</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ctx</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">builtins_loaded</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">history</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">shell</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">env</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rc_files</span> <span class="o">=</span> <span class="kc">None</span>
 
-<div class="viewcode-block" id="XonshSession.load"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.XonshSession.load">[docs]</a>    <span class="k">def</span> <span class="nf">load</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">execer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="c1"># AST-invoked functions</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">help</span> <span class="o">=</span> <span class="n">helper</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">superhelp</span> <span class="o">=</span> <span class="n">superhelper</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pathsearch</span> <span class="o">=</span> <span class="n">pathsearch</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">globsearch</span> <span class="o">=</span> <span class="n">globsearch</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">regexsearch</span> <span class="o">=</span> <span class="n">regexsearch</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">glob</span> <span class="o">=</span> <span class="n">globpath</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">expand_path</span> <span class="o">=</span> <span class="n">expand_path</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">subproc_captured_stdout</span> <span class="o">=</span> <span class="n">subproc_captured_stdout</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">subproc_captured_inject</span> <span class="o">=</span> <span class="n">subproc_captured_inject</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">subproc_captured_object</span> <span class="o">=</span> <span class="n">subproc_captured_object</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">subproc_captured_hiddenobject</span> <span class="o">=</span> <span class="n">subproc_captured_hiddenobject</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">subproc_uncaptured</span> <span class="o">=</span> <span class="n">subproc_uncaptured</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">call_macro</span> <span class="o">=</span> <span class="n">call_macro</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">enter_macro</span> <span class="o">=</span> <span class="n">enter_macro</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">path_literal</span> <span class="o">=</span> <span class="n">path_literal</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">list_of_strs_or_callables</span> <span class="o">=</span> <span class="n">list_of_strs_or_callables</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">list_of_list_of_strs_outer_product</span> <span class="o">=</span> <span class="n">list_of_list_of_strs_outer_product</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">eval_fstring_field</span> <span class="o">=</span> <span class="n">eval_fstring_field</span>
+
+        <span class="c1"># Session attributes</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">exit</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stdout_uncaptured</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stderr_uncaptured</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_py_exit</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_py_quit</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">commands_cache</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">modules_cache</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">all_jobs</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">completers</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">builtins</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_initial_builtin_names</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">aliases</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="nf">_disable_python_exit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Disable Python interactive quit/exit</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s2">&quot;exit&quot;</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_py_exit</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">exit</span>
+            <span class="k">del</span> <span class="n">builtins</span><span class="o">.</span><span class="n">exit</span>
+
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s2">&quot;quit&quot;</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_py_quit</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">quit</span>
+            <span class="k">del</span> <span class="n">builtins</span><span class="o">.</span><span class="n">quit</span>
+
+    <span class="k">def</span> <span class="nf">_restore_python_exit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_py_exit</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">builtins</span><span class="o">.</span><span class="n">exit</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_py_exit</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_py_quit</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">builtins</span><span class="o">.</span><span class="n">quit</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_py_quit</span>
+
+<div class="viewcode-block" id="XonshSession.load"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.XonshSession.load">[docs]</a>    <span class="k">def</span> <span class="nf">load</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">execer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Loads the session with default values.</span>
 
 <span class="sd">        Parameters</span>
@@ -644,106 +656,108 @@
 <span class="sd">        ctx : Mapping, optional</span>
 <span class="sd">            Context to start xonsh session with.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span> <span class="nn">xonsh.commands_cache</span> <span class="kn">import</span> <span class="n">CommandsCache</span>
+        <span class="kn">from</span> <span class="nn">xonsh.completers.init</span> <span class="kn">import</span> <span class="n">default_completers</span>
+        <span class="kn">from</span> <span class="nn">xonsh.environ</span> <span class="kn">import</span> <span class="n">Env</span><span class="p">,</span> <span class="n">default_env</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s2">&quot;__xonsh__&quot;</span><span class="p">):</span>
+            <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span> <span class="o">=</span> <span class="bp">self</span>
         <span class="k">if</span> <span class="n">ctx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">ctx</span> <span class="o">=</span> <span class="n">ctx</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">env</span> <span class="o">=</span> <span class="n">Env</span><span class="p">(</span><span class="n">default_env</span><span class="p">())</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">help</span> <span class="o">=</span> <span class="n">helper</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">superhelp</span> <span class="o">=</span> <span class="n">superhelper</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">pathsearch</span> <span class="o">=</span> <span class="n">pathsearch</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">globsearch</span> <span class="o">=</span> <span class="n">globsearch</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">regexsearch</span> <span class="o">=</span> <span class="n">regexsearch</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">glob</span> <span class="o">=</span> <span class="n">globpath</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">expand_path</span> <span class="o">=</span> <span class="n">expand_path</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">env</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;env&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="s2">&quot;env&quot;</span> <span class="ow">in</span> <span class="n">kwargs</span> <span class="k">else</span> <span class="n">Env</span><span class="p">(</span><span class="n">default_env</span><span class="p">())</span>
+
         <span class="bp">self</span><span class="o">.</span><span class="n">exit</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">stdout_uncaptured</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">stderr_uncaptured</span> <span class="o">=</span> <span class="kc">None</span>
 
-        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s2">&quot;exit&quot;</span><span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">pyexit</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">exit</span>
-            <span class="k">del</span> <span class="n">builtins</span><span class="o">.</span><span class="n">exit</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_disable_python_exit</span><span class="p">()</span>
 
-        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s2">&quot;quit&quot;</span><span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">pyquit</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">quit</span>
-            <span class="k">del</span> <span class="n">builtins</span><span class="o">.</span><span class="n">quit</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">subproc_captured_stdout</span> <span class="o">=</span> <span class="n">subproc_captured_stdout</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">subproc_captured_inject</span> <span class="o">=</span> <span class="n">subproc_captured_inject</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">subproc_captured_object</span> <span class="o">=</span> <span class="n">subproc_captured_object</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">subproc_captured_hiddenobject</span> <span class="o">=</span> <span class="n">subproc_captured_hiddenobject</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">subproc_uncaptured</span> <span class="o">=</span> <span class="n">subproc_uncaptured</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">execer</span> <span class="o">=</span> <span class="n">execer</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">commands_cache</span> <span class="o">=</span> <span class="n">CommandsCache</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">commands_cache</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;commands_cache&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="s2">&quot;commands_cache&quot;</span> <span class="ow">in</span> <span class="n">kwargs</span>
+            <span class="k">else</span> <span class="n">CommandsCache</span><span class="p">()</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">modules_cache</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">all_jobs</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">ensure_list_of_strs</span> <span class="o">=</span> <span class="n">ensure_list_of_strs</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">list_of_strs_or_callables</span> <span class="o">=</span> <span class="n">list_of_strs_or_callables</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">list_of_list_of_strs_outer_product</span> <span class="o">=</span> <span class="n">list_of_list_of_strs_outer_product</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">eval_fstring_field</span> <span class="o">=</span> <span class="n">eval_fstring_field</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">completers</span> <span class="o">=</span> <span class="n">xonsh</span><span class="o">.</span><span class="n">completers</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">default_completers</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">call_macro</span> <span class="o">=</span> <span class="n">call_macro</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">enter_macro</span> <span class="o">=</span> <span class="n">enter_macro</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">path_literal</span> <span class="o">=</span> <span class="n">path_literal</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">completers</span> <span class="o">=</span> <span class="n">default_completers</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">commands_cache</span><span class="p">)</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">builtins</span> <span class="o">=</span> <span class="n">_BuiltIns</span><span class="p">(</span><span class="n">execer</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">builtins</span> <span class="o">=</span> <span class="n">get_default_builtins</span><span class="p">(</span><span class="n">execer</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_initial_builtin_names</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span><span class="nb">vars</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">builtins</span><span class="p">))</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">history</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">shell</span> <span class="o">=</span> <span class="kc">None</span></div>
+        <span class="n">aliases_given</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;aliases&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">attr</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">attr</span><span class="p">):</span>
+                <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">attr</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">link_builtins</span><span class="p">(</span><span class="n">aliases_given</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">builtins_loaded</span> <span class="o">=</span> <span class="kc">True</span>
 
-<div class="viewcode-block" id="XonshSession.link_builtins"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.XonshSession.link_builtins">[docs]</a>    <span class="k">def</span> <span class="nf">link_builtins</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">execer</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="k">def</span> <span class="nf">flush_on_exit</span><span class="p">(</span><span class="n">s</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">f</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">history</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">history</span><span class="o">.</span><span class="n">flush</span><span class="p">(</span><span class="n">at_exit</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="n">atexit</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">flush_on_exit</span><span class="p">)</span>
+
+        <span class="c1"># Add one-shot handler for exit</span>
+        <span class="k">for</span> <span class="n">sig</span> <span class="ow">in</span> <span class="n">AT_EXIT_SIGNALS</span><span class="p">:</span>
+            <span class="n">resetting_signal_handle</span><span class="p">(</span><span class="n">sig</span><span class="p">,</span> <span class="n">flush_on_exit</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="XonshSession.link_builtins"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.XonshSession.link_builtins">[docs]</a>    <span class="k">def</span> <span class="nf">link_builtins</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">aliases</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="kn">from</span> <span class="nn">xonsh.aliases</span> <span class="kn">import</span> <span class="n">Aliases</span><span class="p">,</span> <span class="n">make_default_aliases</span>
+
         <span class="c1"># public built-ins</span>
-        <span class="n">proxy_mapping</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="s2">&quot;XonshError&quot;</span><span class="p">:</span> <span class="s2">&quot;__xonsh__.builtins.XonshError&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;XonshCalledProcessError&quot;</span><span class="p">:</span> <span class="s2">&quot;__xonsh__.builtins.XonshCalledProcessError&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;evalx&quot;</span><span class="p">:</span> <span class="s2">&quot;__xonsh__.builtins.evalx&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;execx&quot;</span><span class="p">:</span> <span class="s2">&quot;__xonsh__.builtins.execx&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;compilex&quot;</span><span class="p">:</span> <span class="s2">&quot;__xonsh__.builtins.compilex&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;events&quot;</span><span class="p">:</span> <span class="s2">&quot;__xonsh__.builtins.events&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;print_color&quot;</span><span class="p">:</span> <span class="s2">&quot;__xonsh__.builtins.print_color&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;printx&quot;</span><span class="p">:</span> <span class="s2">&quot;__xonsh__.builtins.printx&quot;</span><span class="p">,</span>
-        <span class="p">}</span>
-        <span class="k">for</span> <span class="n">refname</span><span class="p">,</span> <span class="n">objname</span> <span class="ow">in</span> <span class="n">proxy_mapping</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">for</span> <span class="n">refname</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_initial_builtin_names</span><span class="p">:</span>
+            <span class="n">objname</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;__xonsh__.builtins.</span><span class="si">{</span><span class="n">refname</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="n">proxy</span> <span class="o">=</span> <span class="n">DynamicAccessProxy</span><span class="p">(</span><span class="n">refname</span><span class="p">,</span> <span class="n">objname</span><span class="p">)</span>
             <span class="nb">setattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="n">refname</span><span class="p">,</span> <span class="n">proxy</span><span class="p">)</span>
 
         <span class="c1"># sneak the path search functions into the aliases</span>
         <span class="c1"># Need this inline/lazy import here since we use locate_binary that</span>
         <span class="c1"># relies on __xonsh__.env in default aliases</span>
-        <span class="n">builtins</span><span class="o">.</span><span class="n">default_aliases</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">aliases</span> <span class="o">=</span> <span class="n">Aliases</span><span class="p">(</span><span class="n">make_default_aliases</span><span class="p">())</span>
-        <span class="n">atexit</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">_lastflush</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">sig</span> <span class="ow">in</span> <span class="n">AT_EXIT_SIGNALS</span><span class="p">:</span>
-            <span class="n">resetting_signal_handle</span><span class="p">(</span><span class="n">sig</span><span class="p">,</span> <span class="n">_lastflush</span><span class="p">)</span></div>
+        <span class="k">if</span> <span class="n">aliases</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">aliases</span> <span class="o">=</span> <span class="n">Aliases</span><span class="p">(</span><span class="n">make_default_aliases</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">aliases</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">default_aliases</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">aliases</span> <span class="o">=</span> <span class="n">aliases</span></div>
 
-<div class="viewcode-block" id="XonshSession.unlink_builtins"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.XonshSession.unlink_builtins">[docs]</a>    <span class="k">def</span> <span class="nf">unlink_builtins</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="n">names</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="s2">&quot;XonshError&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;XonshCalledProcessError&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;evalx&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;execx&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;compilex&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;default_aliases&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;events&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;print_color&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;printx&quot;</span><span class="p">,</span>
-        <span class="p">]</span>
-
-        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">:</span>
+<div class="viewcode-block" id="XonshSession.unlink_builtins"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.XonshSession.unlink_builtins">[docs]</a>    <span class="k">def</span> <span class="nf">unlink_builtins</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_initial_builtin_names</span><span class="p">:</span>
             <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
-                <span class="nb">delattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span></div></div>
+                <span class="nb">delattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="XonshSession.unload"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.XonshSession.unload">[docs]</a>    <span class="k">def</span> <span class="nf">unload</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s2">&quot;__xonsh__&quot;</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">builtins_loaded</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="k">return</span>
+
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="p">,</span> <span class="s2">&quot;undo_replace_env&quot;</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">undo_replace_env</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_restore_python_exit</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">builtins_loaded</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">unlink_builtins</span><span class="p">()</span>
+        <span class="nb">delattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s2">&quot;__xonsh__&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">builtins_loaded</span> <span class="o">=</span> <span class="kc">False</span></div></div>
 
 
-<span class="k">class</span> <span class="nc">_BuiltIns</span><span class="p">:</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">execer</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-        <span class="c1"># public built-ins</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">XonshError</span> <span class="o">=</span> <span class="n">XonshError</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">XonshCalledProcessError</span> <span class="o">=</span> <span class="n">XonshCalledProcessError</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">evalx</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">execer</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">execer</span><span class="o">.</span><span class="n">eval</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">execx</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">execer</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">execer</span><span class="o">.</span><span class="n">exec</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">compilex</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">execer</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">execer</span><span class="o">.</span><span class="n">compile</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">events</span> <span class="o">=</span> <span class="n">events</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">print_color</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">printx</span> <span class="o">=</span> <span class="n">print_color</span>
+<div class="viewcode-block" id="get_default_builtins"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.get_default_builtins">[docs]</a><span class="k">def</span> <span class="nf">get_default_builtins</span><span class="p">(</span><span class="n">execer</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="kn">from</span> <span class="nn">xonsh.events</span> <span class="kn">import</span> <span class="n">events</span>
+
+    <span class="k">return</span> <span class="n">types</span><span class="o">.</span><span class="n">SimpleNamespace</span><span class="p">(</span>
+        <span class="n">XonshError</span><span class="o">=</span><span class="n">XonshError</span><span class="p">,</span>
+        <span class="n">XonshCalledProcessError</span><span class="o">=</span><span class="n">XonshCalledProcessError</span><span class="p">,</span>
+        <span class="n">evalx</span><span class="o">=</span><span class="kc">None</span> <span class="k">if</span> <span class="n">execer</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">execer</span><span class="o">.</span><span class="n">eval</span><span class="p">,</span>
+        <span class="n">execx</span><span class="o">=</span><span class="kc">None</span> <span class="k">if</span> <span class="n">execer</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">execer</span><span class="o">.</span><span class="n">exec</span><span class="p">,</span>
+        <span class="n">compilex</span><span class="o">=</span><span class="kc">None</span> <span class="k">if</span> <span class="n">execer</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">execer</span><span class="o">.</span><span class="n">compile</span><span class="p">,</span>
+        <span class="n">events</span><span class="o">=</span><span class="n">events</span><span class="p">,</span>
+        <span class="n">print_color</span><span class="o">=</span><span class="n">print_color</span><span class="p">,</span>
+        <span class="n">printx</span><span class="o">=</span><span class="n">print_color</span><span class="p">,</span>
+    <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="DynamicAccessProxy"><a class="viewcode-back" href="../../api/built_ins.html#xonsh.built_ins.DynamicAccessProxy">[docs]</a><span class="k">class</span> <span class="nc">DynamicAccessProxy</span><span class="p">:</span>
+<div class="viewcode-block" id="DynamicAccessProxy"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.DynamicAccessProxy">[docs]</a><span class="k">class</span> <span class="nc">DynamicAccessProxy</span><span class="p">:</span>
     <span class="sd">&quot;&quot;&quot;Proxies access dynamically.&quot;&quot;&quot;</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">refname</span><span class="p">,</span> <span class="n">objname</span><span class="p">):</span>
@@ -792,6 +806,10 @@
 
     <span class="k">def</span> <span class="fm">__dir__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="fm">__dir__</span><span class="p">()</span></div>
+
+
+<span class="c1"># singleton</span>
+<span class="n">XSH</span> <span class="o">=</span> <span class="n">XonshSession</span><span class="p">()</span>
 </pre></div>
 
             <div class="clearer"></div>
@@ -807,7 +825,7 @@
   <h3 id="searchlabel">Quick search</h3>
     <div class="searchformwrapper">
     <form class="search" action="../../search.html" method="get">
-      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
       <input type="submit" value="Go" />
     </form>
     </div>
@@ -845,7 +863,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.9.27.dev21 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.built_ins</a></li> 
@@ -855,7 +873,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.5.2.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.4.0.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>

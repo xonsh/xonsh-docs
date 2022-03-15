@@ -1,0 +1,637 @@
+
+
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>xonsh.completers.bash_completion &#8212; xonsh 0.11.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/numpy_friendly.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
+    
+    <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+    <script src="../../../_static/jquery.js"></script>
+    <script src="../../../_static/underscore.js"></script>
+    <script src="../../../_static/doctools.js"></script>
+    <script src="../../../_static/runthis-client.min.js"></script>
+
+    
+    
+     
+        <script src="../../../_static/jquery.cookie.js"></script>
+    
+
+    
+     
+        <script src="../../../_static/cloud.base.js"></script>
+    
+
+    
+     
+        <script src="../../../_static/cloud.js"></script>
+    
+
+    <link rel="shortcut icon" href="../../../_static/magic_conch.ico"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+     
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="canonical" href="http://xon.sh/_modules/xonsh/completers/bash_completion.html"/>
+
+  </head><body>
+    <div class="relbar-top">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">xonsh.completers.bash_completion</a></li> 
+      </ul>
+    </div>
+    </div>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for xonsh.completers.bash_completion</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;This module provides the implementation for the retrieving completion results</span>
+<span class="sd">from bash.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">functools</span>
+
+<span class="c1"># developer note: this file should not perform any action on import.</span>
+<span class="c1">#                 This file comes from https://github.com/xonsh/py-bash-completion</span>
+<span class="c1">#                 and should be edited there!</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">pathlib</span>
+<span class="kn">import</span> <span class="nn">platform</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">shlex</span>
+<span class="kn">import</span> <span class="nn">shutil</span>
+<span class="kn">import</span> <span class="nn">subprocess</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">typing</span> <span class="k">as</span> <span class="nn">tp</span>
+
+<span class="n">__version__</span> <span class="o">=</span> <span class="s2">&quot;0.2.7&quot;</span>
+
+
+<span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">_git_for_windows_path</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Returns the path to git for windows, if available and None otherwise.&quot;&quot;&quot;</span>
+    <span class="kn">import</span> <span class="nn">winreg</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="n">winreg</span><span class="o">.</span><span class="n">OpenKey</span><span class="p">(</span><span class="n">winreg</span><span class="o">.</span><span class="n">HKEY_LOCAL_MACHINE</span><span class="p">,</span> <span class="s2">&quot;SOFTWARE</span><span class="se">\\</span><span class="s2">GitForWindows&quot;</span><span class="p">)</span>
+        <span class="n">gfwp</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">winreg</span><span class="o">.</span><span class="n">QueryValueEx</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="s2">&quot;InstallPath&quot;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">FileNotFoundError</span><span class="p">:</span>
+        <span class="n">gfwp</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">gfwp</span>
+
+
+<span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">_windows_bash_command</span><span class="p">(</span><span class="n">env</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Determines the command for Bash on windows.&quot;&quot;&quot;</span>
+    <span class="n">wbc</span> <span class="o">=</span> <span class="s2">&quot;bash&quot;</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">env</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PATH&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">bash_on_path</span> <span class="o">=</span> <span class="n">shutil</span><span class="o">.</span><span class="n">which</span><span class="p">(</span><span class="s2">&quot;bash&quot;</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="n">path</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">bash_on_path</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">(</span>
+                <span class="p">[</span><span class="n">bash_on_path</span><span class="p">,</span> <span class="s2">&quot;--version&quot;</span><span class="p">],</span>
+                <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span>
+                <span class="n">universal_newlines</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">:</span>
+            <span class="n">bash_works</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Check if Bash is from the &quot;Windows Subsystem for Linux&quot; (WSL)</span>
+            <span class="c1"># which can&#39;t be used by xonsh foreign-shell/completer</span>
+            <span class="n">bash_works</span> <span class="o">=</span> <span class="n">out</span> <span class="ow">and</span> <span class="s2">&quot;pc-linux-gnu&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">out</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">bash_works</span><span class="p">:</span>
+            <span class="n">wbc</span> <span class="o">=</span> <span class="n">bash_on_path</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">gfwp</span> <span class="o">=</span> <span class="n">_git_for_windows_path</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">gfwp</span><span class="p">:</span>
+                <span class="n">bashcmd</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">gfwp</span><span class="p">,</span> <span class="s2">&quot;bin</span><span class="se">\\</span><span class="s2">bash.exe&quot;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">bashcmd</span><span class="p">):</span>
+                    <span class="n">wbc</span> <span class="o">=</span> <span class="n">bashcmd</span>
+    <span class="k">return</span> <span class="n">wbc</span>
+
+
+<span class="k">def</span> <span class="nf">_bash_command</span><span class="p">(</span><span class="n">env</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Determines the command for Bash on the current plaform.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">platform</span><span class="o">.</span><span class="n">system</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;Windows&quot;</span><span class="p">:</span>
+        <span class="n">bc</span> <span class="o">=</span> <span class="n">_windows_bash_command</span><span class="p">(</span><span class="n">env</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">bc</span> <span class="o">=</span> <span class="s2">&quot;bash&quot;</span>
+    <span class="k">return</span> <span class="n">bc</span>
+
+
+<span class="k">def</span> <span class="nf">_bash_completion_paths_default</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;A possibly empty tuple with default paths to Bash completions known for</span>
+<span class="sd">    the current platform.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">platform_sys</span> <span class="o">=</span> <span class="n">platform</span><span class="o">.</span><span class="n">system</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">platform_sys</span> <span class="o">==</span> <span class="s2">&quot;Linux&quot;</span> <span class="ow">or</span> <span class="n">sys</span><span class="o">.</span><span class="n">platform</span> <span class="o">==</span> <span class="s2">&quot;cygwin&quot;</span><span class="p">:</span>
+        <span class="n">bcd</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;/usr/share/bash-completion/bash_completion&quot;</span><span class="p">,)</span>
+    <span class="k">elif</span> <span class="n">platform_sys</span> <span class="o">==</span> <span class="s2">&quot;Darwin&quot;</span><span class="p">:</span>
+        <span class="n">bcd</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s2">&quot;/usr/local/share/bash-completion/bash_completion&quot;</span><span class="p">,</span>  <span class="c1"># v2.x</span>
+            <span class="s2">&quot;/usr/local/etc/bash_completion&quot;</span><span class="p">,</span>
+        <span class="p">)</span>  <span class="c1"># v1.x</span>
+    <span class="k">elif</span> <span class="n">platform_sys</span> <span class="o">==</span> <span class="s2">&quot;Windows&quot;</span><span class="p">:</span>
+        <span class="n">gfwp</span> <span class="o">=</span> <span class="n">_git_for_windows_path</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">gfwp</span><span class="p">:</span>
+            <span class="n">bcd</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">gfwp</span><span class="p">,</span> <span class="s2">&quot;usr</span><span class="se">\\</span><span class="s2">share</span><span class="se">\\</span><span class="s2">bash-completion</span><span class="se">\\</span><span class="s2">&quot;</span> <span class="s2">&quot;bash_completion&quot;</span><span class="p">),</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+                    <span class="n">gfwp</span><span class="p">,</span> <span class="s2">&quot;mingw64</span><span class="se">\\</span><span class="s2">share</span><span class="se">\\</span><span class="s2">git</span><span class="se">\\</span><span class="s2">completion</span><span class="se">\\</span><span class="s2">&quot;</span> <span class="s2">&quot;git-completion.bash&quot;</span>
+                <span class="p">),</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">bcd</span> <span class="o">=</span> <span class="p">()</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">bcd</span> <span class="o">=</span> <span class="p">()</span>
+    <span class="k">return</span> <span class="n">bcd</span>
+
+
+<span class="n">_BASH_COMPLETIONS_PATHS_DEFAULT</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
+
+
+<span class="k">def</span> <span class="nf">_get_bash_completions_source</span><span class="p">(</span><span class="n">paths</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">global</span> <span class="n">_BASH_COMPLETIONS_PATHS_DEFAULT</span>
+    <span class="k">if</span> <span class="n">paths</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">_BASH_COMPLETIONS_PATHS_DEFAULT</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">_BASH_COMPLETIONS_PATHS_DEFAULT</span> <span class="o">=</span> <span class="n">_bash_completion_paths_default</span><span class="p">()</span>
+        <span class="n">paths</span> <span class="o">=</span> <span class="n">_BASH_COMPLETIONS_PATHS_DEFAULT</span>
+    <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="nb">map</span><span class="p">(</span><span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">,</span> <span class="n">paths</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">is_file</span><span class="p">():</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;source &quot;</span><span class="si">{</span><span class="n">path</span><span class="o">.</span><span class="n">as_posix</span><span class="p">()</span><span class="si">}</span><span class="s1">&quot;&#39;</span>
+    <span class="k">return</span> <span class="kc">None</span>
+
+
+<span class="k">def</span> <span class="nf">_bash_get_sep</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;Returns the appropriate filepath separator char depending on OS and</span>
+<span class="sd">    xonsh options set</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">platform</span><span class="o">.</span><span class="n">system</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;Windows&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">altsep</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">sep</span>
+
+
+<span class="n">_BASH_PATTERN_NEED_QUOTES</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Optional</span><span class="p">[</span><span class="n">tp</span><span class="o">.</span><span class="n">Pattern</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+
+<span class="k">def</span> <span class="nf">_bash_pattern_need_quotes</span><span class="p">():</span>
+    <span class="k">global</span> <span class="n">_BASH_PATTERN_NEED_QUOTES</span>
+    <span class="k">if</span> <span class="n">_BASH_PATTERN_NEED_QUOTES</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_BASH_PATTERN_NEED_QUOTES</span>
+    <span class="n">pattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;\s`\$\{\}\,\*\(\)&quot;</span><span class="se">\&#39;</span><span class="s1">\?&amp;&#39;</span>
+    <span class="k">if</span> <span class="n">platform</span><span class="o">.</span><span class="n">system</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;Windows&quot;</span><span class="p">:</span>
+        <span class="n">pattern</span> <span class="o">+=</span> <span class="s2">&quot;%&quot;</span>
+    <span class="n">pattern</span> <span class="o">=</span> <span class="s2">&quot;[&quot;</span> <span class="o">+</span> <span class="n">pattern</span> <span class="o">+</span> <span class="s2">&quot;]&quot;</span> <span class="o">+</span> <span class="sa">r</span><span class="s2">&quot;|\band\b|\bor\b&quot;</span>
+    <span class="n">_BASH_PATTERN_NEED_QUOTES</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">pattern</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_BASH_PATTERN_NEED_QUOTES</span>
+
+
+<span class="k">def</span> <span class="nf">_bash_expand_path</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Takes a string path and expands ~ to home and environment vars.&quot;&quot;&quot;</span>
+    <span class="c1"># expand ~ according to Bash unquoted rules &quot;Each variable assignment is</span>
+    <span class="c1"># checked for unquoted tilde-prefixes immediately following a &#39;:&#39; or the</span>
+    <span class="c1"># first &#39;=&#39;&quot;. See the following for more details.</span>
+    <span class="c1"># https://www.gnu.org/software/bash/manual/html_node/Tilde-Expansion.html</span>
+    <span class="n">pre</span><span class="p">,</span> <span class="n">char</span><span class="p">,</span> <span class="n">post</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">char</span><span class="p">:</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="n">pre</span><span class="p">)</span> <span class="o">+</span> <span class="n">char</span>
+        <span class="n">s</span> <span class="o">+=</span> <span class="n">os</span><span class="o">.</span><span class="n">pathsep</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">,</span> <span class="n">post</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">pathsep</span><span class="p">)))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">s</span>
+
+
+<span class="k">def</span> <span class="nf">_bash_quote_to_use</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="n">single</span> <span class="o">=</span> <span class="s2">&quot;&#39;&quot;</span>
+    <span class="n">double</span> <span class="o">=</span> <span class="s1">&#39;&quot;&#39;</span>
+    <span class="k">if</span> <span class="n">single</span> <span class="ow">in</span> <span class="n">x</span> <span class="ow">and</span> <span class="n">double</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">x</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">double</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">single</span>
+
+
+<span class="k">def</span> <span class="nf">_bash_quote_paths</span><span class="p">(</span><span class="n">paths</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">):</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">space</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span>
+    <span class="n">backslash</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\\</span><span class="s2">&quot;</span>
+    <span class="n">double_backslash</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\\\\</span><span class="s2">&quot;</span>
+    <span class="n">slash</span> <span class="o">=</span> <span class="n">_bash_get_sep</span><span class="p">()</span>
+    <span class="n">orig_start</span> <span class="o">=</span> <span class="n">start</span>
+    <span class="n">orig_end</span> <span class="o">=</span> <span class="n">end</span>
+    <span class="c1"># quote on all or none, to make readline completes to max prefix</span>
+    <span class="n">need_quotes</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span>
+        <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">_bash_pattern_need_quotes</span><span class="p">(),</span> <span class="n">x</span><span class="p">)</span>
+        <span class="ow">or</span> <span class="p">(</span><span class="n">backslash</span> <span class="ow">in</span> <span class="n">x</span> <span class="ow">and</span> <span class="n">slash</span> <span class="o">!=</span> <span class="n">backslash</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">paths</span>
+    <span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">:</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="n">orig_start</span>
+        <span class="n">end</span> <span class="o">=</span> <span class="n">orig_end</span>
+        <span class="k">if</span> <span class="n">start</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span> <span class="ow">and</span> <span class="n">need_quotes</span><span class="p">:</span>
+            <span class="n">start</span> <span class="o">=</span> <span class="n">end</span> <span class="o">=</span> <span class="n">_bash_quote_to_use</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">_bash_expand_path</span><span class="p">(</span><span class="n">s</span><span class="p">)):</span>
+            <span class="n">_tail</span> <span class="o">=</span> <span class="n">slash</span>
+        <span class="k">elif</span> <span class="n">end</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+            <span class="n">_tail</span> <span class="o">=</span> <span class="n">space</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">_tail</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">start</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span> <span class="ow">and</span> <span class="s2">&quot;r&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">start</span> <span class="ow">and</span> <span class="n">backslash</span> <span class="ow">in</span> <span class="n">s</span><span class="p">:</span>
+            <span class="n">start</span> <span class="o">=</span> <span class="s2">&quot;r</span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="n">start</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">s</span> <span class="o">+</span> <span class="n">_tail</span>
+        <span class="k">if</span> <span class="n">end</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;r&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">start</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
+                <span class="n">s</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">backslash</span><span class="p">,</span> <span class="n">double_backslash</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">backslash</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">s</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">double_backslash</span><span class="p">):</span>
+                <span class="n">s</span> <span class="o">+=</span> <span class="n">backslash</span>
+        <span class="k">if</span> <span class="n">end</span> <span class="ow">in</span> <span class="n">s</span><span class="p">:</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">end</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">end</span><span class="p">))</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">start</span> <span class="o">+</span> <span class="n">s</span> <span class="o">+</span> <span class="n">end</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">need_quotes</span>
+
+
+<span class="n">BASH_COMPLETE_SCRIPT</span> <span class="o">=</span> <span class="sa">r</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="si">{source}</span><span class="s2"></span>
+
+<span class="s2"># Override some functions in bash-completion, do not quote for readline</span>
+<span class="s2">quote_readline()</span>
+<span class="s2">{{</span>
+<span class="s2">    echo &quot;$1&quot;</span>
+<span class="s2">}}</span>
+
+<span class="s2">_quote_readline_by_ref()</span>
+<span class="s2">{{</span>
+<span class="s2">    if [[ $1 == \&#39;* || $1 == \&quot;* ]]; then</span>
+<span class="s2">        # Leave out first character</span>
+<span class="s2">        printf -v $2 </span><span class="si">%s</span><span class="s2"> &quot;${{1:1}}&quot;</span>
+<span class="s2">    else</span>
+<span class="s2">        printf -v $2 </span><span class="si">%s</span><span class="s2"> &quot;$1&quot;</span>
+<span class="s2">    fi</span>
+
+<span class="s2">    [[ ${{!2}} == \$* ]] &amp;&amp; eval $2=${{!2}}</span>
+<span class="s2">}}</span>
+
+
+<span class="s2">function _get_complete_statement {{</span>
+<span class="s2">    complete -p </span><span class="si">{cmd}</span><span class="s2"> 2&gt; /dev/null || echo &quot;-F _minimal&quot;</span>
+<span class="s2">}}</span>
+
+<span class="s2">function getarg {{</span>
+<span class="s2">    find=$1</span>
+<span class="s2">    shift 1</span>
+<span class="s2">    prev=&quot;&quot;</span>
+<span class="s2">    for i in $* ; do</span>
+<span class="s2">        if [ &quot;$prev&quot; = &quot;$find&quot; ] ; then</span>
+<span class="s2">            echo $i</span>
+<span class="s2">        fi</span>
+<span class="s2">        prev=$i</span>
+<span class="s2">    done</span>
+<span class="s2">}}</span>
+
+<span class="s2">_complete_stmt=$(_get_complete_statement)</span>
+<span class="s2">if echo &quot;$_complete_stmt&quot; | grep --quiet -e &quot;_minimal&quot;</span>
+<span class="s2">then</span>
+<span class="s2">    declare -f _completion_loader &gt; /dev/null &amp;&amp; _completion_loader </span><span class="si">{cmd}</span><span class="s2"></span>
+<span class="s2">    _complete_stmt=$(_get_complete_statement)</span>
+<span class="s2">fi</span>
+
+<span class="s2"># Is -C (subshell) or -F (function) completion used?</span>
+<span class="s2">if [[ $_complete_stmt =~ &quot;-C&quot; ]] ; then</span>
+<span class="s2">    _func=$(eval getarg &quot;-C&quot; $_complete_stmt)</span>
+<span class="s2">else</span>
+<span class="s2">    _func=$(eval getarg &quot;-F&quot; $_complete_stmt)</span>
+<span class="s2">    declare -f &quot;$_func&quot; &gt; /dev/null || exit 1</span>
+<span class="s2">fi</span>
+
+<span class="s2">echo &quot;$_complete_stmt&quot;</span>
+<span class="s2">export COMP_WORDS=(</span><span class="si">{line}</span><span class="s2">)</span>
+<span class="s2">export COMP_LINE=</span><span class="si">{comp_line}</span><span class="s2"></span>
+<span class="s2">export COMP_POINT=${{#COMP_LINE}}</span>
+<span class="s2">export COMP_COUNT=</span><span class="si">{end}</span><span class="s2"></span>
+<span class="s2">export COMP_CWORD=</span><span class="si">{n}</span><span class="s2"></span>
+<span class="s2">$_func </span><span class="si">{cmd}</span><span class="s2"> </span><span class="si">{prefix}</span><span class="s2"> </span><span class="si">{prev}</span><span class="s2"></span>
+
+<span class="s2"># print out completions, right-stripped if they contain no internal spaces</span>
+<span class="s2">shopt -s extglob</span>
+<span class="s2">for ((i=0;i&lt;${{#COMPREPLY[*]}};i++))</span>
+<span class="s2">do</span>
+<span class="s2">    no_spaces=&quot;${{COMPREPLY[i]//[[:space:]]}}&quot;</span>
+<span class="s2">    no_trailing_spaces=&quot;${{COMPREPLY[i]</span><span class="si">%%</span><span class="s2">+([[:space:]])}}&quot;</span>
+<span class="s2">    if [[ &quot;$no_spaces&quot; == &quot;$no_trailing_spaces&quot; ]]; then</span>
+<span class="s2">        echo &quot;$no_trailing_spaces&quot;</span>
+<span class="s2">    else</span>
+<span class="s2">        echo &quot;${{COMPREPLY[i]}}&quot;</span>
+<span class="s2">    fi</span>
+<span class="s2">done</span>
+<span class="s2">&quot;&quot;&quot;</span>
+
+
+<div class="viewcode-block" id="bash_completions"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.bash_completion.html#xonsh.completers.bash_completion.bash_completions">[docs]</a><span class="k">def</span> <span class="nf">bash_completions</span><span class="p">(</span>
+    <span class="n">prefix</span><span class="p">,</span>
+    <span class="n">line</span><span class="p">,</span>
+    <span class="n">begidx</span><span class="p">,</span>
+    <span class="n">endidx</span><span class="p">,</span>
+    <span class="n">env</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">paths</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">command</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">quote_paths</span><span class="o">=</span><span class="n">_bash_quote_paths</span><span class="p">,</span>
+    <span class="n">line_args</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">opening_quote</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+    <span class="n">closing_quote</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+    <span class="n">arg_index</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+<span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Completes based on results from BASH completion.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    prefix : str</span>
+<span class="sd">        The string to match</span>
+<span class="sd">    line : str</span>
+<span class="sd">        The line that prefix appears on.</span>
+<span class="sd">    begidx : int</span>
+<span class="sd">        The index in line that prefix starts on.</span>
+<span class="sd">    endidx : int</span>
+<span class="sd">        The index in line that prefix ends on.</span>
+<span class="sd">    env : Mapping, optional</span>
+<span class="sd">        The environment dict to execute the Bash subprocess in.</span>
+<span class="sd">    paths : list or tuple of str or None, optional</span>
+<span class="sd">        This is a list (or tuple) of strings that specifies where the</span>
+<span class="sd">        ``bash_completion`` script may be found. The first valid path will</span>
+<span class="sd">        be used. For better performance, bash-completion v2.x is recommended</span>
+<span class="sd">        since it lazy-loads individual completion scripts. For both</span>
+<span class="sd">        bash-completion v1.x and v2.x, paths of individual completion scripts</span>
+<span class="sd">        (like ``.../completes/ssh``) do not need to be included here. The</span>
+<span class="sd">        default values are platform dependent, but sane.</span>
+<span class="sd">    command : str or None, optional</span>
+<span class="sd">        The /path/to/bash to use. If None, it will be selected based on the</span>
+<span class="sd">        from the environment and platform.</span>
+<span class="sd">    quote_paths : callable, optional</span>
+<span class="sd">        A functions that quotes file system paths. You shouldn&#39;t normally need</span>
+<span class="sd">        this as the default is acceptable 99+% of the time. This function should</span>
+<span class="sd">        return a set of the new paths and a boolean for whether the paths were</span>
+<span class="sd">        quoted.</span>
+<span class="sd">    line_args : list of str, optional</span>
+<span class="sd">        A list of the args in the current line to be used instead of ``line.split()``.</span>
+<span class="sd">        This is usefull with a space in an argument, e.g. ``ls &#39;a dir/&#39;&lt;TAB&gt;``.</span>
+<span class="sd">    opening_quote : str, optional</span>
+<span class="sd">        The current argument&#39;s opening quote. This is passed to the `quote_paths` function.</span>
+<span class="sd">    closing_quote : str, optional</span>
+<span class="sd">        The closing quote that **should** be used. This is also passed to the `quote_paths` function.</span>
+<span class="sd">    arg_index : int, optional</span>
+<span class="sd">        The current prefix&#39;s index in the args.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    rtn : set of str</span>
+<span class="sd">        Possible completions of prefix</span>
+<span class="sd">    lprefix : int</span>
+<span class="sd">        Length of the prefix to be replaced in the completion.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">source</span> <span class="o">=</span> <span class="n">_get_bash_completions_source</span><span class="p">(</span><span class="n">paths</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="n">prefix</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;$&quot;</span><span class="p">):</span>  <span class="c1"># do not complete env variables</span>
+        <span class="k">return</span> <span class="nb">set</span><span class="p">(),</span> <span class="mi">0</span>
+
+    <span class="n">splt</span> <span class="o">=</span> <span class="n">line_args</span> <span class="ow">or</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+    <span class="n">cmd</span> <span class="o">=</span> <span class="n">splt</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">cmd</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
+    <span class="n">prev</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="n">arg_index</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="n">arg_index</span>
+        <span class="k">if</span> <span class="n">arg_index</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">prev</span> <span class="o">=</span> <span class="n">splt</span><span class="p">[</span><span class="n">arg_index</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># find `n` and `prev` by ourselves</span>
+        <span class="n">idx</span> <span class="o">=</span> <span class="n">n</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="n">tok</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">splt</span><span class="p">):</span>  <span class="c1"># noqa</span>
+            <span class="k">if</span> <span class="n">tok</span> <span class="o">==</span> <span class="n">prefix</span><span class="p">:</span>
+                <span class="n">idx</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">idx</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">idx</span> <span class="o">&gt;=</span> <span class="n">begidx</span><span class="p">:</span>
+                    <span class="k">break</span>
+            <span class="n">prev</span> <span class="o">=</span> <span class="n">tok</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">n</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="n">prefix_quoted</span> <span class="o">=</span> <span class="n">shlex</span><span class="o">.</span><span class="n">quote</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
+
+    <span class="n">script</span> <span class="o">=</span> <span class="n">BASH_COMPLETE_SCRIPT</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+        <span class="n">source</span><span class="o">=</span><span class="n">source</span><span class="p">,</span>
+        <span class="n">line</span><span class="o">=</span><span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">shlex</span><span class="o">.</span><span class="n">quote</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">splt</span> <span class="k">if</span> <span class="n">p</span><span class="p">),</span>
+        <span class="n">comp_line</span><span class="o">=</span><span class="n">shlex</span><span class="o">.</span><span class="n">quote</span><span class="p">(</span><span class="n">line</span><span class="p">),</span>
+        <span class="n">n</span><span class="o">=</span><span class="n">n</span><span class="p">,</span>
+        <span class="n">cmd</span><span class="o">=</span><span class="n">shlex</span><span class="o">.</span><span class="n">quote</span><span class="p">(</span><span class="n">cmd</span><span class="p">),</span>
+        <span class="n">end</span><span class="o">=</span><span class="n">endidx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">prefix</span><span class="o">=</span><span class="n">prefix_quoted</span><span class="p">,</span>
+        <span class="n">prev</span><span class="o">=</span><span class="n">shlex</span><span class="o">.</span><span class="n">quote</span><span class="p">(</span><span class="n">prev</span><span class="p">),</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">command</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="n">_bash_command</span><span class="p">(</span><span class="n">env</span><span class="o">=</span><span class="n">env</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">command</span><span class="p">,</span> <span class="s2">&quot;-c&quot;</span><span class="p">,</span> <span class="n">script</span><span class="p">],</span>
+            <span class="n">universal_newlines</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span>
+            <span class="n">env</span><span class="o">=</span><span class="n">env</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">out</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span>
+    <span class="k">except</span> <span class="p">(</span>
+        <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">,</span>
+        <span class="ne">FileNotFoundError</span><span class="p">,</span>
+        <span class="ne">ValueError</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="k">return</span> <span class="nb">set</span><span class="p">(),</span> <span class="mi">0</span>
+
+    <span class="n">out</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+    <span class="n">complete_stmt</span> <span class="o">=</span> <span class="n">out</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+
+    <span class="c1"># From GNU Bash document: The results of the expansion are prefix-matched</span>
+    <span class="c1"># against the word being completed</span>
+
+    <span class="c1"># Ensure input to `commonprefix` is a list (now required by Python 3.6)</span>
+    <span class="n">commprefix</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">commonprefix</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">out</span><span class="p">))</span>
+
+    <span class="k">if</span> <span class="n">prefix</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;~&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">commprefix</span> <span class="ow">and</span> <span class="n">prefix</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">commprefix</span><span class="p">:</span>
+        <span class="n">home_</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="s2">&quot;~&quot;</span><span class="p">)</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="p">{</span><span class="sa">f</span><span class="s2">&quot;~/</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">relpath</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">home_</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">out</span><span class="p">}</span>
+        <span class="n">commprefix</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;~/</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">relpath</span><span class="p">(</span><span class="n">commprefix</span><span class="p">,</span> <span class="n">home_</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+
+    <span class="n">strip_len</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">strip_prefix</span> <span class="o">=</span> <span class="n">prefix</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\&quot;</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+    <span class="k">while</span> <span class="n">strip_len</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">strip_prefix</span><span class="p">)</span> <span class="ow">and</span> <span class="n">strip_len</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">commprefix</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">commprefix</span><span class="p">[</span><span class="n">strip_len</span><span class="p">]</span> <span class="o">==</span> <span class="n">strip_prefix</span><span class="p">[</span><span class="n">strip_len</span><span class="p">]:</span>
+            <span class="k">break</span>
+        <span class="n">strip_len</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="k">if</span> <span class="s2">&quot;-o noquote&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">complete_stmt</span><span class="p">:</span>
+        <span class="n">out</span><span class="p">,</span> <span class="n">need_quotes</span> <span class="o">=</span> <span class="n">quote_paths</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="n">opening_quote</span><span class="p">,</span> <span class="n">closing_quote</span><span class="p">)</span>
+    <span class="k">if</span> <span class="s2">&quot;-o nospace&quot;</span> <span class="ow">in</span> <span class="n">complete_stmt</span><span class="p">:</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="p">{</span><span class="n">x</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">out</span><span class="p">}</span>
+
+    <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span> <span class="o">-</span> <span class="n">strip_len</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="bash_complete_line"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.bash_completion.html#xonsh.completers.bash_completion.bash_complete_line">[docs]</a><span class="k">def</span> <span class="nf">bash_complete_line</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">return_line</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Provides the completion from the end of the line.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    line : str</span>
+<span class="sd">        Line to complete</span>
+<span class="sd">    return_line : bool, optional</span>
+<span class="sd">        If true (default), will return the entire line, with the completion added.</span>
+<span class="sd">        If false, this will instead return the strings to append to the original line.</span>
+<span class="sd">    kwargs : optional</span>
+<span class="sd">        All other keyword arguments are passed to the bash_completions() function.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    rtn : set of str</span>
+<span class="sd">        Possible completions of prefix</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># set up for completing from the end of the line</span>
+    <span class="n">split</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">split</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">line</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">):</span>
+        <span class="n">prefix</span> <span class="o">=</span> <span class="n">split</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">begidx</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="n">prefix</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">prefix</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="n">begidx</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+    <span class="n">endidx</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+    <span class="c1"># get completions</span>
+    <span class="n">out</span><span class="p">,</span> <span class="n">lprefix</span> <span class="o">=</span> <span class="n">bash_completions</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">begidx</span><span class="p">,</span> <span class="n">endidx</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+    <span class="c1"># reformat output</span>
+    <span class="k">if</span> <span class="n">return_line</span><span class="p">:</span>
+        <span class="n">preline</span> <span class="o">=</span> <span class="n">line</span><span class="p">[:</span><span class="o">-</span><span class="n">lprefix</span><span class="p">]</span>
+        <span class="n">rtn</span> <span class="o">=</span> <span class="p">{</span><span class="n">preline</span> <span class="o">+</span> <span class="n">o</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">out</span><span class="p">}</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">rtn</span> <span class="o">=</span> <span class="p">{</span><span class="n">o</span><span class="p">[</span><span class="n">lprefix</span><span class="p">:]</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">out</span><span class="p">}</span>
+    <span class="k">return</span> <span class="n">rtn</span></div>
+
+
+<span class="k">def</span> <span class="nf">_bc_main</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Runs complete_line() and prints the output.&quot;&quot;&quot;</span>
+    <span class="kn">from</span> <span class="nn">argparse</span> <span class="kn">import</span> <span class="n">ArgumentParser</span>
+
+    <span class="n">p</span> <span class="o">=</span> <span class="n">ArgumentParser</span><span class="p">(</span><span class="s2">&quot;bash_completions&quot;</span><span class="p">)</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">&quot;--return-line&quot;</span><span class="p">,</span>
+        <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span>
+        <span class="n">dest</span><span class="o">=</span><span class="s2">&quot;return_line&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;will return the entire line, with the completion added&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">&quot;--no-return-line&quot;</span><span class="p">,</span>
+        <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_false&quot;</span><span class="p">,</span>
+        <span class="n">dest</span><span class="o">=</span><span class="s2">&quot;return_line&quot;</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;will instead return the strings to append to the original line&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">p</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">&quot;line&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;line to complete&quot;</span><span class="p">)</span>
+    <span class="n">ns</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">parse_args</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">)</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">bash_complete_line</span><span class="p">(</span><span class="n">ns</span><span class="o">.</span><span class="n">line</span><span class="p">,</span> <span class="n">return_line</span><span class="o">=</span><span class="n">ns</span><span class="o">.</span><span class="n">return_line</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">out</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">o</span><span class="p">)</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">_bc_main</span><span class="p">()</span>
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+        <p class="logo"><a href="../../../contents.html" title="contents">
+          <img class="logo" src="../../../_static/ascii_conch_part_transparent_tight.png" alt="Logo"/>
+        </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+        </div>
+      </div>
+    
+    
+        <div class="sidebar-toggle-group no-js">
+            
+            <button class="sidebar-toggle" id="sidebar-hide" title="Hide the sidebar menu">
+                 «
+                <span class="show-for-small">hide menu</span>
+                
+            </button>
+            <button class="sidebar-toggle" id="sidebar-show" title="Show the sidebar menu">
+                
+                <span class="show-for-small">menu</span>
+                <span class="hide-for-small">sidebar</span>
+                 »
+            </button>
+        </div>
+    
+      <div class="clearer"></div>
+    </div>
+    <div class="relbar-bottom">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">xonsh.completers.bash_completion</a></li> 
+      </ul>
+    </div>
+    </div>
+
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2015, Anthony Scopatz.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.4.0.
+    </div>
+    <!-- cloud_sptheme 1.4 -->
+  </body>
+</html>

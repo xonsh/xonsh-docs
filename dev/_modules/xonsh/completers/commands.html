@@ -7,14 +7,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xonsh.completers.commands &#8212; xonsh 0.9.27.dev21 documentation</title>
-    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
-    <link rel="stylesheet" href="../../../_static/numpy_friendly.css" type="text/css" />
+    <title>xonsh.completers.commands &#8212; xonsh 0.11.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/numpy_friendly.css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
     
-    <script id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+    <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
     <script src="../../../_static/jquery.js"></script>
     <script src="../../../_static/underscore.js"></script>
     <script src="../../../_static/doctools.js"></script>
@@ -55,7 +55,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../contents.html">xonsh 0.9.27.dev21 documentation</a> &#187;</li>
+    <li><a href="../../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.completers.commands</a></li> 
@@ -70,70 +70,270 @@
           <div class="body" role="main">
             
   <h1>Source code for xonsh.completers.commands</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">os</span>
-<span class="kn">import</span> <span class="nn">builtins</span>
+<span></span><span class="kn">import</span> <span class="nn">contextlib</span>
+<span class="kn">import</span> <span class="nn">functools</span>
+<span class="kn">import</span> <span class="nn">importlib</span>
+<span class="kn">import</span> <span class="nn">importlib.util</span> <span class="k">as</span> <span class="nn">im_util</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">typing</span> <span class="k">as</span> <span class="nn">tp</span>
+<span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">OrderedDict</span>
 
-<span class="kn">import</span> <span class="nn">xonsh.tools</span> <span class="k">as</span> <span class="nn">xt</span>
 <span class="kn">import</span> <span class="nn">xonsh.platform</span> <span class="k">as</span> <span class="nn">xp</span>
-
-<span class="kn">from</span> <span class="nn">xonsh.completers.tools</span> <span class="kn">import</span> <span class="n">get_filter_function</span>
+<span class="kn">import</span> <span class="nn">xonsh.tools</span> <span class="k">as</span> <span class="nn">xt</span>
+<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
+<span class="kn">from</span> <span class="nn">xonsh.completer</span> <span class="kn">import</span> <span class="n">Completer</span>
+<span class="kn">from</span> <span class="nn">xonsh.completers.tools</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">RichCompletion</span><span class="p">,</span>
+    <span class="n">contextual_command_completer</span><span class="p">,</span>
+    <span class="n">get_filter_function</span><span class="p">,</span>
+    <span class="n">non_exclusive_completer</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">xonsh.environ</span> <span class="kn">import</span> <span class="n">scan_dir_for_source_files</span>
+<span class="kn">from</span> <span class="nn">xonsh.parsers.completion_context</span> <span class="kn">import</span> <span class="n">CommandContext</span><span class="p">,</span> <span class="n">CompletionContext</span>
 
 <span class="n">SKIP_TOKENS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;sudo&quot;</span><span class="p">,</span> <span class="s2">&quot;time&quot;</span><span class="p">,</span> <span class="s2">&quot;timeit&quot;</span><span class="p">,</span> <span class="s2">&quot;which&quot;</span><span class="p">,</span> <span class="s2">&quot;showcmd&quot;</span><span class="p">,</span> <span class="s2">&quot;man&quot;</span><span class="p">}</span>
-<span class="n">END_PROC_TOKENS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;|&quot;</span><span class="p">,</span> <span class="s2">&quot;||&quot;</span><span class="p">,</span> <span class="s2">&quot;&amp;&amp;&quot;</span><span class="p">,</span> <span class="s2">&quot;and&quot;</span><span class="p">,</span> <span class="s2">&quot;or&quot;</span><span class="p">}</span>
+<span class="n">END_PROC_TOKENS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;|&quot;</span><span class="p">,</span> <span class="s2">&quot;;&quot;</span><span class="p">,</span> <span class="s2">&quot;&amp;&amp;&quot;</span><span class="p">)</span>  <span class="c1"># includes ||</span>
+<span class="n">END_PROC_KEYWORDS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;and&quot;</span><span class="p">,</span> <span class="s2">&quot;or&quot;</span><span class="p">}</span>
 
 
-<div class="viewcode-block" id="complete_command"><a class="viewcode-back" href="../../../api/completers/commands.html#xonsh.completers.commands.complete_command">[docs]</a><span class="k">def</span> <span class="nf">complete_command</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+<div class="viewcode-block" id="complete_command"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.commands.html#xonsh.completers.commands.complete_command">[docs]</a><span class="k">def</span> <span class="nf">complete_command</span><span class="p">(</span><span class="n">command</span><span class="p">:</span> <span class="n">CommandContext</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Returns a list of valid commands starting with the first argument</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">space</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span>
-    <span class="n">out</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="n">s</span> <span class="o">+</span> <span class="n">space</span>
-        <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">commands_cache</span>
-        <span class="k">if</span> <span class="n">get_filter_function</span><span class="p">()(</span><span class="n">s</span><span class="p">,</span> <span class="n">cmd</span><span class="p">)</span>
-    <span class="p">}</span>
+
+    <span class="n">cmd</span> <span class="o">=</span> <span class="n">command</span><span class="o">.</span><span class="n">prefix</span>
+    <span class="n">show_desc</span> <span class="o">=</span> <span class="p">(</span><span class="n">XSH</span><span class="o">.</span><span class="n">env</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;CMD_COMPLETIONS_SHOW_DESC&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">is_alias</span><span class="p">)</span> <span class="ow">in</span> <span class="n">XSH</span><span class="o">.</span><span class="n">commands_cache</span><span class="o">.</span><span class="n">iter_commands</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">get_filter_function</span><span class="p">()(</span><span class="n">s</span><span class="p">,</span> <span class="n">cmd</span><span class="p">):</span>
+            <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">if</span> <span class="n">show_desc</span><span class="p">:</span>
+                <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;description&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;Alias&quot;</span> <span class="k">if</span> <span class="n">is_alias</span> <span class="k">else</span> <span class="n">path</span>
+            <span class="k">yield</span> <span class="n">RichCompletion</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
-        <span class="n">out</span> <span class="o">|=</span> <span class="p">{</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xt</span><span class="o">.</span><span class="n">executables_in</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="n">i</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">cmd</span><span class="p">)}</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xt</span><span class="o">.</span><span class="n">executables_in</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">i</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
+                <span class="k">yield</span> <span class="n">RichCompletion</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="n">base</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">base</span><span class="p">):</span>
-        <span class="n">out</span> <span class="o">|=</span> <span class="p">{</span>
-            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xt</span><span class="o">.</span><span class="n">executables_in</span><span class="p">(</span><span class="n">base</span><span class="p">)</span> <span class="k">if</span> <span class="n">i</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
-        <span class="p">}</span>
-    <span class="k">return</span> <span class="n">out</span></div>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xt</span><span class="o">.</span><span class="n">executables_in</span><span class="p">(</span><span class="n">base</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">i</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
+                <span class="k">yield</span> <span class="n">RichCompletion</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="n">i</span><span class="p">))</span></div>
 
 
-<div class="viewcode-block" id="complete_skipper"><a class="viewcode-back" href="../../../api/completers/commands.html#xonsh.completers.commands.complete_skipper">[docs]</a><span class="k">def</span> <span class="nf">complete_skipper</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">line</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+<div class="viewcode-block" id="complete_skipper"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.commands.html#xonsh.completers.commands.complete_skipper">[docs]</a><span class="nd">@contextual_command_completer</span>
+<span class="k">def</span> <span class="nf">complete_skipper</span><span class="p">(</span><span class="n">command_context</span><span class="p">:</span> <span class="n">CommandContext</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Skip over several tokens (e.g., sudo) and complete based on the rest of the</span>
-<span class="sd">    line.</span>
+<span class="sd">    Skip over several tokens (e.g., sudo) and complete based on the rest of the command.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">parts</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">)</span>
+
+    <span class="c1"># Contextual completers don&#39;t need us to skip tokens since they get the correct completion context -</span>
+    <span class="c1"># meaning we only need to skip commands like ``sudo``.</span>
     <span class="n">skip_part_num</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">parts</span><span class="p">):</span>
-        <span class="k">if</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">END_PROC_TOKENS</span><span class="p">:</span>
-            <span class="n">skip_part_num</span> <span class="o">=</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span>
-    <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">skip_part_num</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">parts</span><span class="p">[</span><span class="n">skip_part_num</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">SKIP_TOKENS</span><span class="p">:</span>
+    <span class="c1"># all the args before the current argument</span>
+    <span class="k">for</span> <span class="n">arg</span> <span class="ow">in</span> <span class="n">command_context</span><span class="o">.</span><span class="n">args</span><span class="p">[:</span> <span class="n">command_context</span><span class="o">.</span><span class="n">arg_index</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="n">arg</span><span class="o">.</span><span class="n">value</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">SKIP_TOKENS</span><span class="p">:</span>
             <span class="k">break</span>
         <span class="n">skip_part_num</span> <span class="o">+=</span> <span class="mi">1</span>
 
     <span class="k">if</span> <span class="n">skip_part_num</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="k">return</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">return</span> <span class="kc">None</span>
 
-    <span class="c1"># If there&#39;s no space following an END_PROC_TOKEN, insert one</span>
-    <span class="k">if</span> <span class="n">parts</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="ow">in</span> <span class="n">END_PROC_TOKENS</span><span class="p">:</span>
-        <span class="k">return</span> <span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">skipped_command_context</span> <span class="o">=</span> <span class="n">command_context</span><span class="o">.</span><span class="n">_replace</span><span class="p">(</span>
+        <span class="n">args</span><span class="o">=</span><span class="n">command_context</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="n">skip_part_num</span><span class="p">:],</span>
+        <span class="n">arg_index</span><span class="o">=</span><span class="n">command_context</span><span class="o">.</span><span class="n">arg_index</span> <span class="o">-</span> <span class="n">skip_part_num</span><span class="p">,</span>
+    <span class="p">)</span>
 
-    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span> <span class="o">==</span> <span class="n">skip_part_num</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="n">comp_func</span> <span class="o">=</span> <span class="n">complete_command</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">comp</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">completer</span>
-        <span class="n">comp_func</span> <span class="o">=</span> <span class="n">comp</span><span class="o">.</span><span class="n">complete</span>
+    <span class="k">if</span> <span class="n">skipped_command_context</span><span class="o">.</span><span class="n">arg_index</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="c1"># completing the command after a SKIP_TOKEN</span>
+        <span class="k">return</span> <span class="n">complete_command</span><span class="p">(</span><span class="n">skipped_command_context</span><span class="p">)</span>
 
-    <span class="n">skip_len</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">line</span><span class="p">[:</span><span class="n">skip_part_num</span><span class="p">]))</span> <span class="o">+</span> <span class="mi">1</span>
-    <span class="k">return</span> <span class="n">comp_func</span><span class="p">(</span>
-        <span class="n">cmd</span><span class="p">,</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">[</span><span class="n">skip_part_num</span><span class="p">:]),</span> <span class="n">start</span> <span class="o">-</span> <span class="n">skip_len</span><span class="p">,</span> <span class="n">end</span> <span class="o">-</span> <span class="n">skip_len</span><span class="p">,</span> <span class="n">ctx</span>
-    <span class="p">)</span></div>
+    <span class="n">completer</span><span class="p">:</span> <span class="n">Completer</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">completer</span>  <span class="c1"># type: ignore</span>
+    <span class="k">return</span> <span class="n">completer</span><span class="o">.</span><span class="n">complete_from_context</span><span class="p">(</span><span class="n">CompletionContext</span><span class="p">(</span><span class="n">skipped_command_context</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="complete_end_proc_tokens"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.commands.html#xonsh.completers.commands.complete_end_proc_tokens">[docs]</a><span class="nd">@non_exclusive_completer</span>
+<span class="nd">@contextual_command_completer</span>
+<span class="k">def</span> <span class="nf">complete_end_proc_tokens</span><span class="p">(</span><span class="n">command_context</span><span class="p">:</span> <span class="n">CommandContext</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;If there&#39;s no space following &#39;|&#39;, &#39;&amp;&#39;, or &#39;;&#39; - insert one.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">command_context</span><span class="o">.</span><span class="n">opening_quote</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">command_context</span><span class="o">.</span><span class="n">prefix</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">prefix</span> <span class="o">=</span> <span class="n">command_context</span><span class="o">.</span><span class="n">prefix</span>
+    <span class="c1"># for example `echo a|`, `echo a&amp;&amp;`, `echo a ;`</span>
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">prefix</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">ending</span><span class="p">)</span> <span class="k">for</span> <span class="n">ending</span> <span class="ow">in</span> <span class="n">END_PROC_TOKENS</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">{</span><span class="n">RichCompletion</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">)}</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="complete_end_proc_keywords"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.commands.html#xonsh.completers.commands.complete_end_proc_keywords">[docs]</a><span class="nd">@non_exclusive_completer</span>
+<span class="nd">@contextual_command_completer</span>
+<span class="k">def</span> <span class="nf">complete_end_proc_keywords</span><span class="p">(</span><span class="n">command_context</span><span class="p">:</span> <span class="n">CommandContext</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;If there&#39;s no space following &#39;and&#39; or &#39;or&#39; - insert one.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">command_context</span><span class="o">.</span><span class="n">opening_quote</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">command_context</span><span class="o">.</span><span class="n">prefix</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">prefix</span> <span class="o">=</span> <span class="n">command_context</span><span class="o">.</span><span class="n">prefix</span>
+    <span class="k">if</span> <span class="n">prefix</span> <span class="ow">in</span> <span class="n">END_PROC_KEYWORDS</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{</span><span class="n">RichCompletion</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">)}</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="ModuleMatcher"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.commands.html#xonsh.completers.commands.ModuleMatcher">[docs]</a><span class="k">class</span> <span class="nc">ModuleMatcher</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Reusable module matcher. Can be used by other completers like Python to find matching script completions&quot;&quot;&quot;</span>
+
+    <span class="n">extensions</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;.py&quot;</span><span class="p">,</span> <span class="s2">&quot;.xsh&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">extra_paths</span><span class="p">:</span> <span class="s2">&quot;list[str]&quot;</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Helper class to search and load Python modules</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        base</span>
+<span class="sd">            namespace package</span>
+<span class="sd">        extra_paths</span>
+<span class="sd">            extra search paths to use if finding module on namespace package fails</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># list of pre-defined patterns. More can be added using the public method ``.wrap``</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_patterns</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_compiled</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">tp</span><span class="o">.</span><span class="n">Pattern</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">contextual</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">base</span> <span class="o">=</span> <span class="n">base</span>
+        <span class="c1"># unique but maintain order</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_paths</span> <span class="o">=</span> <span class="n">OrderedDict</span><span class="p">([(</span><span class="n">pth</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">for</span> <span class="n">pth</span> <span class="ow">in</span> <span class="n">extra_paths</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_file_names_cache</span><span class="p">:</span> <span class="s2">&quot;dict[str, str]&quot;</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_path_st_mtimes</span><span class="p">:</span> <span class="s2">&quot;dict[str, float]&quot;</span> <span class="o">=</span> <span class="p">{}</span>
+
+<div class="viewcode-block" id="ModuleMatcher.wrap"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.commands.html#xonsh.completers.commands.ModuleMatcher.wrap">[docs]</a>    <span class="k">def</span> <span class="nf">wrap</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pattern</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">module</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;For any commands matching the pattern complete from the ``module``&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_patterns</span><span class="p">[</span><span class="n">pattern</span><span class="p">]</span> <span class="o">=</span> <span class="n">module</span></div>
+
+    <span class="k">def</span> <span class="nf">_get_new_paths</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_paths</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="c1"># check if path is updated</span>
+            <span class="n">old_mtime</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_path_st_mtimes</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+            <span class="n">new_mtime</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">stat</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">st_mtime</span>
+            <span class="k">if</span> <span class="n">old_mtime</span> <span class="o">&gt;=</span> <span class="n">new_mtime</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_path_st_mtimes</span><span class="p">[</span><span class="n">path</span><span class="p">]</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">stat</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">st_mtime</span>
+            <span class="k">yield</span> <span class="n">path</span>
+
+    <span class="k">def</span> <span class="nf">_find_file_path</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="c1"># `importlib.machinery.FileFinder` wasn&#39;t useful as the findspec handles &#39;.&#39; differently</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_file_names_cache</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_file_names_cache</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+
+        <span class="n">found</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">entries</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_new_paths</span><span class="p">():</span>
+            <span class="k">for</span> <span class="n">file</span><span class="p">,</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">scan_dir_for_source_files</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+                <span class="n">file_name</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">splitext</span><span class="p">(</span><span class="n">entry</span><span class="o">.</span><span class="n">name</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">file_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">entries</span><span class="p">:</span>
+                    <span class="c1"># do not override. prefer the first one that appears on the path list</span>
+                    <span class="n">entries</span><span class="p">[</span><span class="n">file_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">file</span>
+                <span class="k">if</span> <span class="n">file_name</span> <span class="o">==</span> <span class="n">name</span><span class="p">:</span>
+                    <span class="n">found</span> <span class="o">=</span> <span class="n">file</span>
+            <span class="k">if</span> <span class="n">found</span><span class="p">:</span>
+                <span class="c1"># search a directory completely since we cache path-mtime</span>
+                <span class="k">break</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_file_names_cache</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">entries</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">found</span>
+
+<div class="viewcode-block" id="ModuleMatcher.import_module"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.commands.html#xonsh.completers.commands.ModuleMatcher.import_module">[docs]</a>    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">import_module</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">pkg</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;given the file location import as module&quot;&quot;&quot;</span>
+        <span class="n">spec</span> <span class="o">=</span> <span class="n">im_util</span><span class="o">.</span><span class="n">spec_from_file_location</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">pkg</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">path</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">spec</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">module</span> <span class="o">=</span> <span class="n">im_util</span><span class="o">.</span><span class="n">module_from_spec</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">spec</span><span class="o">.</span><span class="n">loader</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">spec</span><span class="o">.</span><span class="n">loader</span><span class="o">.</span><span class="n">exec_module</span><span class="p">(</span><span class="n">module</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+        <span class="k">return</span> <span class="n">module</span></div>
+
+<div class="viewcode-block" id="ModuleMatcher.get_module"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.commands.html#xonsh.completers.commands.ModuleMatcher.get_module">[docs]</a>    <span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">get_module</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">[</span>
+            <span class="n">module</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">&quot;_</span><span class="si">{</span><span class="n">module</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>  <span class="c1"># naming convention to not clash with actual python package</span>
+        <span class="p">]:</span>
+            <span class="k">with</span> <span class="n">contextlib</span><span class="o">.</span><span class="n">suppress</span><span class="p">(</span><span class="ne">ModuleNotFoundError</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">importlib</span><span class="o">.</span><span class="n">import_module</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">file</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_file_path</span><span class="p">(</span><span class="n">module</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">file</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">import_module</span><span class="p">(</span><span class="n">file</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="p">,</span> <span class="n">module</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ModuleMatcher.search_completer"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.commands.html#xonsh.completers.commands.ModuleMatcher.search_completer">[docs]</a>    <span class="k">def</span> <span class="nf">search_completer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cmd</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">cleaned</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cleaned</span><span class="p">:</span>
+            <span class="n">cmd</span> <span class="o">=</span> <span class="n">CommandCompleter</span><span class="o">.</span><span class="n">clean_cmd_name</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
+        <span class="c1"># try any pattern match</span>
+        <span class="k">for</span> <span class="n">pattern</span><span class="p">,</span> <span class="n">mod_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_patterns</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="c1"># lazy compile regex</span>
+            <span class="k">if</span> <span class="n">pattern</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compiled</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_compiled</span><span class="p">[</span><span class="n">pattern</span><span class="p">]</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">pattern</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">)</span>
+            <span class="n">regex</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compiled</span><span class="p">[</span><span class="n">pattern</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">regex</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_module</span><span class="p">(</span><span class="n">mod_name</span><span class="p">)</span></div></div>
+
+
+<div class="viewcode-block" id="CommandCompleter"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.commands.html#xonsh.completers.commands.CommandCompleter">[docs]</a><span class="k">class</span> <span class="nc">CommandCompleter</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Lazily complete commands from `xompletions` package</span>
+
+<span class="sd">    The base-name (case-insensitive) of the executable is used to find the matching completer module</span>
+<span class="sd">    or the regex patterns.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">contextual</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_matcher</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">matcher</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_matcher</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_matcher</span> <span class="o">=</span> <span class="n">ModuleMatcher</span><span class="p">(</span>
+                <span class="s2">&quot;xompletions&quot;</span><span class="p">,</span>
+                <span class="n">extra_paths</span><span class="o">=</span><span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_COMPLETER_DIRS&quot;</span><span class="p">,</span> <span class="p">[]),</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_matcher</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\bx?pip(?:\d|\.)*(exe)?$&quot;</span><span class="p">,</span> <span class="s2">&quot;pip&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_matcher</span>
+
+<div class="viewcode-block" id="CommandCompleter.clean_cmd_name"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.commands.html#xonsh.completers.commands.CommandCompleter.clean_cmd_name">[docs]</a>    <span class="nd">@staticmethod</span>
+    <span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">clean_cmd_name</span><span class="p">(</span><span class="n">cmd</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">cmd_name</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="n">exts</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PATHEXT&quot;</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="k">for</span> <span class="n">ex</span> <span class="ow">in</span> <span class="n">exts</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">cmd_name</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">ex</span><span class="o">.</span><span class="n">lower</span><span class="p">()):</span>
+                <span class="c1"># windows handling</span>
+                <span class="n">cmd_name</span> <span class="o">=</span> <span class="n">cmd_name</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="n">ex</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+                <span class="k">break</span>
+        <span class="k">return</span> <span class="n">cmd_name</span></div>
+
+    <span class="k">def</span> <span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">full_ctx</span><span class="p">:</span> <span class="n">CompletionContext</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;For the given command load completions lazily&quot;&quot;&quot;</span>
+
+        <span class="c1"># completion for commands only</span>
+        <span class="n">ctx</span> <span class="o">=</span> <span class="n">full_ctx</span><span class="o">.</span><span class="n">command</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">ctx</span><span class="p">:</span>
+            <span class="k">return</span>
+
+        <span class="k">if</span> <span class="n">ctx</span><span class="o">.</span><span class="n">arg_index</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span>
+
+        <span class="n">cmd_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">clean_cmd_name</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">command</span><span class="p">)</span>
+        <span class="n">module</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">matcher</span><span class="o">.</span><span class="n">get_module</span><span class="p">(</span><span class="n">cmd_name</span><span class="p">)</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">matcher</span><span class="o">.</span><span class="n">search_completer</span><span class="p">(</span>
+            <span class="n">cmd_name</span><span class="p">,</span> <span class="n">cleaned</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">module</span><span class="p">:</span>
+            <span class="k">return</span>
+
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="s2">&quot;xonsh_complete&quot;</span><span class="p">):</span>
+            <span class="n">func</span> <span class="o">=</span> <span class="n">module</span><span class="o">.</span><span class="n">xonsh_complete</span>
+            <span class="k">return</span> <span class="n">func</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span></div>
+
+
+<span class="n">complete_xompletions</span> <span class="o">=</span> <span class="n">CommandCompleter</span><span class="p">()</span>
 </pre></div>
 
             <div class="clearer"></div>
@@ -149,7 +349,7 @@
   <h3 id="searchlabel">Quick search</h3>
     <div class="searchformwrapper">
     <form class="search" action="../../../search.html" method="get">
-      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
       <input type="submit" value="Go" />
     </form>
     </div>
@@ -187,7 +387,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../contents.html">xonsh 0.9.27.dev21 documentation</a> &#187;</li>
+    <li><a href="../../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.completers.commands</a></li> 
@@ -197,7 +397,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.5.2.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.4.0.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>

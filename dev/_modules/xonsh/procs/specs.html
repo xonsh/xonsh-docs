@@ -7,14 +7,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xonsh.procs.specs &#8212; xonsh 0.9.27.dev21 documentation</title>
-    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
-    <link rel="stylesheet" href="../../../_static/numpy_friendly.css" type="text/css" />
+    <title>xonsh.procs.specs &#8212; xonsh 0.11.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/numpy_friendly.css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
     
-    <script id="documentation_options" data-url_root="../../../" src="../../../_static/documentation_options.js"></script>
+    <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
     <script src="../../../_static/jquery.js"></script>
     <script src="../../../_static/underscore.js"></script>
     <script src="../../../_static/doctools.js"></script>
@@ -55,7 +55,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../contents.html">xonsh 0.9.27.dev21 documentation</a> &#187;</li>
+    <li><a href="../../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.procs.specs</a></li> 
@@ -71,34 +71,34 @@
             
   <h1>Source code for xonsh.procs.specs</h1><div class="highlight"><pre>
 <span></span><span class="sd">&quot;&quot;&quot;Subprocess specification and related utilities.&quot;&quot;&quot;</span>
-<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">contextlib</span>
+<span class="kn">import</span> <span class="nn">inspect</span>
 <span class="kn">import</span> <span class="nn">io</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">pathlib</span>
 <span class="kn">import</span> <span class="nn">re</span>
-<span class="kn">import</span> <span class="nn">sys</span>
 <span class="kn">import</span> <span class="nn">shlex</span>
 <span class="kn">import</span> <span class="nn">signal</span>
-<span class="kn">import</span> <span class="nn">inspect</span>
-<span class="kn">import</span> <span class="nn">pathlib</span>
-<span class="kn">import</span> <span class="nn">builtins</span>
+<span class="kn">import</span> <span class="nn">stat</span>
 <span class="kn">import</span> <span class="nn">subprocess</span>
-<span class="kn">import</span> <span class="nn">contextlib</span>
+<span class="kn">import</span> <span class="nn">sys</span>
 
-<span class="kn">import</span> <span class="nn">xonsh.tools</span> <span class="k">as</span> <span class="nn">xt</span>
-<span class="kn">import</span> <span class="nn">xonsh.lazyasd</span> <span class="k">as</span> <span class="nn">xl</span>
-<span class="kn">import</span> <span class="nn">xonsh.platform</span> <span class="k">as</span> <span class="nn">xp</span>
 <span class="kn">import</span> <span class="nn">xonsh.environ</span> <span class="k">as</span> <span class="nn">xenv</span>
-<span class="kn">import</span> <span class="nn">xonsh.lazyimps</span> <span class="k">as</span> <span class="nn">xli</span>
 <span class="kn">import</span> <span class="nn">xonsh.jobs</span> <span class="k">as</span> <span class="nn">xj</span>
-
-<span class="kn">from</span> <span class="nn">xonsh.procs.readers</span> <span class="kn">import</span> <span class="n">ConsoleParallelReader</span>
-<span class="kn">from</span> <span class="nn">xonsh.procs.posix</span> <span class="kn">import</span> <span class="n">PopenThread</span>
-<span class="kn">from</span> <span class="nn">xonsh.procs.proxies</span> <span class="kn">import</span> <span class="n">ProcProxy</span><span class="p">,</span> <span class="n">ProcProxyThread</span>
+<span class="kn">import</span> <span class="nn">xonsh.lazyasd</span> <span class="k">as</span> <span class="nn">xl</span>
+<span class="kn">import</span> <span class="nn">xonsh.lazyimps</span> <span class="k">as</span> <span class="nn">xli</span>
+<span class="kn">import</span> <span class="nn">xonsh.platform</span> <span class="k">as</span> <span class="nn">xp</span>
+<span class="kn">import</span> <span class="nn">xonsh.tools</span> <span class="k">as</span> <span class="nn">xt</span>
+<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
 <span class="kn">from</span> <span class="nn">xonsh.procs.pipelines</span> <span class="kn">import</span> <span class="p">(</span>
-    <span class="n">pause_call_resume</span><span class="p">,</span>
+    <span class="n">STDOUT_CAPTURE_KINDS</span><span class="p">,</span>
     <span class="n">CommandPipeline</span><span class="p">,</span>
     <span class="n">HiddenCommandPipeline</span><span class="p">,</span>
-    <span class="n">STDOUT_CAPTURE_KINDS</span><span class="p">,</span>
+    <span class="n">pause_call_resume</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span> <span class="nn">xonsh.procs.posix</span> <span class="kn">import</span> <span class="n">PopenThread</span>
+<span class="kn">from</span> <span class="nn">xonsh.procs.proxies</span> <span class="kn">import</span> <span class="n">ProcProxy</span><span class="p">,</span> <span class="n">ProcProxyThread</span>
+<span class="kn">from</span> <span class="nn">xonsh.procs.readers</span> <span class="kn">import</span> <span class="n">ConsoleParallelReader</span>
 
 
 <span class="nd">@xl</span><span class="o">.</span><span class="n">lazyobject</span>
@@ -106,18 +106,24 @@
     <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;#![ \t]*(.+?)$&quot;</span><span class="p">)</span>
 
 
-<div class="viewcode-block" id="is_app_execution_alias"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.is_app_execution_alias">[docs]</a><span class="k">def</span> <span class="nf">is_app_execution_alias</span><span class="p">(</span><span class="n">fname</span><span class="p">):</span>
+<div class="viewcode-block" id="is_app_execution_alias"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.is_app_execution_alias">[docs]</a><span class="k">def</span> <span class="nf">is_app_execution_alias</span><span class="p">(</span><span class="n">fname</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;App execution aliases behave strangly on Windows and Python.</span>
 <span class="sd">    Here we try to detect if a file is an app execution alias.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">fname</span> <span class="o">=</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span>
-    <span class="k">return</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span> <span class="ow">and</span> <span class="n">fname</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="n">fname</span><span class="o">.</span><span class="n">parent</span><span class="p">)</span></div>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">fname</span><span class="o">.</span><span class="n">stat</span><span class="p">()</span><span class="o">.</span><span class="n">st_reparse_tag</span> <span class="o">==</span> <span class="n">stat</span><span class="o">.</span><span class="n">IO_REPARSE_TAG_APPEXECLINK</span>
+
+    <span class="c1"># os.stat().st_reparse_tag is python 3.8+, and os.stat(app_exec_alias) throws OSError for &lt;= 3.7</span>
+    <span class="c1"># so use old method as fallback</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">OSError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span> <span class="ow">and</span> <span class="n">fname</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="n">fname</span><span class="o">.</span><span class="n">parent</span><span class="p">)</span></div>
 
 
 <span class="k">def</span> <span class="nf">_is_binary</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">80</span><span class="p">):</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">limit</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">limit</span><span class="p">):</span>
                 <span class="n">char</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
                 <span class="k">if</span> <span class="n">char</span> <span class="o">==</span> <span class="sa">b</span><span class="s2">&quot;</span><span class="se">\0</span><span class="s2">&quot;</span><span class="p">:</span>
                     <span class="k">return</span> <span class="kc">True</span>
@@ -145,7 +151,7 @@
     <span class="k">return</span> <span class="p">[</span><span class="n">x</span><span class="p">]</span>
 
 
-<div class="viewcode-block" id="get_script_subproc_command"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.get_script_subproc_command">[docs]</a><span class="k">def</span> <span class="nf">get_script_subproc_command</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="n">args</span><span class="p">):</span>
+<div class="viewcode-block" id="get_script_subproc_command"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.get_script_subproc_command">[docs]</a><span class="k">def</span> <span class="nf">get_script_subproc_command</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="n">args</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Given the name of a script outside the path, returns a list representing</span>
 <span class="sd">    an appropriate subprocess command to execute the script or None if</span>
 <span class="sd">    the argument is not readable or not a script. Raises PermissionError</span>
@@ -173,7 +179,7 @@
         <span class="c1"># Windows can execute various filetypes directly</span>
         <span class="c1"># as given in PATHEXT</span>
         <span class="n">_</span><span class="p">,</span> <span class="n">ext</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">splitext</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">ext</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="ow">in</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PATHEXT&quot;</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">ext</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="ow">in</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PATHEXT&quot;</span><span class="p">):</span>
             <span class="k">return</span> <span class="p">[</span><span class="n">fname</span><span class="p">]</span> <span class="o">+</span> <span class="n">args</span>
     <span class="c1"># find interpreter</span>
     <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
@@ -229,27 +235,23 @@
 
 <span class="nd">@xl</span><span class="o">.</span><span class="n">lazyobject</span>
 <span class="k">def</span> <span class="nf">_E2O_MAP</span><span class="p">():</span>
-    <span class="k">return</span> <span class="nb">frozenset</span><span class="p">(</span>
-        <span class="p">{</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">&gt;</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="n">o</span><span class="p">)</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">_REDIR_ERR</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">_REDIR_OUT</span> <span class="k">if</span> <span class="n">o</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span><span class="p">}</span>
-    <span class="p">)</span>
+    <span class="k">return</span> <span class="nb">frozenset</span><span class="p">({</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&gt;</span><span class="si">{</span><span class="n">o</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">_REDIR_ERR</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">_REDIR_OUT</span> <span class="k">if</span> <span class="n">o</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span><span class="p">})</span>
 
 
 <span class="nd">@xl</span><span class="o">.</span><span class="n">lazyobject</span>
 <span class="k">def</span> <span class="nf">_O2E_MAP</span><span class="p">():</span>
-    <span class="k">return</span> <span class="nb">frozenset</span><span class="p">(</span>
-        <span class="p">{</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">&gt;</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">o</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">_REDIR_ERR</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">_REDIR_OUT</span> <span class="k">if</span> <span class="n">o</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span><span class="p">}</span>
-    <span class="p">)</span>
+    <span class="k">return</span> <span class="nb">frozenset</span><span class="p">({</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">o</span><span class="si">}</span><span class="s2">&gt;</span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">_REDIR_ERR</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">_REDIR_OUT</span> <span class="k">if</span> <span class="n">o</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span><span class="p">})</span>
 
 
 <span class="k">def</span> <span class="nf">_is_redirect</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
     <span class="k">return</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">_REDIR_REGEX</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
 
 
-<div class="viewcode-block" id="safe_open"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.safe_open">[docs]</a><span class="k">def</span> <span class="nf">safe_open</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="n">mode</span><span class="p">,</span> <span class="n">buffering</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
+<div class="viewcode-block" id="safe_open"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.safe_open">[docs]</a><span class="k">def</span> <span class="nf">safe_open</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="n">mode</span><span class="p">,</span> <span class="n">buffering</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Safely attempts to open a file in for xonsh subprocs.&quot;&quot;&quot;</span>
     <span class="c1"># file descriptors</span>
     <span class="k">try</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">io</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="n">mode</span><span class="p">,</span> <span class="n">buffering</span><span class="o">=</span><span class="n">buffering</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">open</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="n">mode</span><span class="p">,</span> <span class="n">buffering</span><span class="o">=</span><span class="n">buffering</span><span class="p">)</span>
     <span class="k">except</span> <span class="ne">PermissionError</span><span class="p">:</span>
         <span class="k">raise</span> <span class="n">xt</span><span class="o">.</span><span class="n">XonshError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xonsh: </span><span class="si">{</span><span class="n">fname</span><span class="si">}</span><span class="s2">: permission denied&quot;</span><span class="p">)</span>
     <span class="k">except</span> <span class="ne">FileNotFoundError</span><span class="p">:</span>
@@ -258,7 +260,7 @@
         <span class="k">raise</span> <span class="n">xt</span><span class="o">.</span><span class="n">XonshError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xonsh: </span><span class="si">{</span><span class="n">fname</span><span class="si">}</span><span class="s2">: unable to open file&quot;</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="safe_close"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.safe_close">[docs]</a><span class="k">def</span> <span class="nf">safe_close</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<div class="viewcode-block" id="safe_close"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.safe_close">[docs]</a><span class="k">def</span> <span class="nf">safe_close</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Safely attempts to close an object.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">io</span><span class="o">.</span><span class="n">IOBase</span><span class="p">):</span>
         <span class="k">return</span>
@@ -323,12 +325,12 @@
     <span class="k">return</span> <span class="n">stdin</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span>
 
 
-<div class="viewcode-block" id="default_signal_pauser"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.default_signal_pauser">[docs]</a><span class="k">def</span> <span class="nf">default_signal_pauser</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">f</span><span class="p">):</span>
+<div class="viewcode-block" id="default_signal_pauser"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.default_signal_pauser">[docs]</a><span class="k">def</span> <span class="nf">default_signal_pauser</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">f</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Pauses a signal, as needed.&quot;&quot;&quot;</span>
     <span class="n">signal</span><span class="o">.</span><span class="n">pause</span><span class="p">()</span></div>
 
 
-<div class="viewcode-block" id="no_pg_xonsh_preexec_fn"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.no_pg_xonsh_preexec_fn">[docs]</a><span class="k">def</span> <span class="nf">no_pg_xonsh_preexec_fn</span><span class="p">():</span>
+<div class="viewcode-block" id="no_pg_xonsh_preexec_fn"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.no_pg_xonsh_preexec_fn">[docs]</a><span class="k">def</span> <span class="nf">no_pg_xonsh_preexec_fn</span><span class="p">():</span>
     <span class="sd">&quot;&quot;&quot;Default subprocess preexec function for when there is no existing</span>
 <span class="sd">    pipeline group.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -336,7 +338,7 @@
     <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGTSTP</span><span class="p">,</span> <span class="n">default_signal_pauser</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="SubprocSpec"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.SubprocSpec">[docs]</a><span class="k">class</span> <span class="nc">SubprocSpec</span><span class="p">:</span>
+<div class="viewcode-block" id="SubprocSpec"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.SubprocSpec">[docs]</a><span class="k">class</span> <span class="nc">SubprocSpec</span><span class="p">:</span>
     <span class="sd">&quot;&quot;&quot;A container for specifying how a subprocess command should be</span>
 <span class="sd">    executed.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -427,6 +429,8 @@
         <span class="c1"># pure attrs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">args</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">alias</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">alias_name</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">alias_stack</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;__ALIAS_STACK&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">binary_loc</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">is_proxy</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">background</span> <span class="o">=</span> <span class="kc">False</span>
@@ -507,15 +511,17 @@
     <span class="c1"># Execution methods</span>
     <span class="c1">#</span>
 
-<div class="viewcode-block" id="SubprocSpec.run"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.SubprocSpec.run">[docs]</a>    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">pipeline_group</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="SubprocSpec.run"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.SubprocSpec.run">[docs]</a>    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">pipeline_group</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Launches the subprocess and returns the object.&quot;&quot;&quot;</span>
         <span class="n">event_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cmd_event_name</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_pre_run_event_fire</span><span class="p">(</span><span class="n">event_name</span><span class="p">)</span>
         <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="n">n</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">kwnames</span><span class="p">}</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">prep_env</span><span class="p">(</span><span class="n">kwargs</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">callable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">alias</span><span class="p">):</span>
+            <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;env&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;env&quot;</span><span class="p">][</span><span class="s2">&quot;__ALIAS_NAME&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">alias_name</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
             <span class="n">p</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cls</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">alias</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">prep_env_subproc</span><span class="p">(</span><span class="n">kwargs</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">prep_preexec_fn</span><span class="p">(</span><span class="n">kwargs</span><span class="p">,</span> <span class="n">pipeline_group</span><span class="o">=</span><span class="n">pipeline_group</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_fix_null_cmd_bytes</span><span class="p">()</span>
             <span class="n">p</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_binary</span><span class="p">(</span><span class="n">kwargs</span><span class="p">)</span>
@@ -527,9 +533,16 @@
         <span class="k">return</span> <span class="n">p</span></div>
 
     <span class="k">def</span> <span class="nf">_run_binary</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="n">xt</span><span class="o">.</span><span class="n">XonshError</span><span class="p">(</span><span class="s2">&quot;xonsh: subprocess mode: command is empty&quot;</span><span class="p">)</span>
+        <span class="n">bufsize</span> <span class="o">=</span> <span class="mi">1</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">bufsize</span> <span class="o">=</span> <span class="mi">1</span>
-            <span class="n">p</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cls</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">,</span> <span class="n">bufsize</span><span class="o">=</span><span class="n">bufsize</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">binary_loc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># launch process using full paths (https://bugs.python.org/issue8557)</span>
+                <span class="n">cmd</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">binary_loc</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">cmd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span>
+            <span class="n">p</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cls</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">bufsize</span><span class="o">=</span><span class="n">bufsize</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">PermissionError</span><span class="p">:</span>
             <span class="n">e</span> <span class="o">=</span> <span class="s2">&quot;xonsh: subprocess mode: permission denied: </span><span class="si">{0}</span><span class="s2">&quot;</span>
             <span class="k">raise</span> <span class="n">xt</span><span class="o">.</span><span class="n">XonshError</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
@@ -540,17 +553,17 @@
                     <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cls</span><span class="p">(</span>
                         <span class="p">[</span><span class="s2">&quot;man&quot;</span><span class="p">,</span> <span class="n">cmd0</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;?&quot;</span><span class="p">)],</span> <span class="n">bufsize</span><span class="o">=</span><span class="n">bufsize</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
                     <span class="p">)</span>
-            <span class="n">e</span> <span class="o">=</span> <span class="s2">&quot;xonsh: subprocess mode: command not found: </span><span class="si">{0}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">cmd0</span><span class="p">)</span>
-            <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
-            <span class="n">sug</span> <span class="o">=</span> <span class="n">xt</span><span class="o">.</span><span class="n">suggest_commands</span><span class="p">(</span><span class="n">cmd0</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">builtins</span><span class="o">.</span><span class="n">aliases</span><span class="p">)</span>
+            <span class="n">e</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;xonsh: subprocess mode: command not found: </span><span class="si">{</span><span class="n">cmd0</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
+            <span class="n">sug</span> <span class="o">=</span> <span class="n">xt</span><span class="o">.</span><span class="n">suggest_commands</span><span class="p">(</span><span class="n">cmd0</span><span class="p">,</span> <span class="n">env</span><span class="p">)</span>
             <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sug</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-                <span class="n">e</span> <span class="o">+=</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span> <span class="o">+</span> <span class="n">xt</span><span class="o">.</span><span class="n">suggest_commands</span><span class="p">(</span><span class="n">cmd0</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">builtins</span><span class="o">.</span><span class="n">aliases</span><span class="p">)</span>
+                <span class="n">e</span> <span class="o">+=</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span> <span class="o">+</span> <span class="n">xt</span><span class="o">.</span><span class="n">suggest_commands</span><span class="p">(</span><span class="n">cmd0</span><span class="p">,</span> <span class="n">env</span><span class="p">)</span>
             <span class="k">raise</span> <span class="n">xt</span><span class="o">.</span><span class="n">XonshError</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">p</span>
 
-<div class="viewcode-block" id="SubprocSpec.prep_env"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.SubprocSpec.prep_env">[docs]</a>    <span class="k">def</span> <span class="nf">prep_env</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">):</span>
+<div class="viewcode-block" id="SubprocSpec.prep_env_subproc"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.SubprocSpec.prep_env_subproc">[docs]</a>    <span class="k">def</span> <span class="nf">prep_env_subproc</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Prepares the environment to use in the subprocess.&quot;&quot;&quot;</span>
-        <span class="k">with</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">swap</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
+        <span class="k">with</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">swap</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="p">)</span> <span class="k">as</span> <span class="n">env</span><span class="p">:</span>
             <span class="n">denv</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">detype</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
             <span class="c1"># Over write prompt variable as xonsh&#39;s $PROMPT does</span>
@@ -558,13 +571,13 @@
             <span class="n">denv</span><span class="p">[</span><span class="s2">&quot;PROMPT&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;$P$G&quot;</span>
         <span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;env&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">denv</span></div>
 
-<div class="viewcode-block" id="SubprocSpec.prep_preexec_fn"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.SubprocSpec.prep_preexec_fn">[docs]</a>    <span class="k">def</span> <span class="nf">prep_preexec_fn</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">pipeline_group</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="SubprocSpec.prep_preexec_fn"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.SubprocSpec.prep_preexec_fn">[docs]</a>    <span class="k">def</span> <span class="nf">prep_preexec_fn</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">pipeline_group</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Prepares the &#39;preexec_fn&#39; keyword argument&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_POSIX</span><span class="p">:</span>
             <span class="k">return</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_INTERACTIVE&quot;</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_INTERACTIVE&quot;</span><span class="p">):</span>
             <span class="k">return</span>
-        <span class="k">if</span> <span class="n">pipeline_group</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WSL</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">pipeline_group</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WSL1</span><span class="p">:</span>
             <span class="c1"># If there is no pipeline group</span>
             <span class="c1"># or the platform is windows subsystem for linux (WSL)</span>
             <span class="n">xonsh_preexec_fn</span> <span class="o">=</span> <span class="n">no_pg_xonsh_preexec_fn</span>
@@ -586,6 +599,8 @@
         <span class="c1"># escape them just in case.</span>
         <span class="n">cmd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span>
         <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">cmd</span><span class="p">)):</span>
+            <span class="k">if</span> <span class="n">callable</span><span class="p">(</span><span class="n">cmd</span><span class="p">[</span><span class="n">i</span><span class="p">]):</span>
+                <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;The command contains callable argument: </span><span class="si">{</span><span class="n">cmd</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
             <span class="n">cmd</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">cmd</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\0</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot;</span><span class="se">\\</span><span class="s2">0&quot;</span><span class="p">)</span>
 
     <span class="k">def</span> <span class="nf">_cmd_event_name</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -597,14 +612,14 @@
             <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">binary_loc</span><span class="p">)</span>
 
     <span class="k">def</span> <span class="nf">_pre_run_event_fire</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
-        <span class="n">events</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">events</span>
+        <span class="n">events</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">builtins</span><span class="o">.</span><span class="n">events</span>
         <span class="n">event_name</span> <span class="o">=</span> <span class="s2">&quot;on_pre_spec_run_&quot;</span> <span class="o">+</span> <span class="n">name</span>
         <span class="k">if</span> <span class="n">events</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">event_name</span><span class="p">):</span>
             <span class="n">event</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">events</span><span class="p">,</span> <span class="n">event_name</span><span class="p">)</span>
             <span class="n">event</span><span class="o">.</span><span class="n">fire</span><span class="p">(</span><span class="n">spec</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
 
     <span class="k">def</span> <span class="nf">_post_run_event_fire</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">proc</span><span class="p">):</span>
-        <span class="n">events</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">events</span>
+        <span class="n">events</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">builtins</span><span class="o">.</span><span class="n">events</span>
         <span class="n">event_name</span> <span class="o">=</span> <span class="s2">&quot;on_post_spec_run_&quot;</span> <span class="o">+</span> <span class="n">name</span>
         <span class="k">if</span> <span class="n">events</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">event_name</span><span class="p">):</span>
             <span class="n">event</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">events</span><span class="p">,</span> <span class="n">event_name</span><span class="p">)</span>
@@ -614,12 +629,14 @@
     <span class="c1"># Building methods</span>
     <span class="c1">#</span>
 
-<div class="viewcode-block" id="SubprocSpec.build"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.SubprocSpec.build">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="SubprocSpec.build"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.SubprocSpec.build">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">build</span><span class="p">(</span><span class="n">kls</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="bp">cls</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Creates an instance of the subprocess command, with any</span>
 <span class="sd">        modifications and adjustments based on the actual cmd that</span>
 <span class="sd">        was received.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cmd</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">xt</span><span class="o">.</span><span class="n">XonshError</span><span class="p">(</span><span class="s2">&quot;xonsh: subprocess mode: command is empty&quot;</span><span class="p">)</span>
         <span class="c1"># modifications that do not alter cmds may come before creating instance</span>
         <span class="n">spec</span> <span class="o">=</span> <span class="n">kls</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="bp">cls</span><span class="o">=</span><span class="bp">cls</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
         <span class="c1"># modifications that alter cmds must come after creating instance</span>
@@ -635,13 +652,13 @@
         <span class="n">spec</span><span class="o">.</span><span class="n">resolve_stack</span><span class="p">()</span>
         <span class="k">return</span> <span class="n">spec</span></div>
 
-<div class="viewcode-block" id="SubprocSpec.redirect_leading"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.SubprocSpec.redirect_leading">[docs]</a>    <span class="k">def</span> <span class="nf">redirect_leading</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="sd">&quot;&quot;&quot;Manage leading redirects such as with &#39;&lt; input.txt COMMAND&#39;. &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="SubprocSpec.redirect_leading"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.SubprocSpec.redirect_leading">[docs]</a>    <span class="k">def</span> <span class="nf">redirect_leading</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Manage leading redirects such as with &#39;&lt; input.txt COMMAND&#39;.&quot;&quot;&quot;</span>
         <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">3</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;&lt;&quot;</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">stdin</span> <span class="o">=</span> <span class="n">safe_open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span></div>
 
-<div class="viewcode-block" id="SubprocSpec.redirect_trailing"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.SubprocSpec.redirect_trailing">[docs]</a>    <span class="k">def</span> <span class="nf">redirect_trailing</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<div class="viewcode-block" id="SubprocSpec.redirect_trailing"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.SubprocSpec.redirect_trailing">[docs]</a>    <span class="k">def</span> <span class="nf">redirect_trailing</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Manages trailing redirects.&quot;&quot;&quot;</span>
         <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
             <span class="n">cmd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span>
@@ -656,40 +673,52 @@
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">break</span></div>
 
-<div class="viewcode-block" id="SubprocSpec.resolve_alias"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.SubprocSpec.resolve_alias">[docs]</a>    <span class="k">def</span> <span class="nf">resolve_alias</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<div class="viewcode-block" id="SubprocSpec.resolve_alias"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.SubprocSpec.resolve_alias">[docs]</a>    <span class="k">def</span> <span class="nf">resolve_alias</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Sets alias in command, if applicable.&quot;&quot;&quot;</span>
         <span class="n">cmd0</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">cmd0</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">alias_stack</span><span class="p">:</span>
+            <span class="c1"># Disabling the alias resolving to prevent infinite loop in call stack</span>
+            <span class="c1"># and futher using binary_loc to resolve the alias name.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">alias</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">return</span>
+
         <span class="k">if</span> <span class="n">callable</span><span class="p">(</span><span class="n">cmd0</span><span class="p">):</span>
             <span class="n">alias</span> <span class="o">=</span> <span class="n">cmd0</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">alias</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">aliases</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cmd0</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">alias</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">aliases</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cmd0</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">alias</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">alias_name</span> <span class="o">=</span> <span class="n">cmd0</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">alias</span> <span class="o">=</span> <span class="n">alias</span></div>
 
-<div class="viewcode-block" id="SubprocSpec.resolve_binary_loc"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.SubprocSpec.resolve_binary_loc">[docs]</a>    <span class="k">def</span> <span class="nf">resolve_binary_loc</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<div class="viewcode-block" id="SubprocSpec.resolve_binary_loc"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.SubprocSpec.resolve_binary_loc">[docs]</a>    <span class="k">def</span> <span class="nf">resolve_binary_loc</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Sets the binary location&quot;&quot;&quot;</span>
         <span class="n">alias</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">alias</span>
         <span class="k">if</span> <span class="n">alias</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">binary_loc</span> <span class="o">=</span> <span class="n">xenv</span><span class="o">.</span><span class="n">locate_binary</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="n">cmd0</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">binary_loc</span> <span class="o">=</span> <span class="n">xenv</span><span class="o">.</span><span class="n">locate_binary</span><span class="p">(</span><span class="n">cmd0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">binary_loc</span> <span class="o">==</span> <span class="n">cmd0</span> <span class="ow">and</span> <span class="n">cmd0</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">alias_stack</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Recursive calls to &quot;</span><span class="si">{</span><span class="n">cmd0</span><span class="si">}</span><span class="s1">&quot; alias.&#39;</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">callable</span><span class="p">(</span><span class="n">alias</span><span class="p">):</span>
             <span class="n">binary_loc</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">binary_loc</span> <span class="o">=</span> <span class="n">xenv</span><span class="o">.</span><span class="n">locate_binary</span><span class="p">(</span><span class="n">alias</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">binary_loc</span> <span class="o">=</span> <span class="n">binary_loc</span></div>
 
-<div class="viewcode-block" id="SubprocSpec.resolve_auto_cd"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.SubprocSpec.resolve_auto_cd">[docs]</a>    <span class="k">def</span> <span class="nf">resolve_auto_cd</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<div class="viewcode-block" id="SubprocSpec.resolve_auto_cd"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.SubprocSpec.resolve_auto_cd">[docs]</a>    <span class="k">def</span> <span class="nf">resolve_auto_cd</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Implements AUTO_CD functionality.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">alias</span> <span class="ow">is</span> <span class="kc">None</span>
             <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">binary_loc</span> <span class="ow">is</span> <span class="kc">None</span>
             <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
-            <span class="ow">and</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;AUTO_CD&quot;</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;AUTO_CD&quot;</span><span class="p">)</span>
             <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
         <span class="p">):</span>
             <span class="k">return</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;cd&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">alias</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">aliases</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;cd&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">alias</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">aliases</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;cd&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="SubprocSpec.resolve_executable_commands"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.SubprocSpec.resolve_executable_commands">[docs]</a>    <span class="k">def</span> <span class="nf">resolve_executable_commands</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<div class="viewcode-block" id="SubprocSpec.resolve_executable_commands"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.SubprocSpec.resolve_executable_commands">[docs]</a>    <span class="k">def</span> <span class="nf">resolve_executable_commands</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Resolve command executables, if applicable.&quot;&quot;&quot;</span>
         <span class="n">alias</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">alias</span>
         <span class="k">if</span> <span class="n">alias</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -712,13 +741,13 @@
             <span class="n">e</span> <span class="o">=</span> <span class="s2">&quot;xonsh: subprocess mode: permission denied: </span><span class="si">{0}</span><span class="s2">&quot;</span>
             <span class="k">raise</span> <span class="n">xt</span><span class="o">.</span><span class="n">XonshError</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span></div>
 
-<div class="viewcode-block" id="SubprocSpec.resolve_alias_cls"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.SubprocSpec.resolve_alias_cls">[docs]</a>    <span class="k">def</span> <span class="nf">resolve_alias_cls</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<div class="viewcode-block" id="SubprocSpec.resolve_alias_cls"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.SubprocSpec.resolve_alias_cls">[docs]</a>    <span class="k">def</span> <span class="nf">resolve_alias_cls</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Determine which proxy class to run an alias with.&quot;&quot;&quot;</span>
         <span class="n">alias</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">alias</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">callable</span><span class="p">(</span><span class="n">alias</span><span class="p">):</span>
             <span class="k">return</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">is_proxy</span> <span class="o">=</span> <span class="kc">True</span>
-        <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
         <span class="n">thable</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;THREAD_SUBPROCS&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span>
             <span class="n">alias</span><span class="p">,</span> <span class="s2">&quot;__xonsh_threadable__&quot;</span><span class="p">,</span> <span class="kc">True</span>
         <span class="p">)</span>
@@ -729,7 +758,7 @@
         <span class="n">cpable</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">alias</span><span class="p">,</span> <span class="s2">&quot;__xonsh_capturable__&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">captured</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">captured</span> <span class="o">=</span> <span class="n">cpable</span></div>
 
-<div class="viewcode-block" id="SubprocSpec.resolve_stack"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.SubprocSpec.resolve_stack">[docs]</a>    <span class="k">def</span> <span class="nf">resolve_stack</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<div class="viewcode-block" id="SubprocSpec.resolve_stack"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.SubprocSpec.resolve_stack">[docs]</a>    <span class="k">def</span> <span class="nf">resolve_stack</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Computes the stack for a callable alias&#39;s call-site, if needed.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">callable</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">alias</span><span class="p">):</span>
             <span class="k">return</span>
@@ -773,7 +802,7 @@
 
 
 <span class="k">def</span> <span class="nf">_update_last_spec</span><span class="p">(</span><span class="n">last</span><span class="p">):</span>
-    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
     <span class="n">captured</span> <span class="o">=</span> <span class="n">last</span><span class="o">.</span><span class="n">captured</span>
     <span class="n">last</span><span class="o">.</span><span class="n">last_in_pipeline</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">captured</span><span class="p">:</span>
@@ -782,9 +811,10 @@
     <span class="k">if</span> <span class="n">callable_alias</span><span class="p">:</span>
         <span class="k">pass</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="n">cmds_cache</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">commands_cache</span>
+        <span class="n">cmds_cache</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">commands_cache</span>
         <span class="n">thable</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;THREAD_SUBPROCS&quot;</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="p">(</span><span class="n">captured</span> <span class="o">!=</span> <span class="s2">&quot;hiddenobject&quot;</span> <span class="ow">or</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_CAPTURE_ALWAYS&quot;</span><span class="p">))</span>
             <span class="ow">and</span> <span class="n">cmds_cache</span><span class="o">.</span><span class="n">predict_threadable</span><span class="p">(</span><span class="n">last</span><span class="o">.</span><span class="n">args</span><span class="p">)</span>
             <span class="ow">and</span> <span class="n">cmds_cache</span><span class="o">.</span><span class="n">predict_threadable</span><span class="p">(</span><span class="n">last</span><span class="o">.</span><span class="n">cmd</span><span class="p">)</span>
         <span class="p">)</span>
@@ -808,9 +838,9 @@
         <span class="n">r</span><span class="p">,</span> <span class="n">w</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">pipe</span><span class="p">()</span>
         <span class="n">last</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">safe_open</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span>
         <span class="n">last</span><span class="o">.</span><span class="n">captured_stdout</span> <span class="o">=</span> <span class="n">safe_open</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span>
-    <span class="k">elif</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">stdout_uncaptured</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">elif</span> <span class="n">XSH</span><span class="o">.</span><span class="n">stdout_uncaptured</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">last</span><span class="o">.</span><span class="n">universal_newlines</span> <span class="o">=</span> <span class="kc">True</span>
-        <span class="n">last</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">stdout_uncaptured</span>
+        <span class="n">last</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">stdout_uncaptured</span>
         <span class="n">last</span><span class="o">.</span><span class="n">captured_stdout</span> <span class="o">=</span> <span class="n">last</span><span class="o">.</span><span class="n">stdout</span>
     <span class="k">elif</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">callable_alias</span><span class="p">:</span>
         <span class="n">last</span><span class="o">.</span><span class="n">universal_newlines</span> <span class="o">=</span> <span class="kc">True</span>
@@ -826,12 +856,14 @@
     <span class="c1"># set standard error</span>
     <span class="k">if</span> <span class="n">last</span><span class="o">.</span><span class="n">stderr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">pass</span>
+    <span class="k">elif</span> <span class="n">captured</span> <span class="o">==</span> <span class="s2">&quot;stdout&quot;</span><span class="p">:</span>
+        <span class="k">pass</span>
     <span class="k">elif</span> <span class="n">captured</span> <span class="o">==</span> <span class="s2">&quot;object&quot;</span><span class="p">:</span>
         <span class="n">r</span><span class="p">,</span> <span class="n">w</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">pipe</span><span class="p">()</span>
         <span class="n">last</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="n">safe_open</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span>
         <span class="n">last</span><span class="o">.</span><span class="n">captured_stderr</span> <span class="o">=</span> <span class="n">safe_open</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span>
-    <span class="k">elif</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">stderr_uncaptured</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">last</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">stderr_uncaptured</span>
+    <span class="k">elif</span> <span class="n">XSH</span><span class="o">.</span><span class="n">stderr_uncaptured</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">last</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">stderr_uncaptured</span>
         <span class="n">last</span><span class="o">.</span><span class="n">captured_stderr</span> <span class="o">=</span> <span class="n">last</span><span class="o">.</span><span class="n">stderr</span>
     <span class="k">elif</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">callable_alias</span><span class="p">:</span>
         <span class="n">last</span><span class="o">.</span><span class="n">universal_newlines</span> <span class="o">=</span> <span class="kc">True</span>
@@ -852,7 +884,7 @@
         <span class="n">last</span><span class="o">.</span><span class="n">captured_stderr</span> <span class="o">=</span> <span class="n">last</span><span class="o">.</span><span class="n">captured_stdout</span>
 
 
-<div class="viewcode-block" id="cmds_to_specs"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.cmds_to_specs">[docs]</a><span class="k">def</span> <span class="nf">cmds_to_specs</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="cmds_to_specs"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.cmds_to_specs">[docs]</a><span class="k">def</span> <span class="nf">cmds_to_specs</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Converts a list of cmds to a list of SubprocSpec objects that are</span>
 <span class="sd">    ready to be executed.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -881,22 +913,33 @@
             <span class="n">specs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">background</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">raise</span> <span class="n">xt</span><span class="o">.</span><span class="n">XonshError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;unrecognized redirect </span><span class="si">{</span><span class="n">redirect</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+
     <span class="c1"># Apply boundary conditions</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_CAPTURE_ALWAYS&quot;</span><span class="p">):</span>
+        <span class="c1"># Make sure sub-specs are always captured.</span>
+        <span class="c1"># I.e. ![some_alias | grep x] $(some_alias)</span>
+        <span class="n">specs_to_capture</span> <span class="o">=</span> <span class="n">specs</span> <span class="k">if</span> <span class="n">captured</span> <span class="ow">in</span> <span class="n">STDOUT_CAPTURE_KINDS</span> <span class="k">else</span> <span class="n">specs</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">spec</span> <span class="ow">in</span> <span class="n">specs_to_capture</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">spec</span><span class="o">.</span><span class="n">env</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">spec</span><span class="o">.</span><span class="n">env</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;XONSH_CAPTURE_ALWAYS&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">}</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">spec</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;XONSH_CAPTURE_ALWAYS&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+
     <span class="n">_update_last_spec</span><span class="p">(</span><span class="n">specs</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
     <span class="k">return</span> <span class="n">specs</span></div>
 
 
 <span class="k">def</span> <span class="nf">_should_set_title</span><span class="p">(</span><span class="n">captured</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
-    <span class="n">env</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
     <span class="k">return</span> <span class="p">(</span>
         <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_INTERACTIVE&quot;</span><span class="p">)</span>
         <span class="ow">and</span> <span class="ow">not</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_STORE_STDOUT&quot;</span><span class="p">)</span>
         <span class="ow">and</span> <span class="n">captured</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">STDOUT_CAPTURE_KINDS</span>
-        <span class="ow">and</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">shell</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="ow">and</span> <span class="n">XSH</span><span class="o">.</span><span class="n">shell</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
     <span class="p">)</span>
 
 
-<div class="viewcode-block" id="run_subproc"><a class="viewcode-back" href="../../../api/procs/specs.html#xonsh.procs.specs.run_subproc">[docs]</a><span class="k">def</span> <span class="nf">run_subproc</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="run_subproc"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.run_subproc">[docs]</a><span class="k">def</span> <span class="nf">run_subproc</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Runs a subprocess, in its many forms. This takes a list of &#39;commands,&#39;</span>
 <span class="sd">    which may be a list of command line arguments or a string, representing</span>
 <span class="sd">    a special connecting character.  For example::</span>
@@ -909,8 +952,12 @@
 
 <span class="sd">    Lastly, the captured argument affects only the last real command.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_TRACE_SUBPROC&quot;</span><span class="p">):</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;TRACE SUBPROC: </span><span class="si">{</span><span class="n">cmds</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_TRACE_SUBPROC&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+        <span class="n">tracer</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_TRACE_SUBPROC_FUNC&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">callable</span><span class="p">(</span><span class="n">tracer</span><span class="p">):</span>
+            <span class="n">tracer</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="n">captured</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;TRACE SUBPROC: </span><span class="si">{</span><span class="n">cmds</span><span class="si">}</span><span class="s2">, captured=</span><span class="si">{</span><span class="n">captured</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
 
     <span class="n">specs</span> <span class="o">=</span> <span class="n">cmds_to_specs</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="n">captured</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="n">envs</span><span class="p">)</span>
     <span class="n">captured</span> <span class="o">=</span> <span class="n">specs</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">captured</span>
@@ -933,22 +980,21 @@
         <span class="p">)</span>
     <span class="k">if</span> <span class="n">_should_set_title</span><span class="p">(</span><span class="n">captured</span><span class="o">=</span><span class="n">captured</span><span class="p">):</span>
         <span class="c1"># set title here to get currently executing command</span>
-        <span class="n">pause_call_resume</span><span class="p">(</span><span class="n">proc</span><span class="p">,</span> <span class="n">builtins</span><span class="o">.</span><span class="n">__xonsh__</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">settitle</span><span class="p">)</span>
+        <span class="n">pause_call_resume</span><span class="p">(</span><span class="n">proc</span><span class="p">,</span> <span class="n">XSH</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">settitle</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="c1"># for some reason, some programs are in a stopped state when the flow</span>
         <span class="c1"># reaches this point, hence a SIGCONT should be sent to `proc` to make</span>
         <span class="c1"># sure that the shell doesn&#39;t hang. This `pause_call_resume` invocation</span>
         <span class="c1"># does this</span>
         <span class="n">pause_call_resume</span><span class="p">(</span><span class="n">proc</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span>
-    <span class="c1"># create command or return if backgrounding.</span>
-    <span class="k">if</span> <span class="n">background</span><span class="p">:</span>
+    <span class="c1"># now figure out what we should return</span>
+    <span class="k">if</span> <span class="n">captured</span> <span class="o">==</span> <span class="s2">&quot;object&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">command</span>  <span class="c1"># object can be returned even if backgrounding</span>
+    <span class="k">elif</span> <span class="n">background</span><span class="p">:</span>
         <span class="k">return</span>
-    <span class="c1"># now figure out what we should return.</span>
-    <span class="k">if</span> <span class="n">captured</span> <span class="o">==</span> <span class="s2">&quot;stdout&quot;</span><span class="p">:</span>
+    <span class="k">elif</span> <span class="n">captured</span> <span class="o">==</span> <span class="s2">&quot;stdout&quot;</span><span class="p">:</span>
         <span class="n">command</span><span class="o">.</span><span class="n">end</span><span class="p">()</span>
         <span class="k">return</span> <span class="n">command</span><span class="o">.</span><span class="n">output</span>
-    <span class="k">elif</span> <span class="n">captured</span> <span class="o">==</span> <span class="s2">&quot;object&quot;</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">command</span>
     <span class="k">elif</span> <span class="n">captured</span> <span class="o">==</span> <span class="s2">&quot;hiddenobject&quot;</span><span class="p">:</span>
         <span class="n">command</span><span class="o">.</span><span class="n">end</span><span class="p">()</span>
         <span class="k">return</span> <span class="n">command</span>
@@ -970,7 +1016,7 @@
   <h3 id="searchlabel">Quick search</h3>
     <div class="searchformwrapper">
     <form class="search" action="../../../search.html" method="get">
-      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
       <input type="submit" value="Go" />
     </form>
     </div>
@@ -1008,7 +1054,7 @@
         <li class="right" >
           <a href="../../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../../contents.html">xonsh 0.9.27.dev21 documentation</a> &#187;</li>
+    <li><a href="../../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.procs.specs</a></li> 
@@ -1018,7 +1064,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 3.5.2.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.4.0.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>
