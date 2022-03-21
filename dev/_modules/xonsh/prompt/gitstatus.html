@@ -70,17 +70,67 @@
           <div class="body" role="main">
             
   <h1>Source code for xonsh.prompt.gitstatus</h1><div class="highlight"><pre>
-<span></span><span class="sd">&quot;&quot;&quot;Informative git status prompt formatter&quot;&quot;&quot;</span>
+<span></span><span class="sd">&quot;&quot;&quot;Informative git status prompt formatter.</span>
+
+<span class="sd">Each part of the status field is extendable and customizable.</span>
+
+<span class="sd">Following fields are available other than ``gitstatus``</span>
+
+<span class="sd">* gitstatus.ahead</span>
+<span class="sd">* gitstatus.behind</span>
+<span class="sd">* gitstatus.branch</span>
+<span class="sd">* gitstatus.changed</span>
+<span class="sd">* gitstatus.clean</span>
+<span class="sd">* gitstatus.conflicts</span>
+<span class="sd">* gitstatus.deleted</span>
+<span class="sd">* gitstatus.lines_added</span>
+<span class="sd">* gitstatus.lines_removed</span>
+<span class="sd">* gitstatus.numstat</span>
+<span class="sd">* gitstatus.operations</span>
+<span class="sd">* gitstatus.porcelain</span>
+<span class="sd">* gitstatus.repo_path</span>
+<span class="sd">* gitstatus.short_head</span>
+<span class="sd">* gitstatus.staged</span>
+<span class="sd">* gitstatus.stash_count</span>
+<span class="sd">* gitstatus.tag</span>
+<span class="sd">* gitstatus.tag_or_hash</span>
+<span class="sd">* gitstatus.untracked</span>
+
+<span class="sd">All the fields have prefix and suffix attribute that can be set in the configuration as shown below.</span>
+<span class="sd">Other attributes can also be changed.</span>
+
+<span class="sd">See some examples below,</span>
+
+<span class="sd">.. code-block:: xonsh</span>
+
+<span class="sd">    from xonsh.prompt.base import PromptField, PromptFields</span>
+
+<span class="sd">    # 1. to change the color of the branch name</span>
+<span class="sd">    $PROMPT_FIELDS[&#39;gitstatus.branch&#39;].prefix = &quot;{RED}&quot;</span>
+
+<span class="sd">    # 2. to change the symbol for conflicts from ``{RED}×``</span>
+<span class="sd">    $PROMPT_FIELDS[&#39;gitstatus.conflicts&#39;].prefix = &quot;{GREEN}*&quot;</span>
+
+<span class="sd">    # 3. hide the branch name if it is main or dev</span>
+<span class="sd">    branch_field = $PROMPT_FIELDS[&#39;gitstatus.branch&#39;]</span>
+<span class="sd">    old_updator = branch_field.updator</span>
+<span class="sd">    def new_updator(fld: PromptField, ctx: PromptFields):</span>
+<span class="sd">        old_updator(fld, ctx)</span>
+<span class="sd">        if fld.value in {&quot;main&quot;, &quot;dev&quot;}:</span>
+<span class="sd">            fld.value = &quot;&quot;</span>
+<span class="sd">    branch_field.updator = new_updator</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">contextlib</span>
 <span class="kn">import</span> <span class="nn">os</span>
 <span class="kn">import</span> <span class="nn">subprocess</span>
 
-<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
-<span class="kn">from</span> <span class="nn">xonsh.color_tools</span> <span class="kn">import</span> <span class="n">COLORS</span>
-<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="n">NamedConstantMeta</span><span class="p">,</span> <span class="n">XAttr</span>
+<span class="kn">from</span> <span class="nn">xonsh.prompt.base</span> <span class="kn">import</span> <span class="n">MultiPromptField</span><span class="p">,</span> <span class="n">PromptField</span><span class="p">,</span> <span class="n">PromptFields</span>
 
 
-<span class="k">def</span> <span class="nf">_check_output</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-    <span class="n">denv</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">detype</span><span class="p">()</span>
+<span class="k">def</span> <span class="nf">_get_sp_output</span><span class="p">(</span><span class="n">xsh</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="n">denv</span> <span class="o">=</span> <span class="n">xsh</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">detype</span><span class="p">()</span>
     <span class="n">denv</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s2">&quot;GIT_OPTIONAL_LOCKS&quot;</span><span class="p">:</span> <span class="s2">&quot;0&quot;</span><span class="p">})</span>
 
     <span class="n">kwargs</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
@@ -88,19 +138,15 @@
             <span class="n">env</span><span class="o">=</span><span class="n">denv</span><span class="p">,</span>
             <span class="n">stdout</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span>
             <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">,</span>
-            <span class="n">universal_newlines</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="p">)</span>
     <span class="p">)</span>
-    <span class="n">timeout</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;VC_BRANCH_TIMEOUT&quot;</span><span class="p">]</span>
+    <span class="n">timeout</span> <span class="o">=</span> <span class="n">xsh</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;VC_BRANCH_TIMEOUT&quot;</span><span class="p">]</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
     <span class="c1"># See https://docs.python.org/3/library/subprocess.html#subprocess.Popen.communicate</span>
-    <span class="k">with</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="k">as</span> <span class="n">proc</span><span class="p">:</span>
+    <span class="k">with</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="k">as</span> <span class="n">proc</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">out</span><span class="p">,</span> <span class="n">err</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">communicate</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">proc</span><span class="o">.</span><span class="n">returncode</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">(</span>
-                    <span class="n">proc</span><span class="o">.</span><span class="n">returncode</span><span class="p">,</span> <span class="n">proc</span><span class="o">.</span><span class="n">args</span><span class="p">,</span> <span class="n">output</span><span class="o">=</span><span class="n">out</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">err</span>
-                <span class="p">)</span>  <span class="c1"># note err will always be empty as we redirect stderr to DEVNULL abvoe</span>
-            <span class="k">return</span> <span class="n">out</span>
+            <span class="n">out</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">communicate</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
         <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">TimeoutExpired</span><span class="p">:</span>
             <span class="c1"># We use `.terminate()` (SIGTERM) instead of `.kill()` (SIGKILL) here</span>
             <span class="c1"># because otherwise we guarantee that a `.git/index.lock` file will be</span>
@@ -115,43 +161,25 @@
             <span class="c1"># `with subprocess.Popen()` context manager above would do that</span>
             <span class="c1"># for us, but we do it to be explicit that waiting is being done.</span>
             <span class="n">proc</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>  <span class="c1"># we ignore what git says after we sent it SIGTERM</span>
-            <span class="k">raise</span>
+    <span class="k">return</span> <span class="n">out</span>
 
 
-<span class="k">class</span> <span class="nc">_DEFS</span><span class="p">(</span><span class="n">metaclass</span><span class="o">=</span><span class="n">NamedConstantMeta</span><span class="p">):</span>
-    <span class="n">HASH_INDICATOR</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)</span>
-    <span class="n">BRANCH</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{CYAN}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="n">OPERATION</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{CYAN}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="n">STAGED</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">●&quot;</span><span class="p">)</span>
-    <span class="n">CONFLICTS</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">×&quot;</span><span class="p">)</span>
-    <span class="n">CHANGED</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{BLUE}</span><span class="s2">+&quot;</span><span class="p">)</span>
-    <span class="n">DELETED</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">-&quot;</span><span class="p">)</span>
-    <span class="n">UNTRACKED</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;…&quot;</span><span class="p">)</span>
-    <span class="n">STASHED</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;⚑&quot;</span><span class="p">)</span>
-    <span class="n">CLEAN</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{BOLD_GREEN}</span><span class="s2">✓&quot;</span><span class="p">)</span>
-    <span class="n">AHEAD</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;↑·&quot;</span><span class="p">)</span>
-    <span class="n">BEHIND</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;↓·&quot;</span><span class="p">)</span>
-    <span class="n">LINES_ADDED</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{BLUE}</span><span class="s2">+&quot;</span><span class="p">)</span>
-    <span class="n">LINES_REMOVED</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">-&quot;</span><span class="p">)</span>
-    <span class="n">SEPARATOR</span> <span class="o">=</span> <span class="n">XAttr</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">|&quot;</span><span class="p">)</span>
+<span class="k">class</span> <span class="nc">_GSField</span><span class="p">(</span><span class="n">PromptField</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;wrap output from git command to value&quot;&quot;&quot;</span>
+
+    <span class="n">_args</span><span class="p">:</span> <span class="s2">&quot;tuple[str, ...]&quot;</span> <span class="o">=</span> <span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">_get_sp_output</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">xsh</span><span class="p">,</span> <span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">_args</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
 
 
-<span class="k">def</span> <span class="nf">_get_def</span><span class="p">(</span><span class="n">attr</span><span class="p">:</span> <span class="n">XAttr</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-    <span class="n">key</span> <span class="o">=</span> <span class="n">attr</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
-    <span class="n">def_</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_GITSTATUS_&quot;</span> <span class="o">+</span> <span class="n">key</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">def_</span> <span class="k">if</span> <span class="n">def_</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">attr</span><span class="o">.</span><span class="n">value</span>
+<span class="n">short_head</span> <span class="o">=</span> <span class="n">_GSField</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="n">_args</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;rev-parse&quot;</span><span class="p">,</span> <span class="s2">&quot;--short&quot;</span><span class="p">,</span> <span class="s2">&quot;HEAD&quot;</span><span class="p">))</span>
+<span class="n">tag</span> <span class="o">=</span> <span class="n">_GSField</span><span class="p">(</span><span class="n">_args</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;describe&quot;</span><span class="p">,</span> <span class="s2">&quot;--always&quot;</span><span class="p">))</span>
 
 
-<span class="k">def</span> <span class="nf">_is_hidden</span><span class="p">(</span><span class="n">attr</span><span class="p">:</span> <span class="n">XAttr</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-    <span class="n">hidden</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_GITSTATUS_FIELDS_HIDDEN&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">set</span><span class="p">()</span>
-    <span class="k">return</span> <span class="n">attr</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="ow">in</span> <span class="n">hidden</span> <span class="ow">or</span> <span class="n">attr</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">hidden</span>
-
-
-<span class="k">def</span> <span class="nf">_get_tag_or_hash</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-    <span class="n">tag_or_hash</span> <span class="o">=</span> <span class="n">_check_output</span><span class="p">([</span><span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;describe&quot;</span><span class="p">,</span> <span class="s2">&quot;--always&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
-    <span class="n">hash_</span> <span class="o">=</span> <span class="n">_check_output</span><span class="p">([</span><span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;rev-parse&quot;</span><span class="p">,</span> <span class="s2">&quot;--short&quot;</span><span class="p">,</span> <span class="s2">&quot;HEAD&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
-    <span class="n">have_tag_name</span> <span class="o">=</span> <span class="n">tag_or_hash</span> <span class="o">!=</span> <span class="n">hash_</span>
-    <span class="k">return</span> <span class="n">tag_or_hash</span> <span class="k">if</span> <span class="n">have_tag_name</span> <span class="k">else</span> <span class="n">_get_def</span><span class="p">(</span><span class="n">_DEFS</span><span class="o">.</span><span class="n">HASH_INDICATOR</span><span class="p">)</span> <span class="o">+</span> <span class="n">hash_</span>
+<span class="nd">@PromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">()</span>
+<span class="k">def</span> <span class="nf">tag_or_hash</span><span class="p">(</span><span class="n">fld</span><span class="p">:</span> <span class="n">PromptField</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+    <span class="n">fld</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">pick</span><span class="p">(</span><span class="n">tag</span><span class="p">)</span> <span class="ow">or</span> <span class="n">ctx</span><span class="o">.</span><span class="n">pick</span><span class="p">(</span><span class="n">short_head</span><span class="p">)</span>
 
 
 <span class="k">def</span> <span class="nf">_parse_int</span><span class="p">(</span><span class="n">val</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
@@ -160,59 +188,65 @@
     <span class="k">return</span> <span class="n">default</span>
 
 
-<span class="k">def</span> <span class="nf">_get_files_changed</span><span class="p">():</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="n">changed</span> <span class="o">=</span> <span class="n">_check_output</span><span class="p">([</span><span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;diff&quot;</span><span class="p">,</span> <span class="s2">&quot;--numstat&quot;</span><span class="p">])</span>
-    <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">:</span>
-        <span class="k">return</span> <span class="p">{}</span>
+<span class="k">class</span> <span class="nc">_GitDir</span><span class="p">(</span><span class="n">_GSField</span><span class="p">):</span>
+    <span class="n">_args</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;rev-parse&quot;</span><span class="p">,</span> <span class="s2">&quot;--git-dir&quot;</span><span class="p">)</span>
+    <span class="n">_cwd</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
 
-    <span class="n">insert</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="n">delete</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">def</span> <span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+        <span class="c1"># call the subprocess only if cwd changed</span>
+        <span class="kn">from</span> <span class="nn">xonsh.dirstack</span> <span class="kn">import</span> <span class="n">_get_cwd</span>
 
-    <span class="k">if</span> <span class="n">changed</span><span class="p">:</span>
-        <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">changed</span><span class="o">.</span><span class="n">splitlines</span><span class="p">():</span>
-            <span class="n">x</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">maxsplit</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
-            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-                <span class="n">insert</span> <span class="o">+=</span> <span class="n">_parse_int</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
-                <span class="n">delete</span> <span class="o">+=</span> <span class="n">_parse_int</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
-
-    <span class="k">return</span> <span class="p">{</span><span class="n">_DEFS</span><span class="o">.</span><span class="n">LINES_ADDED</span><span class="p">:</span> <span class="n">insert</span><span class="p">,</span> <span class="n">_DEFS</span><span class="o">.</span><span class="n">LINES_REMOVED</span><span class="p">:</span> <span class="n">delete</span><span class="p">}</span>
+        <span class="n">cwd</span> <span class="o">=</span> <span class="n">_get_cwd</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">cwd</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cwd</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cwd</span> <span class="o">=</span> <span class="n">cwd</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_get_stash</span><span class="p">(</span><span class="n">gitdir</span><span class="p">):</span>
-    <span class="k">try</span><span class="p">:</span>
+<span class="n">repo_path</span> <span class="o">=</span> <span class="n">_GitDir</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="get_stash_count"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.gitstatus.html#xonsh.prompt.gitstatus.get_stash_count">[docs]</a><span class="k">def</span> <span class="nf">get_stash_count</span><span class="p">(</span><span class="n">gitdir</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Get git-stash count&quot;&quot;&quot;</span>
+    <span class="k">with</span> <span class="n">contextlib</span><span class="o">.</span><span class="n">suppress</span><span class="p">(</span><span class="ne">OSError</span><span class="p">):</span>
         <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">gitdir</span><span class="p">,</span> <span class="s2">&quot;logs/refs/stash&quot;</span><span class="p">))</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
             <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">f</span><span class="p">)</span>
-    <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
-        <span class="k">return</span> <span class="mi">0</span>
+    <span class="k">return</span> <span class="mi">0</span></div>
 
 
-<span class="k">def</span> <span class="nf">_gitoperation</span><span class="p">(</span><span class="n">gitdir</span><span class="p">):</span>
-    <span class="n">files</span> <span class="o">=</span> <span class="p">(</span>
+<span class="nd">@PromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;⚑&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">stash_count</span><span class="p">(</span><span class="n">fld</span><span class="p">:</span> <span class="n">PromptField</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">PromptFields</span><span class="p">):</span>
+    <span class="n">fld</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">get_stash_count</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">pick_val</span><span class="p">(</span><span class="n">repo_path</span><span class="p">))</span>
+
+
+<div class="viewcode-block" id="get_operations"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.gitstatus.html#xonsh.prompt.gitstatus.get_operations">[docs]</a><span class="k">def</span> <span class="nf">get_operations</span><span class="p">(</span><span class="n">gitdir</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;get the current git operation e.g. MERGE/REBASE...&quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">file</span><span class="p">,</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span>
         <span class="p">(</span><span class="s2">&quot;rebase-merge&quot;</span><span class="p">,</span> <span class="s2">&quot;REBASE&quot;</span><span class="p">),</span>
         <span class="p">(</span><span class="s2">&quot;rebase-apply&quot;</span><span class="p">,</span> <span class="s2">&quot;AM/REBASE&quot;</span><span class="p">),</span>
         <span class="p">(</span><span class="s2">&quot;MERGE_HEAD&quot;</span><span class="p">,</span> <span class="s2">&quot;MERGING&quot;</span><span class="p">),</span>
         <span class="p">(</span><span class="s2">&quot;CHERRY_PICK_HEAD&quot;</span><span class="p">,</span> <span class="s2">&quot;CHERRY-PICKING&quot;</span><span class="p">),</span>
         <span class="p">(</span><span class="s2">&quot;REVERT_HEAD&quot;</span><span class="p">,</span> <span class="s2">&quot;REVERTING&quot;</span><span class="p">),</span>
         <span class="p">(</span><span class="s2">&quot;BISECT_LOG&quot;</span><span class="p">,</span> <span class="s2">&quot;BISECTING&quot;</span><span class="p">),</span>
-    <span class="p">)</span>
-    <span class="n">operations</span> <span class="o">=</span> <span class="p">[</span><span class="n">f</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">files</span> <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">gitdir</span><span class="p">,</span> <span class="n">f</span><span class="p">[</span><span class="mi">0</span><span class="p">]))]</span>
-    <span class="k">if</span> <span class="n">operations</span><span class="p">:</span>
-        <span class="k">return</span> <span class="s2">&quot;|&quot;</span> <span class="o">+</span> <span class="s2">&quot;|&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">operations</span><span class="p">)</span>
-    <span class="k">return</span> <span class="s2">&quot;&quot;</span>
+    <span class="p">):</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">gitdir</span><span class="p">,</span> <span class="n">file</span><span class="p">)):</span>
+            <span class="k">yield</span> <span class="n">name</span></div>
 
 
-<span class="k">def</span> <span class="nf">_get_operation_stashed</span><span class="p">():</span>
-    <span class="n">gitdir</span> <span class="o">=</span> <span class="n">_check_output</span><span class="p">([</span><span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;rev-parse&quot;</span><span class="p">,</span> <span class="s2">&quot;--git-dir&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
-    <span class="n">stashed</span> <span class="o">=</span> <span class="n">_get_stash</span><span class="p">(</span><span class="n">gitdir</span><span class="p">)</span>
-    <span class="n">operation</span> <span class="o">=</span> <span class="n">_gitoperation</span><span class="p">(</span><span class="n">gitdir</span><span class="p">)</span>
-    <span class="k">return</span> <span class="p">{</span><span class="n">_DEFS</span><span class="o">.</span><span class="n">OPERATION</span><span class="p">:</span> <span class="n">operation</span><span class="p">,</span> <span class="n">_DEFS</span><span class="o">.</span><span class="n">STASHED</span><span class="p">:</span> <span class="n">stashed</span><span class="p">}</span>
+<span class="nd">@PromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{CYAN}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">separator</span><span class="o">=</span><span class="s2">&quot;|&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">operations</span><span class="p">(</span><span class="n">fld</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">PromptFields</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">gitdir</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">pick_val</span><span class="p">(</span><span class="n">repo_path</span><span class="p">)</span>
+    <span class="n">op</span> <span class="o">=</span> <span class="n">fld</span><span class="o">.</span><span class="n">separator</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">get_operations</span><span class="p">(</span><span class="n">gitdir</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">op</span><span class="p">:</span>
+        <span class="n">fld</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">fld</span><span class="o">.</span><span class="n">separator</span> <span class="o">+</span> <span class="n">op</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">fld</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
 
 
-<span class="k">def</span> <span class="nf">_get_status_fields</span><span class="p">():</span>
-    <span class="sd">&quot;&quot;&quot;Return parsed values from ``git status``&quot;&quot;&quot;</span>
+<span class="nd">@PromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">()</span>
+<span class="k">def</span> <span class="nf">porcelain</span><span class="p">(</span><span class="n">fld</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">PromptFields</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Return parsed values from ``git status --porcelain``&quot;&quot;&quot;</span>
 
-    <span class="n">status</span> <span class="o">=</span> <span class="n">_check_output</span><span class="p">([</span><span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">,</span> <span class="s2">&quot;--porcelain&quot;</span><span class="p">,</span> <span class="s2">&quot;--branch&quot;</span><span class="p">])</span>
+    <span class="n">status</span> <span class="o">=</span> <span class="n">_get_sp_output</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">xsh</span><span class="p">,</span> <span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">,</span> <span class="s2">&quot;--porcelain&quot;</span><span class="p">,</span> <span class="s2">&quot;--branch&quot;</span><span class="p">)</span>
     <span class="n">branch</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
     <span class="n">ahead</span><span class="p">,</span> <span class="n">behind</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span>
     <span class="n">untracked</span><span class="p">,</span> <span class="n">changed</span><span class="p">,</span> <span class="n">deleted</span><span class="p">,</span> <span class="n">conflicts</span><span class="p">,</span> <span class="n">staged</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span>
@@ -222,7 +256,7 @@
             <span class="k">if</span> <span class="s2">&quot;Initial commit on&quot;</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
                 <span class="n">branch</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
             <span class="k">elif</span> <span class="s2">&quot;no branch&quot;</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
-                <span class="n">branch</span> <span class="o">=</span> <span class="n">_get_tag_or_hash</span><span class="p">()</span>
+                <span class="n">branch</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">pick</span><span class="p">(</span><span class="n">tag_or_hash</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
             <span class="k">elif</span> <span class="s2">&quot;...&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
                 <span class="n">branch</span> <span class="o">=</span> <span class="n">line</span>
             <span class="k">else</span><span class="p">:</span>
@@ -248,106 +282,117 @@
             <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">line</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">line</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="s2">&quot; &quot;</span><span class="p">:</span>
                 <span class="n">staged</span> <span class="o">+=</span> <span class="mi">1</span>
 
-    <span class="k">return</span> <span class="p">{</span>
-        <span class="n">_DEFS</span><span class="o">.</span><span class="n">BRANCH</span><span class="p">:</span> <span class="n">branch</span><span class="p">,</span>
-        <span class="n">_DEFS</span><span class="o">.</span><span class="n">AHEAD</span><span class="p">:</span> <span class="n">ahead</span><span class="p">,</span>
-        <span class="n">_DEFS</span><span class="o">.</span><span class="n">BEHIND</span><span class="p">:</span> <span class="n">behind</span><span class="p">,</span>
-        <span class="n">_DEFS</span><span class="o">.</span><span class="n">UNTRACKED</span><span class="p">:</span> <span class="n">untracked</span><span class="p">,</span>
-        <span class="n">_DEFS</span><span class="o">.</span><span class="n">CHANGED</span><span class="p">:</span> <span class="n">changed</span><span class="p">,</span>
-        <span class="n">_DEFS</span><span class="o">.</span><span class="n">DELETED</span><span class="p">:</span> <span class="n">deleted</span><span class="p">,</span>
-        <span class="n">_DEFS</span><span class="o">.</span><span class="n">CONFLICTS</span><span class="p">:</span> <span class="n">conflicts</span><span class="p">,</span>
-        <span class="n">_DEFS</span><span class="o">.</span><span class="n">STAGED</span><span class="p">:</span> <span class="n">staged</span><span class="p">,</span>
+    <span class="n">fld</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;branch&quot;</span><span class="p">:</span> <span class="n">branch</span><span class="p">,</span>
+        <span class="s2">&quot;ahead&quot;</span><span class="p">:</span> <span class="n">ahead</span><span class="p">,</span>
+        <span class="s2">&quot;behind&quot;</span><span class="p">:</span> <span class="n">behind</span><span class="p">,</span>
+        <span class="s2">&quot;untracked&quot;</span><span class="p">:</span> <span class="n">untracked</span><span class="p">,</span>
+        <span class="s2">&quot;changed&quot;</span><span class="p">:</span> <span class="n">changed</span><span class="p">,</span>
+        <span class="s2">&quot;deleted&quot;</span><span class="p">:</span> <span class="n">deleted</span><span class="p">,</span>
+        <span class="s2">&quot;conflicts&quot;</span><span class="p">:</span> <span class="n">conflicts</span><span class="p">,</span>
+        <span class="s2">&quot;staged&quot;</span><span class="p">:</span> <span class="n">staged</span><span class="p">,</span>
     <span class="p">}</span>
 
 
-<div class="viewcode-block" id="get_gitstatus_fields"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.gitstatus.html#xonsh.prompt.gitstatus.get_gitstatus_fields">[docs]</a><span class="k">def</span> <span class="nf">get_gitstatus_fields</span><span class="p">():</span>
-    <span class="sd">&quot;&quot;&quot;return all shown fields&quot;&quot;&quot;</span>
-    <span class="n">fields</span> <span class="o">=</span> <span class="p">{}</span>
-    <span class="k">for</span> <span class="n">keys</span><span class="p">,</span> <span class="n">provider</span> <span class="ow">in</span> <span class="p">(</span>
-        <span class="p">(</span>
-            <span class="p">(</span>
-                <span class="n">_DEFS</span><span class="o">.</span><span class="n">BRANCH</span><span class="p">,</span>
-                <span class="n">_DEFS</span><span class="o">.</span><span class="n">AHEAD</span><span class="p">,</span>
-                <span class="n">_DEFS</span><span class="o">.</span><span class="n">BEHIND</span><span class="p">,</span>
-                <span class="n">_DEFS</span><span class="o">.</span><span class="n">UNTRACKED</span><span class="p">,</span>
-                <span class="n">_DEFS</span><span class="o">.</span><span class="n">CHANGED</span><span class="p">,</span>
-                <span class="n">_DEFS</span><span class="o">.</span><span class="n">DELETED</span><span class="p">,</span>
-                <span class="n">_DEFS</span><span class="o">.</span><span class="n">CONFLICTS</span><span class="p">,</span>
-                <span class="n">_DEFS</span><span class="o">.</span><span class="n">STAGED</span><span class="p">,</span>
-            <span class="p">),</span>
-            <span class="n">_get_status_fields</span><span class="p">,</span>
-        <span class="p">),</span>
-        <span class="p">(</span>
-            <span class="p">(</span>
-                <span class="n">_DEFS</span><span class="o">.</span><span class="n">OPERATION</span><span class="p">,</span>
-                <span class="n">_DEFS</span><span class="o">.</span><span class="n">STASHED</span><span class="p">,</span>
-            <span class="p">),</span>
-            <span class="n">_get_operation_stashed</span><span class="p">,</span>
-        <span class="p">),</span>
-        <span class="p">(</span>
-            <span class="p">(</span>
-                <span class="n">_DEFS</span><span class="o">.</span><span class="n">LINES_ADDED</span><span class="p">,</span>
-                <span class="n">_DEFS</span><span class="o">.</span><span class="n">LINES_REMOVED</span><span class="p">,</span>
-            <span class="p">),</span>
-            <span class="n">_get_files_changed</span><span class="p">,</span>
-        <span class="p">),</span>
-    <span class="p">):</span>
-        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="ow">not</span> <span class="n">_is_hidden</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">keys</span><span class="p">)):</span>
-            <span class="k">try</span><span class="p">:</span>
-                <span class="n">fields</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">provider</span><span class="p">())</span>
-            <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">SubprocessError</span><span class="p">:</span>
-                <span class="k">return</span> <span class="kc">None</span>
-    <span class="k">return</span> <span class="n">fields</span></div>
+<div class="viewcode-block" id="get_gitstatus_info"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.gitstatus.html#xonsh.prompt.gitstatus.get_gitstatus_info">[docs]</a><span class="k">def</span> <span class="nf">get_gitstatus_info</span><span class="p">(</span><span class="n">fld</span><span class="p">:</span> <span class="s2">&quot;_GSInfo&quot;</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">PromptFields</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;Get individual fields from $PROMPT_FIELDS[&#39;gitstatus.porcelain&#39;]&quot;&quot;&quot;</span>
+    <span class="n">info</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">pick_val</span><span class="p">(</span><span class="n">porcelain</span><span class="p">)</span>
+    <span class="n">fld</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">info</span><span class="p">[</span><span class="n">fld</span><span class="o">.</span><span class="n">info</span><span class="p">]</span></div>
 
 
-<div class="viewcode-block" id="gitstatus_prompt"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.gitstatus.html#xonsh.prompt.gitstatus.gitstatus_prompt">[docs]</a><span class="k">def</span> <span class="nf">gitstatus_prompt</span><span class="p">():</span>
-    <span class="sd">&quot;&quot;&quot;Return str `BRANCH|OPERATOR|numbers`&quot;&quot;&quot;</span>
-    <span class="n">fields</span> <span class="o">=</span> <span class="n">get_gitstatus_fields</span><span class="p">()</span>
-    <span class="k">if</span> <span class="n">fields</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">return</span> <span class="kc">None</span>
+<span class="k">class</span> <span class="nc">_GSInfo</span><span class="p">(</span><span class="n">PromptField</span><span class="p">):</span>
+    <span class="n">info</span><span class="p">:</span> <span class="nb">str</span>
 
-    <span class="n">ret</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
-    <span class="k">for</span> <span class="n">fld</span> <span class="ow">in</span> <span class="p">(</span><span class="n">_DEFS</span><span class="o">.</span><span class="n">BRANCH</span><span class="p">,</span> <span class="n">_DEFS</span><span class="o">.</span><span class="n">AHEAD</span><span class="p">,</span> <span class="n">_DEFS</span><span class="o">.</span><span class="n">BEHIND</span><span class="p">,</span> <span class="n">_DEFS</span><span class="o">.</span><span class="n">OPERATION</span><span class="p">):</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">_is_hidden</span><span class="p">(</span><span class="n">fld</span><span class="p">):</span>
-            <span class="n">val</span> <span class="o">=</span> <span class="n">fields</span><span class="p">[</span><span class="n">fld</span><span class="p">]</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">val</span><span class="p">:</span>
-                <span class="k">continue</span>
-            <span class="n">ret</span> <span class="o">+=</span> <span class="n">_get_def</span><span class="p">(</span><span class="n">fld</span><span class="p">)</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">updator</span> <span class="o">=</span> <span class="n">get_gitstatus_info</span>
 
-    <span class="k">if</span> <span class="n">ret</span><span class="p">:</span>
-        <span class="n">ret</span> <span class="o">+=</span> <span class="s2">&quot;|&quot;</span>
 
-    <span class="n">number_flds</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">_DEFS</span><span class="o">.</span><span class="n">STAGED</span><span class="p">,</span>
-        <span class="n">_DEFS</span><span class="o">.</span><span class="n">CONFLICTS</span><span class="p">,</span>
-        <span class="n">_DEFS</span><span class="o">.</span><span class="n">CHANGED</span><span class="p">,</span>
-        <span class="n">_DEFS</span><span class="o">.</span><span class="n">DELETED</span><span class="p">,</span>
-        <span class="n">_DEFS</span><span class="o">.</span><span class="n">UNTRACKED</span><span class="p">,</span>
-        <span class="n">_DEFS</span><span class="o">.</span><span class="n">STASHED</span><span class="p">,</span>
-        <span class="n">_DEFS</span><span class="o">.</span><span class="n">LINES_ADDED</span><span class="p">,</span>
-        <span class="n">_DEFS</span><span class="o">.</span><span class="n">LINES_REMOVED</span><span class="p">,</span>
+<span class="n">branch</span> <span class="o">=</span> <span class="n">_GSInfo</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{CYAN}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">info</span><span class="o">=</span><span class="s2">&quot;branch&quot;</span><span class="p">)</span>
+<span class="n">ahead</span> <span class="o">=</span> <span class="n">_GSInfo</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;↑·&quot;</span><span class="p">,</span> <span class="n">info</span><span class="o">=</span><span class="s2">&quot;ahead&quot;</span><span class="p">)</span>
+<span class="n">behind</span> <span class="o">=</span> <span class="n">_GSInfo</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;↓·&quot;</span><span class="p">,</span> <span class="n">info</span><span class="o">=</span><span class="s2">&quot;behind&quot;</span><span class="p">)</span>
+<span class="n">untracked</span> <span class="o">=</span> <span class="n">_GSInfo</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;…&quot;</span><span class="p">,</span> <span class="n">info</span><span class="o">=</span><span class="s2">&quot;untracked&quot;</span><span class="p">)</span>
+<span class="n">changed</span> <span class="o">=</span> <span class="n">_GSInfo</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{BLUE}</span><span class="s2">+&quot;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">info</span><span class="o">=</span><span class="s2">&quot;changed&quot;</span><span class="p">)</span>
+<span class="n">deleted</span> <span class="o">=</span> <span class="n">_GSInfo</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">-&quot;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">info</span><span class="o">=</span><span class="s2">&quot;deleted&quot;</span><span class="p">)</span>
+<span class="n">conflicts</span> <span class="o">=</span> <span class="n">_GSInfo</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">×&quot;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">info</span><span class="o">=</span><span class="s2">&quot;conflicts&quot;</span><span class="p">)</span>
+<span class="n">staged</span> <span class="o">=</span> <span class="n">_GSInfo</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">●&quot;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">info</span><span class="o">=</span><span class="s2">&quot;staged&quot;</span><span class="p">)</span>
+
+
+<span class="nd">@PromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">()</span>
+<span class="k">def</span> <span class="nf">numstat</span><span class="p">(</span><span class="n">fld</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+    <span class="n">changed</span> <span class="o">=</span> <span class="n">_get_sp_output</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">xsh</span><span class="p">,</span> <span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;diff&quot;</span><span class="p">,</span> <span class="s2">&quot;--numstat&quot;</span><span class="p">)</span>
+
+    <span class="n">insert</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">delete</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">if</span> <span class="n">changed</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">changed</span><span class="o">.</span><span class="n">splitlines</span><span class="p">():</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">maxsplit</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">insert</span> <span class="o">+=</span> <span class="n">_parse_int</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="n">delete</span> <span class="o">+=</span> <span class="n">_parse_int</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">fld</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="p">(</span><span class="n">insert</span><span class="p">,</span> <span class="n">delete</span><span class="p">)</span>
+
+
+<span class="nd">@PromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{BLUE}</span><span class="s2">+&quot;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">lines_added</span><span class="p">(</span><span class="n">fld</span><span class="p">:</span> <span class="n">PromptField</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">PromptFields</span><span class="p">):</span>
+    <span class="n">fld</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">pick_val</span><span class="p">(</span><span class="n">numstat</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+
+<span class="nd">@PromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">-&quot;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">lines_removed</span><span class="p">(</span><span class="n">fld</span><span class="p">:</span> <span class="n">PromptField</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+    <span class="n">fld</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">pick_val</span><span class="p">(</span><span class="n">numstat</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+
+<span class="nd">@PromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{BOLD_GREEN}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">symbol</span><span class="o">=</span><span class="s2">&quot;✓&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">clean</span><span class="p">(</span><span class="n">fld</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+    <span class="n">changes</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span>
+        <span class="n">ctx</span><span class="o">.</span><span class="n">pick_val</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="n">staged</span><span class="p">,</span>
+            <span class="n">conflicts</span><span class="p">,</span>
+            <span class="n">changed</span><span class="p">,</span>
+            <span class="n">deleted</span><span class="p">,</span>
+            <span class="n">untracked</span><span class="p">,</span>
+            <span class="n">stash_count</span><span class="p">,</span>
+        <span class="p">)</span>
     <span class="p">)</span>
-    <span class="k">for</span> <span class="n">fld</span> <span class="ow">in</span> <span class="n">number_flds</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">_is_hidden</span><span class="p">(</span><span class="n">fld</span><span class="p">):</span>
-            <span class="k">continue</span>
-        <span class="n">symbol</span> <span class="o">=</span> <span class="n">_get_def</span><span class="p">(</span><span class="n">fld</span><span class="p">)</span>
-        <span class="n">value</span> <span class="o">=</span> <span class="n">fields</span><span class="p">[</span><span class="n">fld</span><span class="p">]</span>
-        <span class="k">if</span> <span class="n">symbol</span> <span class="ow">and</span> <span class="n">value</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="n">ret</span> <span class="o">+=</span> <span class="n">symbol</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">+</span> <span class="n">COLORS</span><span class="o">.</span><span class="n">RESET</span>
-    <span class="k">if</span> <span class="nb">sum</span><span class="p">(</span><span class="n">fields</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">fld</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">fld</span> <span class="ow">in</span> <span class="n">number_flds</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_is_hidden</span><span class="p">(</span>
-        <span class="n">_DEFS</span><span class="o">.</span><span class="n">CLEAN</span>
-    <span class="p">):</span>
-        <span class="n">symbol</span> <span class="o">=</span> <span class="n">_get_def</span><span class="p">(</span><span class="n">_DEFS</span><span class="o">.</span><span class="n">CLEAN</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">symbol</span><span class="p">:</span>
-            <span class="n">ret</span> <span class="o">+=</span> <span class="n">symbol</span> <span class="o">+</span> <span class="n">COLORS</span><span class="o">.</span><span class="n">RESET</span>
-    <span class="n">ret</span> <span class="o">=</span> <span class="n">ret</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;|&quot;</span><span class="p">)</span>
+    <span class="n">fld</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span> <span class="k">if</span> <span class="n">changes</span> <span class="k">else</span> <span class="n">fld</span><span class="o">.</span><span class="n">symbol</span>
 
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">ret</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">COLORS</span><span class="o">.</span><span class="n">RESET</span><span class="p">):</span>
-        <span class="n">ret</span> <span class="o">+=</span> <span class="n">COLORS</span><span class="o">.</span><span class="n">RESET</span>
 
-    <span class="n">ret</span> <span class="o">=</span> <span class="n">ret</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;|&quot;</span><span class="p">,</span> <span class="n">_get_def</span><span class="p">(</span><span class="n">_DEFS</span><span class="o">.</span><span class="n">SEPARATOR</span><span class="p">))</span>
+<div class="viewcode-block" id="GitStatus"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.gitstatus.html#xonsh.prompt.gitstatus.GitStatus">[docs]</a><span class="k">class</span> <span class="nc">GitStatus</span><span class="p">(</span><span class="n">MultiPromptField</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Return str `BRANCH|OPERATOR|numbers`&quot;&quot;&quot;</span>
 
-    <span class="k">return</span> <span class="n">ret</span></div>
+    <span class="n">fragments</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="s2">&quot;.branch&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;.ahead&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;.behind&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;.operations&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">|&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;.staged&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;.conflicts&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;.changed&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;.deleted&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;.untracked&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;.stash_count&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;.lines_added&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;.lines_removed&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;.clean&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">hidden</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="s2">&quot;.lines_added&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;.lines_removed&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="sd">&quot;&quot;&quot;These fields will not be processed for the result&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="GitStatus.get_frags"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.gitstatus.html#xonsh.prompt.gitstatus.GitStatus.get_frags">[docs]</a>    <span class="k">def</span> <span class="nf">get_frags</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">frag</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">fragments</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">frag</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">hidden</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">yield</span> <span class="n">frag</span></div></div>
+
+
+<span class="n">gitstatus</span> <span class="o">=</span> <span class="n">GitStatus</span><span class="p">()</span>
 </pre></div>
 
             <div class="clearer"></div>
