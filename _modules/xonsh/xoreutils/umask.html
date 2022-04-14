@@ -1,0 +1,321 @@
+
+
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>xonsh.xoreutils.umask &#8212; xonsh 0.12.0.dev129.dev129 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/numpy_friendly.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Noticia+Text|Open+Sans|Droid+Sans+Mono" type="text/css" />
+    
+    <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+    <script src="../../../_static/jquery.js"></script>
+    <script src="../../../_static/underscore.js"></script>
+    <script src="../../../_static/doctools.js"></script>
+    <script src="../../../_static/runthis-client.min.js"></script>
+
+    
+    
+     
+        <script src="../../../_static/jquery.cookie.js"></script>
+    
+
+    
+     
+        <script src="../../../_static/cloud.base.js"></script>
+    
+
+    
+     
+        <script src="../../../_static/cloud.js"></script>
+    
+
+    <link rel="shortcut icon" href="../../../_static/magic_conch.ico"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+     
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="canonical" href="http://xon.sh/_modules/xonsh/xoreutils/umask.html"/>
+
+  </head><body>
+    <div class="relbar-top">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../contents.html">xonsh 0.12.0.dev129.dev129 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" accesskey="U">Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">xonsh.xoreutils.umask</a></li> 
+      </ul>
+    </div>
+    </div>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for xonsh.xoreutils.umask</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Implements a umask command for xonsh.&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
+
+<span class="kn">import</span> <span class="nn">xonsh.lazyasd</span> <span class="k">as</span> <span class="nn">xl</span>
+
+
+<span class="nd">@xl</span><span class="o">.</span><span class="n">lazyobject</span>
+<span class="k">def</span> <span class="nf">symbolic_matcher</span><span class="p">():</span>
+    <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;([ugo]*|a)([+-=])([^\s,]*)&quot;</span><span class="p">)</span>
+
+
+<span class="n">order</span> <span class="o">=</span> <span class="s2">&quot;rwx&quot;</span>
+<span class="n">name_to_value</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;x&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">}</span>
+<span class="n">value_to_name</span> <span class="o">=</span> <span class="p">{</span><span class="n">v</span><span class="p">:</span> <span class="n">k</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">name_to_value</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+
+<span class="n">class_to_loc</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;u&quot;</span><span class="p">:</span> <span class="mi">6</span><span class="p">,</span> <span class="s2">&quot;g&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span> <span class="s2">&quot;o&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">}</span>  <span class="c1"># how many bits to shift this class by</span>
+<span class="n">loc_to_class</span> <span class="o">=</span> <span class="p">{</span><span class="n">v</span><span class="p">:</span> <span class="n">k</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">class_to_loc</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+
+<span class="n">function_map</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;+&quot;</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">orig</span><span class="p">,</span> <span class="n">new</span><span class="p">:</span> <span class="n">orig</span> <span class="o">|</span> <span class="n">new</span><span class="p">,</span>  <span class="c1"># add the given permission</span>
+    <span class="s2">&quot;-&quot;</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">orig</span><span class="p">,</span> <span class="n">new</span><span class="p">:</span> <span class="n">orig</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">new</span><span class="p">,</span>  <span class="c1"># remove the given permission</span>
+    <span class="s2">&quot;=&quot;</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">orig</span><span class="p">,</span> <span class="n">new</span><span class="p">:</span> <span class="n">new</span><span class="p">,</span>  <span class="c1"># set the permissions exactly</span>
+<span class="p">}</span>
+
+
+<div class="viewcode-block" id="current_mask"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.xoreutils.umask.html#xonsh.xoreutils.umask.current_mask">[docs]</a><span class="k">def</span> <span class="nf">current_mask</span><span class="p">():</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">umask</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">umask</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">out</span></div>
+
+
+<div class="viewcode-block" id="invert"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.xoreutils.umask.html#xonsh.xoreutils.umask.invert">[docs]</a><span class="k">def</span> <span class="nf">invert</span><span class="p">(</span><span class="n">perms</span><span class="p">):</span>
+    <span class="k">return</span> <span class="mo">0o777</span> <span class="o">-</span> <span class="n">perms</span></div>
+
+
+<div class="viewcode-block" id="get_oct_digits"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.xoreutils.umask.html#xonsh.xoreutils.umask.get_oct_digits">[docs]</a><span class="k">def</span> <span class="nf">get_oct_digits</span><span class="p">(</span><span class="n">mode</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Separate a given integer into its three components</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">mode</span> <span class="o">&lt;=</span> <span class="mo">0o777</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;expected a value between 000 and 777&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;u&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">mode</span> <span class="o">&amp;</span> <span class="mo">0o700</span><span class="p">)</span> <span class="o">&gt;&gt;</span> <span class="mi">6</span><span class="p">,</span> <span class="s2">&quot;g&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">mode</span> <span class="o">&amp;</span> <span class="mo">0o070</span><span class="p">)</span> <span class="o">&gt;&gt;</span> <span class="mi">3</span><span class="p">,</span> <span class="s2">&quot;o&quot;</span><span class="p">:</span> <span class="n">mode</span> <span class="o">&amp;</span> <span class="mo">0o007</span><span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="from_oct_digits"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.xoreutils.umask.html#xonsh.xoreutils.umask.from_oct_digits">[docs]</a><span class="k">def</span> <span class="nf">from_oct_digits</span><span class="p">(</span><span class="n">digits</span><span class="p">):</span>
+    <span class="n">o</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">c</span><span class="p">,</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">digits</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">o</span> <span class="o">|=</span> <span class="n">m</span> <span class="o">&lt;&lt;</span> <span class="n">class_to_loc</span><span class="p">[</span><span class="n">c</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">o</span></div>
+
+
+<div class="viewcode-block" id="get_symbolic_rep_single"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.xoreutils.umask.html#xonsh.xoreutils.umask.get_symbolic_rep_single">[docs]</a><span class="k">def</span> <span class="nf">get_symbolic_rep_single</span><span class="p">(</span><span class="n">digit</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Given a single octal digit, return the appropriate string representation.</span>
+<span class="sd">    For example, 6 becomes &quot;rw&quot;.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">o</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">sym</span> <span class="ow">in</span> <span class="s2">&quot;rwx&quot;</span><span class="p">:</span>
+        <span class="n">num</span> <span class="o">=</span> <span class="n">name_to_value</span><span class="p">[</span><span class="n">sym</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">digit</span> <span class="o">&amp;</span> <span class="n">num</span><span class="p">:</span>
+            <span class="n">o</span> <span class="o">+=</span> <span class="n">sym</span>
+            <span class="n">digit</span> <span class="o">-=</span> <span class="n">num</span>
+    <span class="k">return</span> <span class="n">o</span></div>
+
+
+<div class="viewcode-block" id="get_symbolic_rep"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.xoreutils.umask.html#xonsh.xoreutils.umask.get_symbolic_rep">[docs]</a><span class="k">def</span> <span class="nf">get_symbolic_rep</span><span class="p">(</span><span class="n">number</span><span class="p">):</span>
+    <span class="n">digits</span> <span class="o">=</span> <span class="n">get_oct_digits</span><span class="p">(</span><span class="n">number</span><span class="p">)</span>
+    <span class="k">return</span> <span class="s2">&quot;,&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">class_</span><span class="si">}</span><span class="s2">=</span><span class="si">{</span><span class="n">get_symbolic_rep_single</span><span class="p">(</span><span class="n">digits</span><span class="p">[</span><span class="n">class_</span><span class="p">])</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">class_</span> <span class="ow">in</span> <span class="s2">&quot;ugo&quot;</span>
+    <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="get_numeric_rep_single"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.xoreutils.umask.html#xonsh.xoreutils.umask.get_numeric_rep_single">[docs]</a><span class="k">def</span> <span class="nf">get_numeric_rep_single</span><span class="p">(</span><span class="n">rep</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Given a string representation, return the appropriate octal digit.</span>
+<span class="sd">    For example, &quot;rw&quot; becomes 6.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">o</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">sym</span> <span class="ow">in</span> <span class="nb">set</span><span class="p">(</span><span class="n">rep</span><span class="p">):</span>
+        <span class="n">o</span> <span class="o">+=</span> <span class="n">name_to_value</span><span class="p">[</span><span class="n">sym</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">o</span></div>
+
+
+<div class="viewcode-block" id="single_symbolic_arg"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.xoreutils.umask.html#xonsh.xoreutils.umask.single_symbolic_arg">[docs]</a><span class="k">def</span> <span class="nf">single_symbolic_arg</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="n">old</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="c1"># we&#39;ll assume this always operates in the &quot;forward&quot; direction (on the</span>
+    <span class="c1"># current permissions) rather than on the mask directly.</span>
+    <span class="k">if</span> <span class="n">old</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">old</span> <span class="o">=</span> <span class="n">invert</span><span class="p">(</span><span class="n">current_mask</span><span class="p">())</span>
+
+    <span class="n">match</span> <span class="o">=</span> <span class="n">symbolic_matcher</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">arg</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">match</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;could not parse argument </span><span class="si">%r</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="n">arg</span><span class="p">)</span>
+
+    <span class="n">class_</span><span class="p">,</span> <span class="n">op</span><span class="p">,</span> <span class="n">mask</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">groups</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="n">class_</span> <span class="o">==</span> <span class="s2">&quot;a&quot;</span><span class="p">:</span>
+        <span class="n">class_</span> <span class="o">=</span> <span class="s2">&quot;ugo&quot;</span>
+
+    <span class="n">invalid_chars</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">mask</span> <span class="k">if</span> <span class="n">i</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">name_to_value</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">invalid_chars</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;invalid mask </span><span class="si">%r</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="n">mask</span><span class="p">)</span>
+
+    <span class="n">digits</span> <span class="o">=</span> <span class="n">get_oct_digits</span><span class="p">(</span><span class="n">old</span><span class="p">)</span>
+    <span class="n">new_num</span> <span class="o">=</span> <span class="n">get_numeric_rep_single</span><span class="p">(</span><span class="n">mask</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">set</span><span class="p">(</span><span class="n">class_</span><span class="p">):</span>
+        <span class="n">digits</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="o">=</span> <span class="n">function_map</span><span class="p">[</span><span class="n">op</span><span class="p">](</span><span class="n">digits</span><span class="p">[</span><span class="n">c</span><span class="p">],</span> <span class="n">new_num</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">from_oct_digits</span><span class="p">(</span><span class="n">digits</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="valid_numeric_argument"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.xoreutils.umask.html#xonsh.xoreutils.umask.valid_numeric_argument">[docs]</a><span class="k">def</span> <span class="nf">valid_numeric_argument</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">and</span> <span class="nb">all</span><span class="p">(</span><span class="mi">0</span> <span class="o">&lt;=</span> <span class="nb">int</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">7</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">x</span><span class="p">)</span>
+    <span class="k">except</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span></div>
+
+
+<div class="viewcode-block" id="umask"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.xoreutils.umask.html#xonsh.xoreutils.umask.umask">[docs]</a><span class="k">def</span> <span class="nf">umask</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="p">):</span>
+    <span class="k">if</span> <span class="s2">&quot;-h&quot;</span> <span class="ow">in</span> <span class="n">args</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">UMASK_HELP</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+        <span class="k">return</span> <span class="mi">0</span>
+    <span class="n">symbolic</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">while</span> <span class="s2">&quot;-S&quot;</span> <span class="ow">in</span> <span class="n">args</span><span class="p">:</span>
+        <span class="n">symbolic</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">args</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="s2">&quot;-S&quot;</span><span class="p">)</span>
+    <span class="n">cur</span> <span class="o">=</span> <span class="n">current_mask</span><span class="p">()</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="c1"># just print the current mask</span>
+        <span class="k">if</span> <span class="n">symbolic</span><span class="p">:</span>
+            <span class="n">to_print</span> <span class="o">=</span> <span class="n">get_symbolic_rep</span><span class="p">(</span><span class="n">invert</span><span class="p">(</span><span class="n">cur</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">to_print</span> <span class="o">=</span> <span class="nb">oct</span><span class="p">(</span><span class="n">cur</span><span class="p">)[</span><span class="mi">2</span><span class="p">:]</span>
+            <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">to_print</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">:</span>
+                <span class="n">to_print</span> <span class="o">=</span> <span class="s2">&quot;0</span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="n">to_print</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">to_print</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+        <span class="k">return</span> <span class="mi">0</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">num</span> <span class="o">=</span> <span class="p">[</span><span class="n">valid_numeric_argument</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">args</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">num</span><span class="p">):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span><span class="n">num</span><span class="p">):</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;error: can&#39;t mix numeric and symbolic arguments&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stderr</span><span class="p">)</span>
+                <span class="k">return</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">num</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;error: can&#39;t have more than one numeric argument&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stderr</span><span class="p">)</span>
+                <span class="k">return</span> <span class="mi">1</span>
+        <span class="k">for</span> <span class="n">arg</span><span class="p">,</span> <span class="n">isnum</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">num</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">isnum</span><span class="p">:</span>
+                <span class="n">cur</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># this mode operates not on the mask, but on the current</span>
+                <span class="c1"># _permissions_.  so invert first, operate, then invert back.</span>
+                <span class="n">cur</span> <span class="o">=</span> <span class="n">invert</span><span class="p">(</span><span class="n">cur</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">subarg</span> <span class="ow">in</span> <span class="n">arg</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">):</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">cur</span> <span class="o">=</span> <span class="n">single_symbolic_arg</span><span class="p">(</span><span class="n">subarg</span><span class="p">,</span> <span class="n">cur</span><span class="p">)</span>
+                    <span class="k">except</span><span class="p">:</span>
+                        <span class="nb">print</span><span class="p">(</span>
+                            <span class="s2">&quot;error: could not parse argument: </span><span class="si">%r</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="n">subarg</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stderr</span>
+                        <span class="p">)</span>
+                        <span class="k">return</span> <span class="mi">1</span>
+                <span class="n">cur</span> <span class="o">=</span> <span class="n">invert</span><span class="p">(</span><span class="n">cur</span><span class="p">)</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">umask</span><span class="p">(</span><span class="n">cur</span><span class="p">)</span></div>
+
+
+<span class="n">UMASK_HELP</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;Usage: umask [-S] [mode]...</span>
+<span class="s2">View or set the file creation mask.</span>
+
+<span class="s2">  -S             when printing, show output in symbolic format</span>
+<span class="s2">  -h  --help     display this message and exit</span>
+
+<span class="s2">This version of umask was written in Python for tako: https://takoshell.org</span>
+<span class="s2">Based on the umask command from Bash:</span>
+<span class="s2">https://www.gnu.org/software/bash/manual/html_node/Bourne-Shell-Builtins.html&quot;&quot;&quot;</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="kn">import</span> <span class="nn">sys</span>
+
+    <span class="n">umask</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdin</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+</pre></div>
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+        <p class="logo"><a href="../../../contents.html" title="contents">
+          <img class="logo" src="../../../_static/ascii_conch_part_transparent_tight.png" alt="Logo"/>
+        </a></p>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+        </div>
+      </div>
+    
+    
+        <div class="sidebar-toggle-group no-js">
+            
+            <button class="sidebar-toggle" id="sidebar-hide" title="Hide the sidebar menu">
+                 «
+                <span class="show-for-small">hide menu</span>
+                
+            </button>
+            <button class="sidebar-toggle" id="sidebar-show" title="Show the sidebar menu">
+                
+                <span class="show-for-small">menu</span>
+                <span class="hide-for-small">sidebar</span>
+                 »
+            </button>
+        </div>
+    
+      <div class="clearer"></div>
+    </div>
+    <div class="relbar-bottom">
+        
+    <div class="related" role="navigation" aria-label="related navigation">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> &nbsp; &nbsp;</li>
+    <li><a href="../../../contents.html">xonsh 0.12.0.dev129.dev129 documentation</a> &#187;</li>
+
+          <li class="nav-item nav-item-1"><a href="../../index.html" >Module code</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">xonsh.xoreutils.umask</a></li> 
+      </ul>
+    </div>
+    </div>
+
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2015, Anthony Scopatz.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.5.0.
+    </div>
+    <!-- cloud_sptheme 1.4 -->
+  </body>
+</html>

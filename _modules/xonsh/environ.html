@@ -7,7 +7,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xonsh.environ &#8212; xonsh 0.11.0 documentation</title>
+    <title>xonsh.environ &#8212; xonsh 0.12.0.dev129.dev129 documentation</title>
     <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/numpy_friendly.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css" />
@@ -55,7 +55,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.12.0.dev129.dev129 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" accesskey="U">Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.environ</a></li> 
@@ -70,105 +70,106 @@
           <div class="body" role="main">
             
   <h1>Source code for xonsh.environ</h1><div class="highlight"><pre>
-<span></span><span class="c1"># -*- coding: utf-8 -*-</span>
-<span class="sd">&quot;&quot;&quot;Environment for the xonsh shell.&quot;&quot;&quot;</span>
-<span class="kn">import</span> <span class="nn">os</span>
-<span class="kn">import</span> <span class="nn">re</span>
-<span class="kn">import</span> <span class="nn">sys</span>
-<span class="kn">import</span> <span class="nn">pprint</span>
-<span class="kn">import</span> <span class="nn">textwrap</span>
-<span class="kn">import</span> <span class="nn">locale</span>
-<span class="kn">import</span> <span class="nn">glob</span>
-<span class="kn">import</span> <span class="nn">threading</span>
-<span class="kn">import</span> <span class="nn">warnings</span>
-<span class="kn">import</span> <span class="nn">contextlib</span>
+<span></span><span class="sd">&quot;&quot;&quot;Environment for the xonsh shell.&quot;&quot;&quot;</span>
 <span class="kn">import</span> <span class="nn">collections.abc</span> <span class="k">as</span> <span class="nn">cabc</span>
-<span class="kn">import</span> <span class="nn">subprocess</span>
+<span class="kn">import</span> <span class="nn">contextlib</span>
+<span class="kn">import</span> <span class="nn">inspect</span>
+<span class="kn">import</span> <span class="nn">locale</span>
+<span class="kn">import</span> <span class="nn">os</span>
 <span class="kn">import</span> <span class="nn">platform</span>
+<span class="kn">import</span> <span class="nn">pprint</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">subprocess</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">textwrap</span>
+<span class="kn">import</span> <span class="nn">threading</span>
 <span class="kn">import</span> <span class="nn">typing</span> <span class="k">as</span> <span class="nn">tp</span>
+<span class="kn">import</span> <span class="nn">warnings</span>
 <span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">ChainMap</span>
 
+<span class="kn">import</span> <span class="nn">xonsh.prompt.base</span> <span class="k">as</span> <span class="nn">prompt</span>
 <span class="kn">from</span> <span class="nn">xonsh</span> <span class="kn">import</span> <span class="n">__version__</span> <span class="k">as</span> <span class="n">XONSH_VERSION</span>
-<span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="kn">import</span> <span class="n">lazyobject</span><span class="p">,</span> <span class="n">LazyBool</span>
-<span class="kn">from</span> <span class="nn">xonsh.codecache</span> <span class="kn">import</span> <span class="n">run_script_with_cache</span>
-<span class="kn">from</span> <span class="nn">xonsh.dirstack</span> <span class="kn">import</span> <span class="n">_get_cwd</span>
-<span class="kn">from</span> <span class="nn">xonsh.events</span> <span class="kn">import</span> <span class="n">events</span>
-<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="kn">import</span> <span class="p">(</span>
-    <span class="n">BASH_COMPLETIONS_DEFAULT</span><span class="p">,</span>
-    <span class="n">DEFAULT_ENCODING</span><span class="p">,</span>
-    <span class="n">PATH_DEFAULT</span><span class="p">,</span>
-    <span class="n">ON_WINDOWS</span><span class="p">,</span>
-    <span class="n">ON_LINUX</span><span class="p">,</span>
-    <span class="n">ON_CYGWIN</span><span class="p">,</span>
-    <span class="n">os_environ</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
-<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="p">(</span>
-    <span class="n">always_true</span><span class="p">,</span>
-    <span class="n">always_false</span><span class="p">,</span>
-    <span class="n">detype</span><span class="p">,</span>
-    <span class="n">ensure_string</span><span class="p">,</span>
-    <span class="n">is_path</span><span class="p">,</span>
-    <span class="n">str_to_path</span><span class="p">,</span>
-    <span class="n">path_to_str</span><span class="p">,</span>
-    <span class="n">is_env_path</span><span class="p">,</span>
-    <span class="n">str_to_env_path</span><span class="p">,</span>
-    <span class="n">env_path_to_str</span><span class="p">,</span>
-    <span class="n">is_bool</span><span class="p">,</span>
-    <span class="n">to_bool</span><span class="p">,</span>
-    <span class="n">bool_to_str</span><span class="p">,</span>
-    <span class="n">is_bool_or_none</span><span class="p">,</span>
-    <span class="n">to_bool_or_none</span><span class="p">,</span>
-    <span class="n">bool_or_none_to_str</span><span class="p">,</span>
-    <span class="n">is_history_tuple</span><span class="p">,</span>
-    <span class="n">to_history_tuple</span><span class="p">,</span>
-    <span class="n">history_tuple_to_str</span><span class="p">,</span>
-    <span class="n">is_float</span><span class="p">,</span>
-    <span class="n">is_string</span><span class="p">,</span>
-    <span class="n">is_string_or_callable</span><span class="p">,</span>
-    <span class="n">is_completions_display_value</span><span class="p">,</span>
-    <span class="n">to_completions_display_value</span><span class="p">,</span>
-    <span class="n">is_completion_mode</span><span class="p">,</span>
-    <span class="n">to_completion_mode</span><span class="p">,</span>
-    <span class="n">is_string_set</span><span class="p">,</span>
-    <span class="n">csv_to_set</span><span class="p">,</span>
-    <span class="n">set_to_csv</span><span class="p">,</span>
-    <span class="n">is_int</span><span class="p">,</span>
-    <span class="n">to_bool_or_int</span><span class="p">,</span>
-    <span class="n">bool_or_int_to_str</span><span class="p">,</span>
-    <span class="n">DefaultNotGiven</span><span class="p">,</span>
-    <span class="n">print_exception</span><span class="p">,</span>
-    <span class="n">intensify_colors_on_win_setter</span><span class="p">,</span>
-    <span class="n">is_dynamic_cwd_width</span><span class="p">,</span>
-    <span class="n">to_dynamic_cwd_tuple</span><span class="p">,</span>
-    <span class="n">dynamic_cwd_tuple_to_str</span><span class="p">,</span>
-    <span class="n">is_logfile_opt</span><span class="p">,</span>
-    <span class="n">to_logfile_opt</span><span class="p">,</span>
-    <span class="n">logfile_opt_to_str</span><span class="p">,</span>
-    <span class="n">executables_in</span><span class="p">,</span>
-    <span class="n">is_nonstring_seq_of_strings</span><span class="p">,</span>
-    <span class="n">pathsep_to_upper_seq</span><span class="p">,</span>
-    <span class="n">seq_to_upper_pathsep</span><span class="p">,</span>
-    <span class="n">print_color</span><span class="p">,</span>
-    <span class="n">is_history_backend</span><span class="p">,</span>
-    <span class="n">to_itself</span><span class="p">,</span>
-    <span class="n">swap_values</span><span class="p">,</span>
-    <span class="n">ptk2_color_depth_setter</span><span class="p">,</span>
-    <span class="n">is_str_str_dict</span><span class="p">,</span>
-    <span class="n">to_str_str_dict</span><span class="p">,</span>
-    <span class="n">dict_to_str</span><span class="p">,</span>
-    <span class="n">to_int_or_none</span><span class="p">,</span>
-    <span class="n">DefaultNotGivenType</span><span class="p">,</span>
-    <span class="n">to_repr_pretty_</span><span class="p">,</span>
-<span class="p">)</span>
 <span class="kn">from</span> <span class="nn">xonsh.ansi_colors</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">ansi_color_escape_code_to_name</span><span class="p">,</span>
     <span class="n">ansi_color_name_to_escape_code</span><span class="p">,</span>
     <span class="n">ansi_reverse_style</span><span class="p">,</span>
     <span class="n">ansi_style_by_name</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">import</span> <span class="nn">xonsh.prompt.base</span> <span class="k">as</span> <span class="nn">prompt</span>
-<span class="kn">from</span> <span class="nn">xonsh.prompt.gitstatus</span> <span class="kn">import</span> <span class="n">_DEFS</span> <span class="k">as</span> <span class="n">GITSTATUS_FIELD_DEFS</span>
+<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
+<span class="kn">from</span> <span class="nn">xonsh.codecache</span> <span class="kn">import</span> <span class="n">run_script_with_cache</span>
+<span class="kn">from</span> <span class="nn">xonsh.dirstack</span> <span class="kn">import</span> <span class="n">_get_cwd</span>
+<span class="kn">from</span> <span class="nn">xonsh.events</span> <span class="kn">import</span> <span class="n">events</span>
+<span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="kn">import</span> <span class="n">LazyBool</span><span class="p">,</span> <span class="n">lazyobject</span>
+<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">BASH_COMPLETIONS_DEFAULT</span><span class="p">,</span>
+    <span class="n">DEFAULT_ENCODING</span><span class="p">,</span>
+    <span class="n">ON_CYGWIN</span><span class="p">,</span>
+    <span class="n">ON_LINUX</span><span class="p">,</span>
+    <span class="n">ON_WINDOWS</span><span class="p">,</span>
+    <span class="n">PATH_DEFAULT</span><span class="p">,</span>
+    <span class="n">os_environ</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">DefaultNotGiven</span><span class="p">,</span>
+    <span class="n">DefaultNotGivenType</span><span class="p">,</span>
+    <span class="n">adjust_shlvl</span><span class="p">,</span>
+    <span class="n">always_false</span><span class="p">,</span>
+    <span class="n">always_true</span><span class="p">,</span>
+    <span class="n">bool_or_int_to_str</span><span class="p">,</span>
+    <span class="n">bool_or_none_to_str</span><span class="p">,</span>
+    <span class="n">bool_to_str</span><span class="p">,</span>
+    <span class="n">csv_to_set</span><span class="p">,</span>
+    <span class="n">detype</span><span class="p">,</span>
+    <span class="n">dict_to_str</span><span class="p">,</span>
+    <span class="n">dynamic_cwd_tuple_to_str</span><span class="p">,</span>
+    <span class="n">ensure_string</span><span class="p">,</span>
+    <span class="n">env_path_to_str</span><span class="p">,</span>
+    <span class="n">executables_in</span><span class="p">,</span>
+    <span class="n">history_tuple_to_str</span><span class="p">,</span>
+    <span class="n">intensify_colors_on_win_setter</span><span class="p">,</span>
+    <span class="n">is_bool</span><span class="p">,</span>
+    <span class="n">is_bool_or_none</span><span class="p">,</span>
+    <span class="n">is_completion_mode</span><span class="p">,</span>
+    <span class="n">is_completions_display_value</span><span class="p">,</span>
+    <span class="n">is_dynamic_cwd_width</span><span class="p">,</span>
+    <span class="n">is_env_path</span><span class="p">,</span>
+    <span class="n">is_float</span><span class="p">,</span>
+    <span class="n">is_history_backend</span><span class="p">,</span>
+    <span class="n">is_history_tuple</span><span class="p">,</span>
+    <span class="n">is_int</span><span class="p">,</span>
+    <span class="n">is_logfile_opt</span><span class="p">,</span>
+    <span class="n">is_nonstring_seq_of_strings</span><span class="p">,</span>
+    <span class="n">is_path</span><span class="p">,</span>
+    <span class="n">is_str_str_dict</span><span class="p">,</span>
+    <span class="n">is_string</span><span class="p">,</span>
+    <span class="n">is_string_or_callable</span><span class="p">,</span>
+    <span class="n">is_string_set</span><span class="p">,</span>
+    <span class="n">is_valid_shlvl</span><span class="p">,</span>
+    <span class="n">logfile_opt_to_str</span><span class="p">,</span>
+    <span class="n">path_to_str</span><span class="p">,</span>
+    <span class="n">pathsep_to_upper_seq</span><span class="p">,</span>
+    <span class="n">print_color</span><span class="p">,</span>
+    <span class="n">print_exception</span><span class="p">,</span>
+    <span class="n">ptk2_color_depth_setter</span><span class="p">,</span>
+    <span class="n">seq_to_upper_pathsep</span><span class="p">,</span>
+    <span class="n">set_to_csv</span><span class="p">,</span>
+    <span class="n">str_to_env_path</span><span class="p">,</span>
+    <span class="n">str_to_path</span><span class="p">,</span>
+    <span class="n">swap_values</span><span class="p">,</span>
+    <span class="n">to_bool</span><span class="p">,</span>
+    <span class="n">to_bool_or_int</span><span class="p">,</span>
+    <span class="n">to_bool_or_none</span><span class="p">,</span>
+    <span class="n">to_completion_mode</span><span class="p">,</span>
+    <span class="n">to_completions_display_value</span><span class="p">,</span>
+    <span class="n">to_dynamic_cwd_tuple</span><span class="p">,</span>
+    <span class="n">to_history_tuple</span><span class="p">,</span>
+    <span class="n">to_int_or_none</span><span class="p">,</span>
+    <span class="n">to_itself</span><span class="p">,</span>
+    <span class="n">to_logfile_opt</span><span class="p">,</span>
+    <span class="n">to_repr_pretty_</span><span class="p">,</span>
+    <span class="n">to_shlvl</span><span class="p">,</span>
+    <span class="n">to_str_str_dict</span><span class="p">,</span>
+<span class="p">)</span>
 
 <span class="n">events</span><span class="o">.</span><span class="n">doc</span><span class="p">(</span>
     <span class="s2">&quot;on_envvar_new&quot;</span><span class="p">,</span>
@@ -244,7 +245,7 @@
     <span class="k">return</span> <span class="n">lc</span>
 
 
-<div class="viewcode-block" id="locale_convert"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.locale_convert">[docs]</a><span class="k">def</span> <span class="nf">locale_convert</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
+<div class="viewcode-block" id="locale_convert"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.locale_convert">[docs]</a><span class="k">def</span> <span class="nf">locale_convert</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Creates a converter for a locale key.&quot;&quot;&quot;</span>
 
     <span class="k">def</span> <span class="nf">lc_converter</span><span class="p">(</span><span class="n">val</span><span class="p">):</span>
@@ -252,14 +253,14 @@
             <span class="n">locale</span><span class="o">.</span><span class="n">setlocale</span><span class="p">(</span><span class="n">LOCALE_CATS</span><span class="p">[</span><span class="n">key</span><span class="p">],</span> <span class="n">val</span><span class="p">)</span>
             <span class="n">val</span> <span class="o">=</span> <span class="n">locale</span><span class="o">.</span><span class="n">setlocale</span><span class="p">(</span><span class="n">LOCALE_CATS</span><span class="p">[</span><span class="n">key</span><span class="p">])</span>
         <span class="k">except</span> <span class="p">(</span><span class="n">locale</span><span class="o">.</span><span class="n">Error</span><span class="p">,</span> <span class="ne">KeyError</span><span class="p">):</span>
-            <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;Failed to set locale </span><span class="si">{0!r}</span><span class="s2"> to </span><span class="si">{1!r}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">val</span><span class="p">)</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Failed to set locale </span><span class="si">{</span><span class="n">key</span><span class="si">!r}</span><span class="s2"> to </span><span class="si">{</span><span class="n">val</span><span class="si">!r}</span><span class="s2">&quot;</span>
             <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span> <span class="ne">RuntimeWarning</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">val</span>
 
     <span class="k">return</span> <span class="n">lc_converter</span></div>
 
 
-<div class="viewcode-block" id="to_debug"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.to_debug">[docs]</a><span class="k">def</span> <span class="nf">to_debug</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<div class="viewcode-block" id="to_debug"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.to_debug">[docs]</a><span class="k">def</span> <span class="nf">to_debug</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Converts value using to_bool_or_int() and sets this value on as the</span>
 <span class="sd">    execer&#39;s debug level.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -274,7 +275,7 @@
 <span class="c1">#</span>
 
 
-<div class="viewcode-block" id="LsColors"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.LsColors">[docs]</a><span class="k">class</span> <span class="nc">LsColors</span><span class="p">(</span><span class="n">cabc</span><span class="o">.</span><span class="n">MutableMapping</span><span class="p">):</span>
+<div class="viewcode-block" id="LsColors"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.LsColors">[docs]</a><span class="k">class</span> <span class="nc">LsColors</span><span class="p">(</span><span class="n">cabc</span><span class="o">.</span><span class="n">MutableMapping</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Helps convert to/from $LS_COLORS format, respecting the xonsh color style.</span>
 <span class="sd">    This accepts the same inputs as dict(). The special value ``target`` is</span>
 <span class="sd">    replaced by no color, but sets a flag for cognizant application (see is_target()).</span>
@@ -462,15 +463,15 @@
         <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">)</span>
 
     <span class="k">def</span> <span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="s2">&quot;</span><span class="si">{0}</span><span class="s2">.</span><span class="si">{1}</span><span class="s2">(...)&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__module__</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__module__</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">(...)&quot;</span>
 
     <span class="n">_repr_pretty_</span> <span class="o">=</span> <span class="n">to_repr_pretty_</span>
 
-<div class="viewcode-block" id="LsColors.is_target"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.LsColors.is_target">[docs]</a>    <span class="k">def</span> <span class="nf">is_target</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<div class="viewcode-block" id="LsColors.is_target"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.LsColors.is_target">[docs]</a>    <span class="k">def</span> <span class="nf">is_target</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
         <span class="sd">&quot;&quot;&quot;Return True if key is &#39;target&#39;&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_targets</span></div>
 
-<div class="viewcode-block" id="LsColors.detype"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.LsColors.detype">[docs]</a>    <span class="k">def</span> <span class="nf">detype</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<div class="viewcode-block" id="LsColors.detype"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.LsColors.detype">[docs]</a>    <span class="k">def</span> <span class="nf">detype</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;De-types the instance, allowing it to be exported to the environment.&quot;&quot;&quot;</span>
         <span class="n">style</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">style</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -510,7 +511,7 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_style</span>
 
-<div class="viewcode-block" id="LsColors.fromstring"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.LsColors.fromstring">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="LsColors.fromstring"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.LsColors.fromstring">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">fromstring</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">s</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Creates a new instance of the LsColors class from a colon-separated</span>
 <span class="sd">        string of dircolor-valid keys to ANSI color escape sequences.</span>
@@ -536,7 +537,7 @@
                     <span class="n">ini_dict</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;RESET&quot;</span><span class="p">,)</span>
         <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">ini_dict</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="LsColors.fromdircolors"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.LsColors.fromdircolors">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="LsColors.fromdircolors"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.LsColors.fromdircolors">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">fromdircolors</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Constructs an LsColors instance by running dircolors.</span>
 <span class="sd">        If a filename is provided, it is passed down to the dircolors command.</span>
@@ -557,6 +558,11 @@
             <span class="p">)</span>
         <span class="k">except</span> <span class="p">(</span><span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">,</span> <span class="ne">FileNotFoundError</span><span class="p">):</span>
             <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="bp">cls</span><span class="o">.</span><span class="n">default_settings</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+            <span class="c1"># necessary to catch OSError: [WinError 740] The requested operation requires elevation</span>
+            <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="bp">cls</span><span class="o">.</span><span class="n">default_settings</span><span class="p">)</span>
+            <span class="k">raise</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">out</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="bp">cls</span><span class="o">.</span><span class="n">default_settings</span><span class="p">)</span>
         <span class="n">s</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
@@ -564,7 +570,7 @@
         <span class="n">s</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">rpartition</span><span class="p">(</span><span class="s2">&quot;&#39;&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">fromstring</span><span class="p">(</span><span class="n">s</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="LsColors.convert"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.LsColors.convert">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="LsColors.convert"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.LsColors.convert">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">convert</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Converts an object to LsColors, if needed.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="bp">cls</span><span class="p">):</span>
@@ -577,12 +583,12 @@
             <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">x</span><span class="p">)</span></div></div>
 
 
-<div class="viewcode-block" id="is_lscolors"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.is_lscolors">[docs]</a><span class="k">def</span> <span class="nf">is_lscolors</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<div class="viewcode-block" id="is_lscolors"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.is_lscolors">[docs]</a><span class="k">def</span> <span class="nf">is_lscolors</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Checks if an object is an instance of LsColors&quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">LsColors</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="ensure_ls_colors_in_env"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.ensure_ls_colors_in_env">[docs]</a><span class="nd">@events</span><span class="o">.</span><span class="n">on_pre_spec_run_ls</span>
+<div class="viewcode-block" id="ensure_ls_colors_in_env"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.ensure_ls_colors_in_env">[docs]</a><span class="nd">@events</span><span class="o">.</span><span class="n">on_pre_spec_run_ls</span>
 <span class="k">def</span> <span class="nf">ensure_ls_colors_in_env</span><span class="p">(</span><span class="n">spec</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;This ensures that the $LS_COLORS environment variable is in the</span>
 <span class="sd">    environment. This fires exactly once upon the first time the</span>
@@ -613,13 +619,13 @@
 <span class="c1">#</span>
 <span class="c1"># Defaults</span>
 <span class="c1">#</span>
-<div class="viewcode-block" id="default_value"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.default_value">[docs]</a><span class="k">def</span> <span class="nf">default_value</span><span class="p">(</span><span class="n">f</span><span class="p">):</span>
+<div class="viewcode-block" id="default_value"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.default_value">[docs]</a><span class="k">def</span> <span class="nf">default_value</span><span class="p">(</span><span class="n">f</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Decorator for making callable default values.&quot;&quot;&quot;</span>
     <span class="n">f</span><span class="o">.</span><span class="n">_xonsh_callable_default</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="k">return</span> <span class="n">f</span></div>
 
 
-<div class="viewcode-block" id="is_callable_default"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.is_callable_default">[docs]</a><span class="k">def</span> <span class="nf">is_callable_default</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<div class="viewcode-block" id="is_callable_default"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.is_callable_default">[docs]</a><span class="k">def</span> <span class="nf">is_callable_default</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Checks if a value is a callable default.&quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">callable</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="s2">&quot;_xonsh_callable_default&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span></div>
 
@@ -627,7 +633,7 @@
 <span class="n">DEFAULT_TITLE</span> <span class="o">=</span> <span class="s2">&quot;{current_job:</span><span class="si">{}</span><span class="s2"> | }</span><span class="si">{user}</span><span class="s2">@</span><span class="si">{hostname}</span><span class="s2">: </span><span class="si">{cwd}</span><span class="s2"> | xonsh&quot;</span>
 
 
-<div class="viewcode-block" id="xonsh_data_dir"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.xonsh_data_dir">[docs]</a><span class="nd">@default_value</span>
+<div class="viewcode-block" id="xonsh_data_dir"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.xonsh_data_dir">[docs]</a><span class="nd">@default_value</span>
 <span class="k">def</span> <span class="nf">xonsh_data_dir</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Ensures and returns the $XONSH_DATA_DIR&quot;&quot;&quot;</span>
     <span class="n">xdd</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XDG_DATA_HOME&quot;</span><span class="p">),</span> <span class="s2">&quot;xonsh&quot;</span><span class="p">))</span>
@@ -635,33 +641,61 @@
     <span class="k">return</span> <span class="n">xdd</span></div>
 
 
-<div class="viewcode-block" id="xonsh_config_dir"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.xonsh_config_dir">[docs]</a><span class="nd">@default_value</span>
+<div class="viewcode-block" id="xonsh_config_dir"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.xonsh_config_dir">[docs]</a><span class="nd">@default_value</span>
 <span class="k">def</span> <span class="nf">xonsh_config_dir</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;Ensures and returns the $XONSH_CONFIG_DIR&quot;&quot;&quot;</span>
+    <span class="sd">&quot;&quot;&quot;``$XDG_CONFIG_HOME/xonsh``&quot;&quot;&quot;</span>
     <span class="n">xcd</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XDG_CONFIG_HOME&quot;</span><span class="p">),</span> <span class="s2">&quot;xonsh&quot;</span><span class="p">))</span>
     <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">xcd</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">xcd</span></div>
 
 
-<div class="viewcode-block" id="xonshconfig"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.xonshconfig">[docs]</a><span class="k">def</span> <span class="nf">xonshconfig</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
+<div class="viewcode-block" id="xdg_data_dirs"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.xdg_data_dirs">[docs]</a><span class="nd">@default_value</span>
+<span class="k">def</span> <span class="nf">xdg_data_dirs</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
+    <span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    On Windows: ``[%ProgramData%]`` (normally C:\ProgramData)</span>
+<span class="sd">        - More Info: https://docs.microsoft.com/en-us/windows-hardware/customize/desktop/unattend/microsoft-windows-shell-setup-folderlocations-programdata</span>
+
+<span class="sd">    On Linux and Unix based systemd it is the same as in open-desktop standard: ``[&#39;/usr/share&#39;, &#39;/usr/local/share&#39;]``</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">os_environ</span><span class="p">[</span><span class="s2">&quot;ProgramData&quot;</span><span class="p">]]</span>
+    <span class="k">return</span> <span class="p">[</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s2">&quot;/usr&quot;</span><span class="p">,</span> <span class="s2">&quot;share&quot;</span><span class="p">),</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s2">&quot;/usr&quot;</span><span class="p">,</span> <span class="s2">&quot;local&quot;</span><span class="p">,</span> <span class="s2">&quot;share&quot;</span><span class="p">),</span>
+    <span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="xonsh_sys_config_dir"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.xonsh_sys_config_dir">[docs]</a><span class="nd">@default_value</span>
+<span class="k">def</span> <span class="nf">xonsh_sys_config_dir</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    On Linux &amp; Mac OSX: ``&#39;/etc/xonsh&#39;``</span>
+<span class="sd">    On Windows: ``&#39;%ALLUSERSPROFILE%\\\\xonsh&#39;``</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
+        <span class="n">etc_path</span> <span class="o">=</span> <span class="n">os_environ</span><span class="p">[</span><span class="s2">&quot;ALLUSERSPROFILE&quot;</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">etc_path</span> <span class="o">=</span> <span class="s2">&quot;/etc&quot;</span>
+    <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">etc_path</span><span class="p">,</span> <span class="s2">&quot;xonsh&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="xonshconfig"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.xonshconfig">[docs]</a><span class="k">def</span> <span class="nf">xonshconfig</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Ensures and returns the $XONSHCONFIG&quot;&quot;&quot;</span>
     <span class="n">xcd</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_CONFIG_DIR&quot;</span><span class="p">)</span>
     <span class="n">xc</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">xcd</span><span class="p">,</span> <span class="s2">&quot;config.json&quot;</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">xc</span></div>
 
 
-<div class="viewcode-block" id="default_xonshrc"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.default_xonshrc">[docs]</a><span class="nd">@default_value</span>
-<span class="k">def</span> <span class="nf">default_xonshrc</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;Creates a new instance of the default xonshrc tuple.&quot;&quot;&quot;</span>
-    <span class="n">xcdrc</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">xonsh_config_dir</span><span class="p">(</span><span class="n">env</span><span class="p">),</span> <span class="s2">&quot;rc.xsh&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
-        <span class="n">dxrc</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os_environ</span><span class="p">[</span><span class="s2">&quot;ALLUSERSPROFILE&quot;</span><span class="p">],</span> <span class="s2">&quot;xonsh&quot;</span><span class="p">,</span> <span class="s2">&quot;xonshrc&quot;</span><span class="p">),</span>
-            <span class="n">xcdrc</span><span class="p">,</span>
-            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="s2">&quot;~/.xonshrc&quot;</span><span class="p">),</span>
-        <span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">dxrc</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;/etc/xonshrc&quot;</span><span class="p">,</span> <span class="n">xcdrc</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="s2">&quot;~/.xonshrc&quot;</span><span class="p">))</span>
+<div class="viewcode-block" id="default_xonshrc"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.default_xonshrc">[docs]</a><span class="nd">@default_value</span>
+<span class="k">def</span> <span class="nf">default_xonshrc</span><span class="p">(</span><span class="n">env</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;tuple[str, ...]&quot;</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    ``[&#39;$XONSH_SYS_CONFIG_DIR/xonshrc&#39;, &#39;$XONSH_CONFIG_DIR/xonsh/rc.xsh&#39;, &#39;~/.xonshrc&#39;]``</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">dxrc</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">xonsh_sys_config_dir</span><span class="p">(</span><span class="n">env</span><span class="p">),</span> <span class="s2">&quot;xonshrc&quot;</span><span class="p">),</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">xonsh_config_dir</span><span class="p">(</span><span class="n">env</span><span class="p">),</span> <span class="s2">&quot;rc.xsh&quot;</span><span class="p">),</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="s2">&quot;~/.xonshrc&quot;</span><span class="p">),</span>
+    <span class="p">)</span>
     <span class="c1"># Check if old config file exists and issue warning</span>
     <span class="n">old_config_filename</span> <span class="o">=</span> <span class="n">xonshconfig</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">old_config_filename</span><span class="p">):</span>
@@ -674,22 +708,47 @@
     <span class="k">return</span> <span class="n">dxrc</span></div>
 
 
-<div class="viewcode-block" id="default_xonshrcdir"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.default_xonshrcdir">[docs]</a><span class="nd">@default_value</span>
+<div class="viewcode-block" id="get_config_paths"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.get_config_paths">[docs]</a><span class="k">def</span> <span class="nf">get_config_paths</span><span class="p">(</span><span class="n">env</span><span class="p">:</span> <span class="s2">&quot;Env&quot;</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">xonsh_sys_config_dir</span><span class="p">(</span><span class="n">env</span><span class="p">),</span> <span class="n">name</span><span class="p">),</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">xonsh_config_dir</span><span class="p">(</span><span class="n">env</span><span class="p">),</span> <span class="n">name</span><span class="p">),</span>
+    <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="default_xonshrcdir"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.default_xonshrcdir">[docs]</a><span class="nd">@default_value</span>
 <span class="k">def</span> <span class="nf">default_xonshrcdir</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
-    <span class="n">xdgrcd</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">xonsh_config_dir</span><span class="p">(</span><span class="n">env</span><span class="p">),</span> <span class="s2">&quot;rc.d&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
-        <span class="k">return</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os_environ</span><span class="p">[</span><span class="s2">&quot;ALLUSERSPROFILE&quot;</span><span class="p">],</span> <span class="s2">&quot;xonsh&quot;</span><span class="p">,</span> <span class="s2">&quot;rc.d&quot;</span><span class="p">),</span> <span class="n">xdgrcd</span><span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="k">return</span> <span class="p">(</span><span class="s2">&quot;/etc/xonsh/rc.d&quot;</span><span class="p">,</span> <span class="n">xdgrcd</span><span class="p">)</span></div>
+    <span class="sd">&quot;&quot;&quot;``[&#39;$XONSH_SYS_CONFIG_DIR/rc.d&#39;, &#39;$XONSH_CONFIG_DIR/rc.d&#39;]``\n&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">get_config_paths</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="s2">&quot;rc.d&quot;</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="xonsh_append_newline"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.xonsh_append_newline">[docs]</a><span class="nd">@default_value</span>
+<div class="viewcode-block" id="default_completer_dirs"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.default_completer_dirs">[docs]</a><span class="nd">@default_value</span>
+<span class="k">def</span> <span class="nf">default_completer_dirs</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;By default, the following paths are searched.</span>
+<span class="sd">    1. ``$XONSH_CONFIG_DIR/completions`` - user level completions</span>
+<span class="sd">    2. ``$XONSH_SYS_CONFIG_DIR/completions`` - system level completions</span>
+<span class="sd">    3. ``$XONSH_DATA_DIR/generated_completions`` - auto generated completers from man pages</span>
+<span class="sd">    4. ``$XDG_DATA_DIRS/xonsh/vendor_completions`` - completers from other programs can be placed here.</span>
+
+<span class="sd">    Other than this, Python package namespace ``xompletions`` can be used to put completer modules as well.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># inspired from - https://fishshell.com/docs/current/completions.html#where-to-put-completions</span>
+    <span class="k">return</span> <span class="p">[</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;XONSH_CONFIG_DIR&quot;</span><span class="p">],</span> <span class="s2">&quot;completions&quot;</span><span class="p">),</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;XONSH_SYS_CONFIG_DIR&quot;</span><span class="p">],</span> <span class="s2">&quot;completions&quot;</span><span class="p">),</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;XONSH_DATA_DIR&quot;</span><span class="p">],</span> <span class="s2">&quot;generated_completions&quot;</span><span class="p">),</span>
+    <span class="p">]</span> <span class="o">+</span> <span class="p">[</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parent</span><span class="p">,</span> <span class="s2">&quot;xonsh&quot;</span><span class="p">,</span> <span class="s2">&quot;vendor_completions&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">parent</span> <span class="ow">in</span> <span class="n">env</span><span class="p">[</span><span class="s2">&quot;XDG_DATA_DIRS&quot;</span><span class="p">]</span>
+    <span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="xonsh_append_newline"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.xonsh_append_newline">[docs]</a><span class="nd">@default_value</span>
 <span class="k">def</span> <span class="nf">xonsh_append_newline</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Appends a newline if we are in interactive mode&quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_INTERACTIVE&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="default_lscolors"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.default_lscolors">[docs]</a><span class="nd">@default_value</span>
+<div class="viewcode-block" id="default_lscolors"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.default_lscolors">[docs]</a><span class="nd">@default_value</span>
 <span class="k">def</span> <span class="nf">default_lscolors</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Gets a default instanse of LsColors&quot;&quot;&quot;</span>
     <span class="n">inherited_lscolors</span> <span class="o">=</span> <span class="n">os_environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;LS_COLORS&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
@@ -702,10 +761,17 @@
     <span class="k">return</span> <span class="n">lsc</span></div>
 
 
+<div class="viewcode-block" id="default_prompt_fields"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.default_prompt_fields">[docs]</a><span class="nd">@default_value</span>
+<span class="k">def</span> <span class="nf">default_prompt_fields</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;``xonsh.prompt.PROMPT_FIELDS``&quot;&quot;&quot;</span>
+    <span class="c1"># todo: generate document for all default fields</span>
+    <span class="k">return</span> <span class="n">prompt</span><span class="o">.</span><span class="n">PromptFields</span><span class="p">(</span><span class="n">XSH</span><span class="p">)</span></div>
+
+
 <span class="n">VarKeyType</span> <span class="o">=</span> <span class="n">tp</span><span class="o">.</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">tp</span><span class="o">.</span><span class="n">Pattern</span><span class="p">]</span>
 
 
-<div class="viewcode-block" id="Var"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Var">[docs]</a><span class="k">class</span> <span class="nc">Var</span><span class="p">(</span><span class="n">tp</span><span class="o">.</span><span class="n">NamedTuple</span><span class="p">):</span>
+<div class="viewcode-block" id="Var"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Var">[docs]</a><span class="k">class</span> <span class="nc">Var</span><span class="p">(</span><span class="n">tp</span><span class="o">.</span><span class="n">NamedTuple</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Named tuples whose elements represent environment variable</span>
 <span class="sd">    validation, conversion, detyping; default values; and documentation.</span>
 
@@ -747,7 +813,7 @@
     <span class="n">can_store_as_str</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">pattern</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Optional</span><span class="p">[</span><span class="n">VarKeyType</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
-<div class="viewcode-block" id="Var.with_default"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Var.with_default">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="Var.with_default"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Var.with_default">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">with_default</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">default</span><span class="p">:</span> <span class="nb">object</span><span class="p">,</span>
@@ -766,15 +832,18 @@
             <span class="n">kwargs</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
                 <span class="p">{</span><span class="s2">&quot;validate&quot;</span><span class="p">:</span> <span class="n">validator</span><span class="p">,</span> <span class="s2">&quot;convert&quot;</span><span class="p">:</span> <span class="n">convertor</span><span class="p">,</span> <span class="s2">&quot;detype&quot;</span><span class="p">:</span> <span class="n">detyper</span><span class="p">}</span>
             <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">doc_default</span> <span class="o">==</span> <span class="n">DefaultNotGiven</span> <span class="ow">and</span> <span class="n">is_callable_default</span><span class="p">(</span><span class="n">default</span><span class="p">):</span>
+            <span class="n">doc_default</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getdoc</span><span class="p">(</span><span class="n">default</span><span class="p">)</span> <span class="ow">or</span> <span class="n">DefaultNotGiven</span>
         <span class="k">return</span> <span class="n">Var</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="n">default</span><span class="p">,</span> <span class="n">doc</span><span class="o">=</span><span class="n">doc</span><span class="p">,</span> <span class="n">doc_default</span><span class="o">=</span><span class="n">doc_default</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="Var.no_default"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Var.no_default">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="Var.no_default"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Var.no_default">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">no_default</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">type_str</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">doc</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
             <span class="n">default</span><span class="o">=</span><span class="n">DefaultNotGiven</span><span class="p">,</span> <span class="n">doc</span><span class="o">=</span><span class="n">doc</span><span class="p">,</span> <span class="n">type_str</span><span class="o">=</span><span class="n">type_str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
         <span class="p">)</span></div>
 
-<div class="viewcode-block" id="Var.for_locale"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Var.for_locale">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="Var.for_locale"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Var.for_locale">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">for_locale</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">lcle</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
         <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span>
             <span class="n">validate</span><span class="o">=</span><span class="n">always_false</span><span class="p">,</span>
@@ -783,17 +852,17 @@
             <span class="n">default</span><span class="o">=</span><span class="n">locale</span><span class="o">.</span><span class="n">setlocale</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">locale</span><span class="p">,</span> <span class="n">lcle</span><span class="p">)),</span>
         <span class="p">)</span></div>
 
-<div class="viewcode-block" id="Var.get_key"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Var.get_key">[docs]</a>    <span class="k">def</span> <span class="nf">get_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">var_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">VarKeyType</span><span class="p">:</span>
+<div class="viewcode-block" id="Var.get_key"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Var.get_key">[docs]</a>    <span class="k">def</span> <span class="nf">get_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">var_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">VarKeyType</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">pattern</span> <span class="ow">or</span> <span class="n">var_name</span></div></div>
 
 
-<div class="viewcode-block" id="Xettings"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Xettings">[docs]</a><span class="k">class</span> <span class="nc">Xettings</span><span class="p">:</span>
+<div class="viewcode-block" id="Xettings"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Xettings">[docs]</a><span class="k">class</span> <span class="nc">Xettings</span><span class="p">:</span>
     <span class="sd">&quot;&quot;&quot;Parent class - All setting classes will be inheriting from this.</span>
 <span class="sd">    The first line of those class&#39;s docstring will become the group&#39;s title.</span>
 <span class="sd">    Rest of the docstring will become the description of that Group of settings.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-<div class="viewcode-block" id="Xettings.get_settings"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Xettings.get_settings">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="Xettings.get_settings"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Xettings.get_settings">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">get_settings</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">tp</span><span class="o">.</span><span class="n">Iterator</span><span class="p">[</span><span class="n">tp</span><span class="o">.</span><span class="n">Tuple</span><span class="p">[</span><span class="n">VarKeyType</span><span class="p">,</span> <span class="n">Var</span><span class="p">]]:</span>
         <span class="k">for</span> <span class="n">var_name</span><span class="p">,</span> <span class="n">var</span> <span class="ow">in</span> <span class="nb">vars</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">var_name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;__&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">var_name</span><span class="o">.</span><span class="n">isupper</span><span class="p">():</span>
@@ -813,7 +882,7 @@
                 <span class="k">yield</span> <span class="p">(</span><span class="o">*</span><span class="n">bases</span><span class="p">,</span> <span class="n">sub</span><span class="p">),</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">sub</span><span class="o">.</span><span class="n">get_settings</span><span class="p">())</span>
                 <span class="k">yield from</span> <span class="n">Xettings</span><span class="o">.</span><span class="n">_get_groups</span><span class="p">(</span><span class="n">sub</span><span class="p">,</span> <span class="n">_seen</span><span class="p">,</span> <span class="o">*</span><span class="n">bases</span><span class="p">,</span> <span class="n">sub</span><span class="p">)</span>
 
-<div class="viewcode-block" id="Xettings.get_groups"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Xettings.get_groups">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="Xettings.get_groups"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Xettings.get_groups">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">get_groups</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">tp</span><span class="o">.</span><span class="n">Iterator</span><span class="p">[</span>
@@ -821,20 +890,20 @@
     <span class="p">]:</span>
         <span class="k">yield from</span> <span class="n">Xettings</span><span class="o">.</span><span class="n">_get_groups</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="Xettings.get_doc"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Xettings.get_doc">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="Xettings.get_doc"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Xettings.get_doc">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">get_doc</span><span class="p">(</span><span class="bp">cls</span><span class="p">):</span>
         <span class="kn">import</span> <span class="nn">inspect</span>
 
         <span class="k">return</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getdoc</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="Xettings.get_group_title"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Xettings.get_group_title">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="Xettings.get_group_title"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Xettings.get_group_title">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">get_group_title</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
         <span class="n">doc</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">get_doc</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">doc</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">doc</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
         <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="vm">__name__</span></div>
 
-<div class="viewcode-block" id="Xettings.get_group_description"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Xettings.get_group_description">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="Xettings.get_group_description"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Xettings.get_group_description">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">get_group_description</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
         <span class="n">doc</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">get_doc</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">doc</span><span class="p">:</span>
@@ -844,7 +913,7 @@
         <span class="k">return</span> <span class="s2">&quot;&quot;</span></div></div>
 
 
-<div class="viewcode-block" id="GeneralSetting"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.GeneralSetting">[docs]</a><span class="k">class</span> <span class="nc">GeneralSetting</span><span class="p">(</span><span class="n">Xettings</span><span class="p">):</span>
+<div class="viewcode-block" id="GeneralSetting"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.GeneralSetting">[docs]</a><span class="k">class</span> <span class="nc">GeneralSetting</span><span class="p">(</span><span class="n">Xettings</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;General&quot;&quot;&quot;</span>
 
     <span class="n">AUTO_CONTINUE</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
@@ -923,6 +992,14 @@
         <span class="s2">&quot;should cause an end to execution. This is less useful at a terminal. &quot;</span>
         <span class="s2">&quot;The error that is raised is a ``subprocess.CalledProcessError``.&quot;</span><span class="p">,</span>
     <span class="p">)</span>
+    <span class="n">SHLVL</span> <span class="o">=</span> <span class="n">Var</span><span class="p">(</span>
+        <span class="n">is_valid_shlvl</span><span class="p">,</span>
+        <span class="n">to_shlvl</span><span class="p">,</span>
+        <span class="nb">str</span><span class="p">,</span>
+        <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">&quot;Shell nesting level typed as integer, mirrors bash&#39;s $SHLVL.&quot;</span><span class="p">,</span>
+        <span class="n">is_configurable</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span>
     <span class="n">XONSH_SUBPROC_CAPTURED_PRINT_STDERR</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
         <span class="kc">False</span><span class="p">,</span>
         <span class="s2">&quot;If ``True`` the stderr from captured subproc will be printed automatically.&quot;</span><span class="p">,</span>
@@ -948,7 +1025,8 @@
     <span class="n">XONSH_CAPTURE_ALWAYS</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
         <span class="kc">False</span><span class="p">,</span>
         <span class="s2">&quot;Try to capture output of commands run without explicit capturing.</span><span class="se">\n</span><span class="s2">&quot;</span>
-        <span class="s2">&quot;If True, xonsh will capture the output of commands run directly or in ``![]``.</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="s2">&quot;If True, xonsh will capture the output of commands run directly or in ``![]``&quot;</span>
+        <span class="s2">&quot;to the session history.</span><span class="se">\n</span><span class="s2">&quot;</span>
         <span class="s2">&quot;Setting to True has the following disadvantages:</span><span class="se">\n</span><span class="s2">&quot;</span>
         <span class="s2">&quot;* Some interactive commands won&#39;t work properly (like when ``git`` invokes an interactive editor).</span><span class="se">\n</span><span class="s2">&quot;</span>
         <span class="s2">&quot;  For more information see discussion at https://github.com/xonsh/xonsh/issues/3672.</span><span class="se">\n</span><span class="s2">&quot;</span>
@@ -1000,29 +1078,35 @@
         <span class="n">doc_default</span><span class="o">=</span><span class="s2">&quot;``~/.local/share``&quot;</span><span class="p">,</span>
         <span class="n">type_str</span><span class="o">=</span><span class="s2">&quot;str&quot;</span><span class="p">,</span>
     <span class="p">)</span>
+    <span class="n">XDG_DATA_DIRS</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
+        <span class="n">xdg_data_dirs</span><span class="p">,</span>
+        <span class="s2">&quot;A list of directories where system level data files are stored.&quot;</span><span class="p">,</span>
+        <span class="n">type_str</span><span class="o">=</span><span class="s2">&quot;env_path&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
     <span class="n">XONSHRC</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
         <span class="n">default_xonshrc</span><span class="p">,</span>
         <span class="s2">&quot;A list of the locations of run control files, if they exist.  User &quot;</span>
         <span class="s2">&quot;defined run control file will supersede values set in system-wide &quot;</span>
         <span class="s2">&quot;control file if there is a naming collision. $THREAD_SUBPROCS=None &quot;</span>
         <span class="s2">&quot;when reading in run control files.&quot;</span><span class="p">,</span>
-        <span class="n">doc_default</span><span class="o">=</span><span class="p">(</span>
-            <span class="s2">&quot;On Linux &amp; Mac OSX: ``[&#39;/etc/xonshrc&#39;, &#39;~/.config/xonsh/rc.xsh&#39;, &#39;~/.xonshrc&#39;]``</span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">On Windows: &quot;</span>
-            <span class="s2">&quot;``[&#39;%ALLUSERSPROFILE%</span><span class="se">\\\\</span><span class="s2">xonsh</span><span class="se">\\\\</span><span class="s2">xonshrc&#39;, &#39;~/.config/xonsh/rc.xsh&#39;, &#39;~/.xonshrc&#39;]``&quot;</span>
-        <span class="p">),</span>
         <span class="n">type_str</span><span class="o">=</span><span class="s2">&quot;env_path&quot;</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">XONSHRC_DIR</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
         <span class="n">default_xonshrcdir</span><span class="p">,</span>
-        <span class="s2">&quot;A list of directories, from which all .xsh files will be loaded &quot;</span>
+        <span class="s2">&quot;A list of directories, from which all .xsh|.py files will be loaded &quot;</span>
         <span class="s2">&quot;at startup, sorted in lexographic order. Files in these directories &quot;</span>
         <span class="s2">&quot;are loaded after any files in XONSHRC.&quot;</span><span class="p">,</span>
-        <span class="n">doc_default</span><span class="o">=</span><span class="p">(</span>
-            <span class="s2">&quot;On Linux &amp; Mac OSX: ``[&#39;/etc/xonsh/rc.d&#39;, &#39;~/.config/xonsh/rc.d&#39;]``</span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="s2">&quot;On Windows: &quot;</span>
-            <span class="s2">&quot;``[&#39;%ALLUSERSPROFILE%</span><span class="se">\\\\</span><span class="s2">xonsh</span><span class="se">\\\\</span><span class="s2">rc.d&#39;, &#39;~/.config/xonsh/rc.d&#39;]``&quot;</span>
-        <span class="p">),</span>
+        <span class="n">type_str</span><span class="o">=</span><span class="s2">&quot;env_path&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">XONSH_COMPLETER_DIRS</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
+        <span class="n">default_completer_dirs</span><span class="p">,</span>
+        <span class="sd">&quot;&quot;&quot;\</span>
+<span class="sd">A list of paths where Xonsh searches for command completions.</span>
+<span class="sd">Any completions defined are lazy loaded when needed.</span>
+<span class="sd">The name of the completer file should match that of the completing command.</span>
+<span class="sd">The file should contain a function with the signature</span>
+<span class="sd">``xonsh_complete(ctx: CommandContext) -&gt; Iterator[RichCompletion|str]``.</span>
+<span class="sd">&quot;&quot;&quot;</span><span class="p">,</span>
         <span class="n">type_str</span><span class="o">=</span><span class="s2">&quot;env_path&quot;</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">XONSH_APPEND_NEWLINE</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
@@ -1043,9 +1127,14 @@
     <span class="p">)</span>
     <span class="n">XONSH_CONFIG_DIR</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
         <span class="n">xonsh_config_dir</span><span class="p">,</span>
-        <span class="s2">&quot;This is the location where xonsh configuration information is stored.&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;This is the location where xonsh user-level configuration information is stored.&quot;</span><span class="p">,</span>
         <span class="n">is_configurable</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-        <span class="n">doc_default</span><span class="o">=</span><span class="s2">&quot;``$XDG_CONFIG_HOME/xonsh``&quot;</span><span class="p">,</span>
+        <span class="n">type_str</span><span class="o">=</span><span class="s2">&quot;str&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">XONSH_SYS_CONFIG_DIR</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
+        <span class="n">xonsh_sys_config_dir</span><span class="p">,</span>
+        <span class="s2">&quot;This is the location where xonsh system-level configuration information is stored.&quot;</span><span class="p">,</span>
+        <span class="n">is_configurable</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
         <span class="n">type_str</span><span class="o">=</span><span class="s2">&quot;str&quot;</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">XONSH_COLOR_STYLE</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
@@ -1078,7 +1167,7 @@
     <span class="p">)</span>
     <span class="n">XONSH_DATA_DIR</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
         <span class="n">xonsh_data_dir</span><span class="p">,</span>
-        <span class="s2">&quot;This is the location where xonsh data files are stored, such as &quot;</span> <span class="s2">&quot;history.&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;This is the location where xonsh data files are stored, such as history, generated completers ...&quot;</span><span class="p">,</span>
         <span class="n">doc_default</span><span class="o">=</span><span class="s2">&quot;``$XDG_DATA_HOME/xonsh``&quot;</span><span class="p">,</span>
         <span class="n">type_str</span><span class="o">=</span><span class="s2">&quot;str&quot;</span><span class="p">,</span>
     <span class="p">)</span>
@@ -1179,7 +1268,7 @@
     <span class="n">STAR_DIRS</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">no_default</span><span class="p">(</span><span class="s2">&quot;env_path&quot;</span><span class="p">,</span> <span class="n">pattern</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\w*DIRS$&quot;</span><span class="p">))</span></div>
 
 
-<div class="viewcode-block" id="ChangeDirSetting"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.ChangeDirSetting">[docs]</a><span class="k">class</span> <span class="nc">ChangeDirSetting</span><span class="p">(</span><span class="n">Xettings</span><span class="p">):</span>
+<div class="viewcode-block" id="ChangeDirSetting"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.ChangeDirSetting">[docs]</a><span class="k">class</span> <span class="nc">ChangeDirSetting</span><span class="p">(</span><span class="n">Xettings</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;``cd`` Behavior&quot;&quot;&quot;</span>
 
     <span class="n">AUTO_CD</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
@@ -1219,7 +1308,7 @@
     <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="InterpreterSetting"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.InterpreterSetting">[docs]</a><span class="k">class</span> <span class="nc">InterpreterSetting</span><span class="p">(</span><span class="n">Xettings</span><span class="p">):</span>
+<div class="viewcode-block" id="InterpreterSetting"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.InterpreterSetting">[docs]</a><span class="k">class</span> <span class="nc">InterpreterSetting</span><span class="p">(</span><span class="n">Xettings</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Interpreter Behavior&quot;&quot;&quot;</span>
 
     <span class="n">DOTGLOB</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
@@ -1257,7 +1346,7 @@
     <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="PromptSetting"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.PromptSetting">[docs]</a><span class="k">class</span> <span class="nc">PromptSetting</span><span class="p">(</span><span class="n">Xettings</span><span class="p">):</span>
+<div class="viewcode-block" id="PromptSetting"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.PromptSetting">[docs]</a><span class="k">class</span> <span class="nc">PromptSetting</span><span class="p">(</span><span class="n">Xettings</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Interactive Prompt&quot;&quot;&quot;</span>
 
     <span class="n">COLOR_INPUT</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
@@ -1348,16 +1437,15 @@
         <span class="s2">&quot;This value is never inherited from parent processes.&quot;</span><span class="p">,</span>
         <span class="n">doc_default</span><span class="o">=</span><span class="s2">&quot;``xonsh.environ.DEFAULT_PROMPT``&quot;</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="n">PROMPT_FIELDS</span> <span class="o">=</span> <span class="n">Var</span><span class="p">(</span>
-        <span class="n">always_true</span><span class="p">,</span>
-        <span class="kc">None</span><span class="p">,</span>
-        <span class="kc">None</span><span class="p">,</span>
-        <span class="n">prompt</span><span class="o">.</span><span class="n">PROMPT_FIELDS</span><span class="p">,</span>
-        <span class="s2">&quot;Dictionary containing variables to be used when formatting $PROMPT &quot;</span>
+    <span class="n">PROMPT_FIELDS</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
+        <span class="n">default_prompt_fields</span><span class="p">,</span>
+        <span class="n">validate</span><span class="o">=</span><span class="n">always_true</span><span class="p">,</span>
+        <span class="n">convert</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">detype</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">doc</span><span class="o">=</span><span class="s2">&quot;Dictionary containing variables to be used when formatting $PROMPT &quot;</span>
         <span class="s2">&quot;and $TITLE. See &#39;Customizing the Prompt&#39; &quot;</span>
         <span class="s2">&quot;http://xon.sh/tutorial.html#customizing-the-prompt&quot;</span><span class="p">,</span>
         <span class="n">is_configurable</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-        <span class="n">doc_default</span><span class="o">=</span><span class="s2">&quot;``xonsh.prompt.PROMPT_FIELDS``&quot;</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">PROMPT_REFRESH_INTERVAL</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
         <span class="mf">0.0</span><span class="p">,</span>  <span class="c1"># keep as float</span>
@@ -1407,7 +1495,8 @@
         <span class="s2">&quot;To use the ``prompt_toolkit`` shell you need to have the &quot;</span>
         <span class="s2">&quot;`prompt_toolkit &lt;https://github.com/jonathanslenders/python-prompt-toolkit&gt;`_&quot;</span>
         <span class="s2">&quot; library installed. To specify which shell should be used, do so in &quot;</span>
-        <span class="s2">&quot;the run control file.&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;the run control file. &quot;</span>
+        <span class="s2">&quot;It also accepts a class type that inherits from ``xonsh.base_shell.BaseShell``&quot;</span><span class="p">,</span>
         <span class="n">doc_default</span><span class="o">=</span><span class="s2">&quot;``best``&quot;</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">SUGGEST_COMMANDS</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
@@ -1467,28 +1556,6 @@
         <span class="s2">&quot;Path to the currently active Python environment.&quot;</span><span class="p">,</span>
         <span class="n">is_configurable</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="n">XONSH_GITSTATUS_</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
-        <span class="kc">None</span><span class="p">,</span>
-        <span class="s2">&quot;Symbols for gitstatus prompt. Default values are: </span><span class="se">\n\n</span><span class="s2">&quot;</span>
-        <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
-            <span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;* ``XONSH_GITSTATUS_</span><span class="si">{</span><span class="n">fld</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">``: ``</span><span class="si">{</span><span class="n">fld</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2">``&quot;</span>
-                <span class="k">for</span> <span class="n">fld</span> <span class="ow">in</span> <span class="n">GITSTATUS_FIELD_DEFS</span>
-            <span class="p">)</span>
-        <span class="p">),</span>
-        <span class="n">pattern</span><span class="o">=</span><span class="s2">&quot;XONSH_GITSTATUS_*&quot;</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="n">XONSH_GITSTATUS_FIELDS_HIDDEN</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
-        <span class="p">(),</span>
-        <span class="s2">&quot;Fields to hide in </span><span class="si">{gitstatus}</span><span class="s2"> prompt (all fields below are shown by default.) </span><span class="se">\n\n</span><span class="s2">&quot;</span>
-        <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
-            <span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;* ``</span><span class="si">{</span><span class="n">fld</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">``</span><span class="se">\n</span><span class="s2">&quot;</span>
-                <span class="k">for</span> <span class="n">fld</span> <span class="ow">in</span> <span class="n">GITSTATUS_FIELD_DEFS</span>
-                <span class="k">if</span> <span class="ow">not</span> <span class="n">fld</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;HASH&quot;</span><span class="p">)</span>
-            <span class="p">)</span>
-        <span class="p">),</span>
-    <span class="p">)</span>
     <span class="n">XONSH_HISTORY_MATCH_ANYWHERE</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
         <span class="kc">False</span><span class="p">,</span>
         <span class="s2">&quot;When searching history from a partial string (by pressing up arrow), &quot;</span>
@@ -1513,7 +1580,7 @@
     <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="PromptHistorySetting"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.PromptHistorySetting">[docs]</a><span class="k">class</span> <span class="nc">PromptHistorySetting</span><span class="p">(</span><span class="n">Xettings</span><span class="p">):</span>
+<div class="viewcode-block" id="PromptHistorySetting"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.PromptHistorySetting">[docs]</a><span class="k">class</span> <span class="nc">PromptHistorySetting</span><span class="p">(</span><span class="n">Xettings</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Interactive Prompt History&quot;&quot;&quot;</span>
 
     <span class="n">XONSH_HISTORY_BACKEND</span> <span class="o">=</span> <span class="n">Var</span><span class="p">(</span>
@@ -1564,8 +1631,8 @@
     <span class="p">)</span>
     <span class="n">XONSH_STORE_STDOUT</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
         <span class="kc">False</span><span class="p">,</span>
-        <span class="s2">&quot;Whether or not to store the ``stdout`` and ``stderr`` streams in the &quot;</span>
-        <span class="s2">&quot;history files.&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;Store the ``stdout`` and ``stderr`` streams to the history. &quot;</span>
+        <span class="s2">&quot;Requires that XONSH_CAPTURE_ALWAYS is True.&quot;</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">XONSH_HISTORY_SAVE_CWD</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
         <span class="kc">True</span><span class="p">,</span>
@@ -1574,7 +1641,7 @@
     <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="PTKSetting"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.PTKSetting">[docs]</a><span class="k">class</span> <span class="nc">PTKSetting</span><span class="p">(</span><span class="n">PromptSetting</span><span class="p">):</span>  <span class="c1"># sub-classing -&gt; sub-group</span>
+<div class="viewcode-block" id="PTKSetting"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.PTKSetting">[docs]</a><span class="k">class</span> <span class="nc">PTKSetting</span><span class="p">(</span><span class="n">PromptSetting</span><span class="p">):</span>  <span class="c1"># sub-classing -&gt; sub-group</span>
     <span class="sd">&quot;&quot;&quot;Prompt Toolkit shell</span>
 <span class="sd">    Only usable with ``$SHELL_TYPE=prompt_toolkit.``</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -1637,7 +1704,7 @@
     <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="AsyncPromptSetting"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.AsyncPromptSetting">[docs]</a><span class="k">class</span> <span class="nc">AsyncPromptSetting</span><span class="p">(</span><span class="n">PTKSetting</span><span class="p">):</span>
+<div class="viewcode-block" id="AsyncPromptSetting"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.AsyncPromptSetting">[docs]</a><span class="k">class</span> <span class="nc">AsyncPromptSetting</span><span class="p">(</span><span class="n">PTKSetting</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Asynchronous Prompt</span>
 <span class="sd">    Load $PROMPT in background without blocking read-eval loop.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -1663,12 +1730,27 @@
     <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="AutoCompletionSetting"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.AutoCompletionSetting">[docs]</a><span class="k">class</span> <span class="nc">AutoCompletionSetting</span><span class="p">(</span><span class="n">Xettings</span><span class="p">):</span>
+<div class="viewcode-block" id="AutoCompletionSetting"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.AutoCompletionSetting">[docs]</a><span class="k">class</span> <span class="nc">AutoCompletionSetting</span><span class="p">(</span><span class="n">Xettings</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Tab-completion behavior.&quot;&quot;&quot;</span>
 
     <span class="n">ALIAS_COMPLETIONS_OPTIONS_BY_DEFAULT</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
-        <span class="n">doc</span><span class="o">=</span><span class="s2">&quot;If True, Argparser based alias completions will show options (e.g. -h, ...) without &quot;</span>
-        <span class="s2">&quot;requesting explicitly with option prefix (-).&quot;</span><span class="p">,</span>
+        <span class="n">doc</span><span class="o">=</span><span class="s2">&quot;&quot;&quot;</span><span class="se">\</span>
+<span class="s2">If True, :py:class:`xonsh.completers.argparser.ArgparseCompleter` based completions</span>
+<span class="s2">will show options (e.g. -h, ...) without requesting explicitly with option prefix (e.g. &#39;-&#39;).&quot;&quot;&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">ALIAS_COMPLETIONS_OPTIONS_LONGEST</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
+        <span class="n">doc</span><span class="o">=</span><span class="s2">&quot;&quot;&quot;</span><span class="se">\</span>
+<span class="s2">Whether to show all options or just the longest for</span>
+<span class="s2">the :py:class:`xonsh.completers.argparser.ArgparseCompleter` based completions.</span>
+<span class="s2">For example, with ``-h``, ``--help`` both denoting ``help`` action.</span>
+<span class="s2">If True, then only ``--help`` is shown.</span>
+<span class="s2">This is to reduce the noise in generated completions.&quot;&quot;&quot;</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">CMD_COMPLETIONS_SHOW_DESC</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
+        <span class="n">doc</span><span class="o">=</span><span class="s2">&quot;If True, command completions will show description part with path to the binary and alias in case of &quot;</span>
+        <span class="s2">&quot;xonsh functions.&quot;</span><span class="p">,</span>
         <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
         <span class="n">type_str</span><span class="o">=</span><span class="s2">&quot;bool&quot;</span><span class="p">,</span>
     <span class="p">)</span>
@@ -1681,7 +1763,7 @@
         <span class="s2">&quot;For both bash-completion v1.x and v2.x, paths of individual completion &quot;</span>
         <span class="s2">&quot;scripts (like ``.../completes/ssh``) do not need to be included here. &quot;</span>
         <span class="s2">&quot;The default values are platform &quot;</span>
-        <span class="s2">&quot;dependent, but sane. To specify an alternate list, do so in the run &quot;</span>
+        <span class="s2">&quot;dependent, but reasonable. To specify an alternate list, do so in the run &quot;</span>
         <span class="s2">&quot;control file.&quot;</span><span class="p">,</span>
         <span class="n">default</span><span class="o">=</span><span class="n">BASH_COMPLETIONS_DEFAULT</span><span class="p">,</span>
         <span class="n">doc_default</span><span class="o">=</span><span class="p">(</span>
@@ -1689,7 +1771,8 @@
             <span class="s2">&quot;    ``(&#39;/usr/share/bash-completion/bash_completion&#39;, )``</span><span class="se">\n\n</span><span class="s2">&quot;</span>
             <span class="s2">&quot;But, on Mac it is:</span><span class="se">\n\n</span><span class="s2">&quot;</span>
             <span class="s2">&quot;    ``(&#39;/usr/local/share/bash-completion/bash_completion&#39;, &quot;</span>
-            <span class="s2">&quot;&#39;/usr/local/etc/bash_completion&#39;)``</span><span class="se">\n\n</span><span class="s2">&quot;</span>
+            <span class="s2">&quot;&#39;/usr/local/etc/bash_completion&#39;, &quot;</span>
+            <span class="s2">&quot;&#39;/opt/homebrew/share/bash-completion/bash_completion&#39;),``</span><span class="se">\n\n</span><span class="s2">&quot;</span>
             <span class="s2">&quot;Other OS-specific defaults may be added in the future.&quot;</span>
         <span class="p">),</span>
         <span class="n">type_str</span><span class="o">=</span><span class="s2">&quot;env_path&quot;</span><span class="p">,</span>
@@ -1724,7 +1807,7 @@
     <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="PTKCompletionSetting"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.PTKCompletionSetting">[docs]</a><span class="k">class</span> <span class="nc">PTKCompletionSetting</span><span class="p">(</span><span class="n">AutoCompletionSetting</span><span class="p">):</span>
+<div class="viewcode-block" id="PTKCompletionSetting"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.PTKCompletionSetting">[docs]</a><span class="k">class</span> <span class="nc">PTKCompletionSetting</span><span class="p">(</span><span class="n">AutoCompletionSetting</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Prompt Toolkit tab-completion&quot;&quot;&quot;</span>
 
     <span class="n">COMPLETIONS_CONFIRM</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
@@ -1788,7 +1871,7 @@
     <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="WindowsSetting"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.WindowsSetting">[docs]</a><span class="k">class</span> <span class="nc">WindowsSetting</span><span class="p">(</span><span class="n">GeneralSetting</span><span class="p">):</span>
+<div class="viewcode-block" id="WindowsSetting"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.WindowsSetting">[docs]</a><span class="k">class</span> <span class="nc">WindowsSetting</span><span class="p">(</span><span class="n">GeneralSetting</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Windows OS</span>
 <span class="sd">    Windows OS specific settings</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -1832,7 +1915,7 @@
 <span class="c1">#</span>
 
 
-<div class="viewcode-block" id="Env"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env">[docs]</a><span class="k">class</span> <span class="nc">Env</span><span class="p">(</span><span class="n">cabc</span><span class="o">.</span><span class="n">MutableMapping</span><span class="p">):</span>
+<div class="viewcode-block" id="Env"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env">[docs]</a><span class="k">class</span> <span class="nc">Env</span><span class="p">(</span><span class="n">cabc</span><span class="o">.</span><span class="n">MutableMapping</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;A xonsh environment, whose variables have limited typing</span>
 <span class="sd">    (unlike BASH). Most variables are, by default, strings (like BASH).</span>
 <span class="sd">    However, the following rules also apply based on variable-name:</span>
@@ -1860,7 +1943,7 @@
             <span class="bp">self</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">val</span>
         <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
             <span class="n">path_key</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">k</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span> <span class="k">if</span> <span class="n">k</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;PATH&quot;</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">path_key</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">path_key</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="bp">self</span><span class="p">[</span><span class="s2">&quot;PATH&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">path_key</span><span class="p">)</span>
         <span class="k">if</span> <span class="s2">&quot;PATH&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">:</span>
             <span class="c1"># this is here so the PATH is accessible to subprocs and so that</span>
@@ -1868,7 +1951,7 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">[</span><span class="s2">&quot;PATH&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">PATH_DEFAULT</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="kc">None</span>
 
-<div class="viewcode-block" id="Env.detype"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.detype">[docs]</a>    <span class="k">def</span> <span class="nf">detype</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<div class="viewcode-block" id="Env.detype"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.detype">[docs]</a>    <span class="k">def</span> <span class="nf">detype</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span>
         <span class="n">ctx</span> <span class="o">=</span> <span class="p">{}</span>
@@ -1887,7 +1970,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="n">ctx</span>
         <span class="k">return</span> <span class="n">ctx</span></div>
 
-<div class="viewcode-block" id="Env.replace_env"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.replace_env">[docs]</a>    <span class="k">def</span> <span class="nf">replace_env</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<div class="viewcode-block" id="Env.replace_env"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.replace_env">[docs]</a>    <span class="k">def</span> <span class="nf">replace_env</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Replaces the contents of os_environ with a detyped version</span>
 <span class="sd">        of the xonsh environment.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
@@ -1896,7 +1979,7 @@
         <span class="n">os_environ</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
         <span class="n">os_environ</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">detype</span><span class="p">())</span></div>
 
-<div class="viewcode-block" id="Env.undo_replace_env"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.undo_replace_env">[docs]</a>    <span class="k">def</span> <span class="nf">undo_replace_env</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<div class="viewcode-block" id="Env.undo_replace_env"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.undo_replace_env">[docs]</a>    <span class="k">def</span> <span class="nf">undo_replace_env</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Replaces the contents of os_environ with a detyped version</span>
 <span class="sd">        of the xonsh environment.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
@@ -1926,7 +2009,7 @@
             <span class="n">default</span> <span class="o">=</span> <span class="n">ensure_string</span>
         <span class="k">return</span> <span class="n">default</span>
 
-<div class="viewcode-block" id="Env.get_validator"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.get_validator">[docs]</a>    <span class="k">def</span> <span class="nf">get_validator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="Env.get_validator"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.get_validator">[docs]</a>    <span class="k">def</span> <span class="nf">get_validator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Gets a validator for the given key.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="o">.</span><span class="n">validate</span>
@@ -1944,7 +2027,7 @@
 
         <span class="k">return</span> <span class="n">validator</span></div>
 
-<div class="viewcode-block" id="Env.get_converter"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.get_converter">[docs]</a>    <span class="k">def</span> <span class="nf">get_converter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="Env.get_converter"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.get_converter">[docs]</a>    <span class="k">def</span> <span class="nf">get_converter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Gets a converter for the given key.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="o">.</span><span class="n">convert</span>
@@ -1962,7 +2045,7 @@
 
         <span class="k">return</span> <span class="n">converter</span></div>
 
-<div class="viewcode-block" id="Env.get_detyper"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.get_detyper">[docs]</a>    <span class="k">def</span> <span class="nf">get_detyper</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="Env.get_detyper"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.get_detyper">[docs]</a>    <span class="k">def</span> <span class="nf">get_detyper</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Gets a detyper for the given key.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="o">.</span><span class="n">detype</span>
@@ -1980,14 +2063,14 @@
 
         <span class="k">return</span> <span class="n">detyper</span></div>
 
-<div class="viewcode-block" id="Env.get_default"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.get_default">[docs]</a>    <span class="k">def</span> <span class="nf">get_default</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="Env.get_default"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.get_default">[docs]</a>    <span class="k">def</span> <span class="nf">get_default</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Gets default for the given key.&quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="o">.</span><span class="n">default</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">DefaultNotGiven</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="o">.</span><span class="n">default</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">default</span></div>
 
-<div class="viewcode-block" id="Env.get_docs"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.get_docs">[docs]</a>    <span class="k">def</span> <span class="nf">get_docs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="Env.get_docs"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.get_docs">[docs]</a>    <span class="k">def</span> <span class="nf">get_docs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Gets the documentation for the environment variable.&quot;&quot;&quot;</span>
         <span class="n">vd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">vd</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -2002,7 +2085,7 @@
             <span class="n">vd</span> <span class="o">=</span> <span class="n">vd</span><span class="o">.</span><span class="n">_replace</span><span class="p">(</span><span class="n">doc_default</span><span class="o">=</span><span class="n">dval</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">vd</span></div>
 
-<div class="viewcode-block" id="Env.help"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.help">[docs]</a>    <span class="k">def</span> <span class="nf">help</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+<div class="viewcode-block" id="Env.help"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.help">[docs]</a>    <span class="k">def</span> <span class="nf">help</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Get information about a specific environment variable.&quot;&quot;&quot;</span>
         <span class="n">vardocs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_docs</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
         <span class="n">width</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="mi">79</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">get_terminal_size</span><span class="p">()[</span><span class="mi">0</span><span class="p">])</span>
@@ -2015,13 +2098,13 @@
         <span class="p">)</span>
         <span class="n">print_color</span><span class="p">(</span><span class="n">template</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="Env.is_manually_set"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.is_manually_set">[docs]</a>    <span class="k">def</span> <span class="nf">is_manually_set</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">varname</span><span class="p">):</span>
+<div class="viewcode-block" id="Env.is_manually_set"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.is_manually_set">[docs]</a>    <span class="k">def</span> <span class="nf">is_manually_set</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">varname</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Checks if an environment variable has been manually set.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="n">varname</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span></div>
 
-<div class="viewcode-block" id="Env.swap"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.swap">[docs]</a>    <span class="nd">@contextlib</span><span class="o">.</span><span class="n">contextmanager</span>
+<div class="viewcode-block" id="Env.swap"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.swap">[docs]</a>    <span class="nd">@contextlib</span><span class="o">.</span><span class="n">contextmanager</span>
     <span class="k">def</span> <span class="nf">swap</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Provides a context manager for temporarily swapping out certain</span>
 <span class="sd">        environment variables with other values. On exit from the context</span>
@@ -2055,10 +2138,10 @@
             <span class="k">if</span> <span class="n">exception</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="n">exception</span> <span class="kn">from</span> <span class="bp">None</span></div>
 
-<div class="viewcode-block" id="Env.get_swapped_values"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.get_swapped_values">[docs]</a>    <span class="k">def</span> <span class="nf">get_swapped_values</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<div class="viewcode-block" id="Env.get_swapped_values"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.get_swapped_values">[docs]</a>    <span class="k">def</span> <span class="nf">get_swapped_values</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="o">.</span><span class="n">get_local_overrides</span><span class="p">()</span></div>
 
-<div class="viewcode-block" id="Env.set_swapped_values"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.set_swapped_values">[docs]</a>    <span class="k">def</span> <span class="nf">set_swapped_values</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">swapped_values</span><span class="p">):</span>
+<div class="viewcode-block" id="Env.set_swapped_values"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.set_swapped_values">[docs]</a>    <span class="k">def</span> <span class="nf">set_swapped_values</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">swapped_values</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="o">.</span><span class="n">set_local_overrides</span><span class="p">(</span><span class="n">swapped_values</span><span class="p">)</span></div>
 
     <span class="c1">#</span>
@@ -2129,7 +2212,7 @@
             <span class="n">e</span> <span class="o">=</span> <span class="s2">&quot;Unknown environment variable: $</span><span class="si">{}</span><span class="s2">&quot;</span>
             <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">key</span><span class="p">))</span>
 
-<div class="viewcode-block" id="Env.get"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.get">[docs]</a>    <span class="k">def</span> <span class="nf">get</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="Env.get"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.get">[docs]</a>    <span class="k">def</span> <span class="nf">get</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;The environment will look up default values from its own defaults if a</span>
 <span class="sd">        default is not given here.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
@@ -2140,17 +2223,22 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">default</span></div>
 
-<div class="viewcode-block" id="Env.rawkeys"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.rawkeys">[docs]</a>    <span class="k">def</span> <span class="nf">rawkeys</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<div class="viewcode-block" id="Env.get_stringified"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.get_stringified">[docs]</a>    <span class="k">def</span> <span class="nf">get_stringified</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="p">)</span>
+        <span class="n">detyper</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_detyper</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">detyper</span><span class="p">(</span><span class="n">value</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Env.rawkeys"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.rawkeys">[docs]</a>    <span class="k">def</span> <span class="nf">rawkeys</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;An iterator that returns all environment keys in their original form.</span>
 <span class="sd">        This include string &amp; compiled regular expression keys.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">yield from</span> <span class="p">(</span>
             <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">)</span>
-            <span class="o">|</span> <span class="nb">set</span><span class="p">(</span>
+            <span class="o">|</span> <span class="p">{</span>
                 <span class="n">k</span>
                 <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
                 <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span><span class="p">[</span><span class="n">k</span><span class="p">]</span><span class="o">.</span><span class="n">default</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">DefaultNotGiven</span>
-            <span class="p">)</span>
+            <span class="p">}</span>
         <span class="p">)</span></div>
 
     <span class="k">def</span> <span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -2170,7 +2258,7 @@
         <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">)</span>
 
     <span class="k">def</span> <span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="s2">&quot;</span><span class="si">{0}</span><span class="s2">.</span><span class="si">{1}</span><span class="s2">(...)&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__module__</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__module__</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">(...)&quot;</span>
 
     <span class="k">def</span> <span class="fm">__hash__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
         <span class="k">return</span> <span class="nb">hash</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">))</span>
@@ -2184,7 +2272,7 @@
                 <span class="n">p</span><span class="o">.</span><span class="n">break_</span><span class="p">()</span>
                 <span class="n">p</span><span class="o">.</span><span class="n">pretty</span><span class="p">(</span><span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="p">))</span>
 
-<div class="viewcode-block" id="Env.register"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.register">[docs]</a>    <span class="k">def</span> <span class="nf">register</span><span class="p">(</span>
+<div class="viewcode-block" id="Env.register"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.register">[docs]</a>    <span class="k">def</span> <span class="nf">register</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">name</span><span class="p">,</span>
         <span class="nb">type</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
@@ -2254,7 +2342,7 @@
             <span class="n">can_store_as_str</span><span class="p">,</span>
         <span class="p">)</span></div>
 
-<div class="viewcode-block" id="Env.deregister"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.Env.deregister">[docs]</a>    <span class="k">def</span> <span class="nf">deregister</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+<div class="viewcode-block" id="Env.deregister"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.deregister">[docs]</a>    <span class="k">def</span> <span class="nf">deregister</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;Deregister an enviornment variable and all its type handling,</span>
 <span class="sd">        default value, doc.</span>
 
@@ -2263,10 +2351,15 @@
 <span class="sd">        name : str</span>
 <span class="sd">            Environment variable name to deregister. Typically all caps.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">name</span><span class="p">)</span></div></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">name</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Env.is_configurable"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.is_configurable">[docs]</a>    <span class="k">def</span> <span class="nf">is_configurable</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">is_configurable</span></div></div>
 
 
-<div class="viewcode-block" id="InternalEnvironDict"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.InternalEnvironDict">[docs]</a><span class="k">class</span> <span class="nc">InternalEnvironDict</span><span class="p">(</span><span class="n">ChainMap</span><span class="p">):</span>
+<div class="viewcode-block" id="InternalEnvironDict"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.InternalEnvironDict">[docs]</a><span class="k">class</span> <span class="nc">InternalEnvironDict</span><span class="p">(</span><span class="n">ChainMap</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;A dictionary which supports thread-local overrides.</span>
 <span class="sd">    There are two reasons we can&#39;t use ChainMap directly:</span>
 <span class="sd">    1. To use thread-local storage, we need to access the local().__dict__ directly each time to get the correct dict.</span>
@@ -2309,33 +2402,33 @@
         <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
             <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_global</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
 
-<div class="viewcode-block" id="InternalEnvironDict.pop"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.InternalEnvironDict.pop">[docs]</a>    <span class="k">def</span> <span class="nf">pop</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">):</span>
+<div class="viewcode-block" id="InternalEnvironDict.pop"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.InternalEnvironDict.pop">[docs]</a>    <span class="k">def</span> <span class="nf">pop</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">):</span>
         <span class="c1"># If the value is overridden locally, pop it locally.</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_local</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_global</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="InternalEnvironDict.popitem"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.InternalEnvironDict.popitem">[docs]</a>    <span class="k">def</span> <span class="nf">popitem</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<div class="viewcode-block" id="InternalEnvironDict.popitem"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.InternalEnvironDict.popitem">[docs]</a>    <span class="k">def</span> <span class="nf">popitem</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="c1"># Fallback to the global dictionary if nothing is overridden locally.</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_local</span><span class="o">.</span><span class="n">popitem</span><span class="p">()</span>
         <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_global</span><span class="o">.</span><span class="n">popitem</span><span class="p">()</span></div>
 
-<div class="viewcode-block" id="InternalEnvironDict.set_locally"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.InternalEnvironDict.set_locally">[docs]</a>    <span class="k">def</span> <span class="nf">set_locally</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+<div class="viewcode-block" id="InternalEnvironDict.set_locally"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.InternalEnvironDict.set_locally">[docs]</a>    <span class="k">def</span> <span class="nf">set_locally</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_local</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span></div>
 
-<div class="viewcode-block" id="InternalEnvironDict.del_locally"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.InternalEnvironDict.del_locally">[docs]</a>    <span class="k">def</span> <span class="nf">del_locally</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+<div class="viewcode-block" id="InternalEnvironDict.del_locally"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.InternalEnvironDict.del_locally">[docs]</a>    <span class="k">def</span> <span class="nf">del_locally</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_local</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
         <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
             <span class="k">pass</span></div>
 
-<div class="viewcode-block" id="InternalEnvironDict.get_local_overrides"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.InternalEnvironDict.get_local_overrides">[docs]</a>    <span class="k">def</span> <span class="nf">get_local_overrides</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<div class="viewcode-block" id="InternalEnvironDict.get_local_overrides"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.InternalEnvironDict.get_local_overrides">[docs]</a>    <span class="k">def</span> <span class="nf">get_local_overrides</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_local</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span></div>
 
-<div class="viewcode-block" id="InternalEnvironDict.set_local_overrides"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.InternalEnvironDict.set_local_overrides">[docs]</a>    <span class="k">def</span> <span class="nf">set_local_overrides</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_local</span><span class="p">):</span>
+<div class="viewcode-block" id="InternalEnvironDict.set_local_overrides"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.InternalEnvironDict.set_local_overrides">[docs]</a>    <span class="k">def</span> <span class="nf">set_local_overrides</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_local</span><span class="p">):</span>
         <span class="n">local</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_local</span>
         <span class="n">local</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
         <span class="n">local</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">new_local</span><span class="p">)</span></div></div>
@@ -2355,12 +2448,21 @@
                 <span class="k">return</span>
 
 
-<div class="viewcode-block" id="locate_binary"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.locate_binary">[docs]</a><span class="k">def</span> <span class="nf">locate_binary</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+<div class="viewcode-block" id="locate_binary"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.locate_binary">[docs]</a><span class="k">def</span> <span class="nf">locate_binary</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Locates an executable on the file system.&quot;&quot;&quot;</span>
     <span class="k">return</span> <span class="n">XSH</span><span class="o">.</span><span class="n">commands_cache</span><span class="o">.</span><span class="n">locate_binary</span><span class="p">(</span><span class="n">name</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="xonshrc_context"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.xonshrc_context">[docs]</a><span class="k">def</span> <span class="nf">xonshrc_context</span><span class="p">(</span>
+<div class="viewcode-block" id="scan_dir_for_source_files"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.scan_dir_for_source_files">[docs]</a><span class="k">def</span> <span class="nf">scan_dir_for_source_files</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+        <span class="k">return</span>
+    <span class="k">with</span> <span class="n">os</span><span class="o">.</span><span class="n">scandir</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="k">as</span> <span class="n">it</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">it</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">is_file</span><span class="p">()</span> <span class="ow">and</span> <span class="p">(</span><span class="n">entry</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">endswith</span><span class="p">((</span><span class="s2">&quot;.py&quot;</span><span class="p">,</span> <span class="s2">&quot;.xsh&quot;</span><span class="p">))):</span>
+                <span class="k">yield</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">entry</span><span class="o">.</span><span class="n">name</span><span class="p">),</span> <span class="n">entry</span></div>
+
+
+<div class="viewcode-block" id="xonshrc_context"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.xonshrc_context">[docs]</a><span class="k">def</span> <span class="nf">xonshrc_context</span><span class="p">(</span>
     <span class="n">rcfiles</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">rcdirs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">execer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">login</span><span class="o">=</span><span class="kc">True</span>
 <span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
@@ -2380,21 +2482,21 @@
                 <span class="p">)</span>
                 <span class="k">if</span> <span class="n">status</span><span class="p">:</span>
                     <span class="n">loaded</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rcfile</span><span class="p">)</span>
+
     <span class="k">if</span> <span class="n">rcdirs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">for</span> <span class="n">rcdir</span> <span class="ow">in</span> <span class="n">rcdirs</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">rcdir</span><span class="p">):</span>
-                <span class="k">for</span> <span class="n">rcfile</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">rcdir</span><span class="p">,</span> <span class="s2">&quot;*.xsh&quot;</span><span class="p">))):</span>
-                    <span class="n">status</span> <span class="o">=</span> <span class="n">xonsh_script_run_control</span><span class="p">(</span>
-                        <span class="n">rcfile</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">execer</span><span class="o">=</span><span class="n">execer</span><span class="p">,</span> <span class="n">login</span><span class="o">=</span><span class="n">login</span>
-                    <span class="p">)</span>
-                    <span class="k">if</span> <span class="n">status</span><span class="p">:</span>
-                        <span class="n">loaded</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rcfile</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">rcfile</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">dict</span><span class="p">(</span><span class="n">scan_dir_for_source_files</span><span class="p">(</span><span class="n">rcdir</span><span class="p">))):</span>
+                <span class="n">status</span> <span class="o">=</span> <span class="n">xonsh_script_run_control</span><span class="p">(</span>
+                    <span class="n">rcfile</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">execer</span><span class="o">=</span><span class="n">execer</span><span class="p">,</span> <span class="n">login</span><span class="o">=</span><span class="n">login</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="n">status</span><span class="p">:</span>
+                    <span class="n">loaded</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rcfile</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">env</span><span class="p">[</span><span class="s2">&quot;THREAD_SUBPROCS&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">env</span><span class="p">[</span><span class="s2">&quot;THREAD_SUBPROCS&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">orig_thread</span>
     <span class="k">return</span> <span class="n">loaded</span></div>
 
 
-<div class="viewcode-block" id="windows_foreign_env_fixes"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.windows_foreign_env_fixes">[docs]</a><span class="k">def</span> <span class="nf">windows_foreign_env_fixes</span><span class="p">(</span><span class="n">ctx</span><span class="p">):</span>
+<div class="viewcode-block" id="windows_foreign_env_fixes"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.windows_foreign_env_fixes">[docs]</a><span class="k">def</span> <span class="nf">windows_foreign_env_fixes</span><span class="p">(</span><span class="n">ctx</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Environment fixes for Windows. Operates in-place.&quot;&quot;&quot;</span>
     <span class="c1"># remove these bash variables which only cause problems.</span>
     <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;HOME&quot;</span><span class="p">,</span> <span class="s2">&quot;OLDPWD&quot;</span><span class="p">]:</span>
@@ -2411,7 +2513,7 @@
     <span class="n">ctx</span><span class="p">[</span><span class="s2">&quot;PWD&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_get_cwd</span><span class="p">()</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span></div>
 
 
-<div class="viewcode-block" id="foreign_env_fixes"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.foreign_env_fixes">[docs]</a><span class="k">def</span> <span class="nf">foreign_env_fixes</span><span class="p">(</span><span class="n">ctx</span><span class="p">):</span>
+<div class="viewcode-block" id="foreign_env_fixes"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.foreign_env_fixes">[docs]</a><span class="k">def</span> <span class="nf">foreign_env_fixes</span><span class="p">(</span><span class="n">ctx</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Environment fixes for all operating systems&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="s2">&quot;PROMPT&quot;</span> <span class="ow">in</span> <span class="n">ctx</span><span class="p">:</span>
         <span class="k">del</span> <span class="n">ctx</span><span class="p">[</span><span class="s2">&quot;PROMPT&quot;</span><span class="p">]</span></div>
@@ -2425,36 +2527,40 @@
     <span class="k">pass</span>
 
 
-<div class="viewcode-block" id="xonsh_script_run_control"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.xonsh_script_run_control">[docs]</a><span class="k">def</span> <span class="nf">xonsh_script_run_control</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">execer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">login</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;Loads a xonsh file and applies it as a run control.&quot;&quot;&quot;</span>
+<div class="viewcode-block" id="xonsh_script_run_control"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.xonsh_script_run_control">[docs]</a><span class="k">def</span> <span class="nf">xonsh_script_run_control</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">execer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">login</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Loads a xonsh file and applies it as a run control.</span>
+<span class="sd">    Any exceptions are logged here, returns boolean indicating success.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">execer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">return</span> <span class="kc">False</span>
     <span class="n">updates</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;__file__&quot;</span><span class="p">:</span> <span class="n">filename</span><span class="p">,</span> <span class="s2">&quot;__name__&quot;</span><span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">filename</span><span class="p">)}</span>
     <span class="n">rc_dir</span> <span class="o">=</span> <span class="n">_RcPath</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">filename</span><span class="p">))</span>
     <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rc_dir</span><span class="p">)</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="k">with</span> <span class="n">swap_values</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">updates</span><span class="p">):</span>
-            <span class="n">run_script_with_cache</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">execer</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
-        <span class="n">loaded</span> <span class="o">=</span> <span class="kc">True</span>
-    <span class="k">except</span> <span class="ne">SyntaxError</span> <span class="k">as</span> <span class="n">err</span><span class="p">:</span>
-        <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;syntax error in xonsh run control file </span><span class="si">{0!r}</span><span class="s2">: </span><span class="si">{1!s}</span><span class="s2">&quot;</span>
-        <span class="n">print_exception</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">err</span><span class="p">))</span>
-        <span class="n">loaded</span> <span class="o">=</span> <span class="kc">False</span>
-    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">err</span><span class="p">:</span>
-        <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;error running xonsh run control file </span><span class="si">{0!r}</span><span class="s2">: </span><span class="si">{1!s}</span><span class="s2">&quot;</span>
-        <span class="n">print_exception</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">err</span><span class="p">))</span>
-        <span class="n">loaded</span> <span class="o">=</span> <span class="kc">False</span>
-    <span class="k">finally</span><span class="p">:</span>
-        <span class="n">sys</span><span class="o">.</span><span class="n">path</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">filter</span><span class="p">(</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="n">p</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">rc_dir</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="p">))</span>
+    <span class="k">with</span> <span class="n">swap_values</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">updates</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">exc_info</span> <span class="o">=</span> <span class="n">run_script_with_cache</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">execer</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">SyntaxError</span><span class="p">:</span>
+            <span class="n">exc_info</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">exc_info</span> <span class="o">!=</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">):</span>
+            <span class="n">err_type</span><span class="p">,</span> <span class="n">err</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">exc_info</span>
+            <span class="n">loaded</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="k">if</span> <span class="n">err_type</span> <span class="ow">is</span> <span class="ne">SyntaxError</span><span class="p">:</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;syntax error in xonsh run control file </span><span class="si">{0!r}</span><span class="s2">: </span><span class="si">{1!s}</span><span class="s2">&quot;</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;error running xonsh run control file </span><span class="si">{0!r}</span><span class="s2">: </span><span class="si">{1!s}</span><span class="s2">&quot;</span>
+            <span class="n">print_exception</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">err</span><span class="p">),</span> <span class="n">exc_info</span><span class="o">=</span><span class="n">exc_info</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">loaded</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">path</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">filter</span><span class="p">(</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="n">p</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">rc_dir</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="p">))</span>
     <span class="k">return</span> <span class="n">loaded</span></div>
 
 
-<div class="viewcode-block" id="default_env"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.default_env">[docs]</a><span class="k">def</span> <span class="nf">default_env</span><span class="p">(</span><span class="n">env</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="default_env"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.default_env">[docs]</a><span class="k">def</span> <span class="nf">default_env</span><span class="p">(</span><span class="n">env</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Constructs a default xonsh environment.&quot;&quot;&quot;</span>
     <span class="c1"># in order of increasing precedence</span>
     <span class="n">ctx</span> <span class="o">=</span> <span class="p">{</span>
         <span class="s2">&quot;BASH_COMPLETIONS&quot;</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="n">DEFAULT_VARS</span><span class="p">[</span><span class="s2">&quot;BASH_COMPLETIONS&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">default</span><span class="p">),</span>
-        <span class="s2">&quot;PROMPT_FIELDS&quot;</span><span class="p">:</span> <span class="nb">dict</span><span class="p">(</span><span class="n">DEFAULT_VARS</span><span class="p">[</span><span class="s2">&quot;PROMPT_FIELDS&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">default</span><span class="p">),</span>
+        <span class="s2">&quot;PROMPT_FIELDS&quot;</span><span class="p">:</span> <span class="n">DEFAULT_VARS</span><span class="p">[</span><span class="s2">&quot;PROMPT_FIELDS&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">default</span><span class="p">(</span><span class="n">env</span><span class="p">),</span>
         <span class="s2">&quot;XONSH_VERSION&quot;</span><span class="p">:</span> <span class="n">XONSH_VERSION</span><span class="p">,</span>
     <span class="p">}</span>
     <span class="n">ctx</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">os_environ</span><span class="p">)</span>
@@ -2467,13 +2573,16 @@
         <span class="k">del</span> <span class="n">ctx</span><span class="p">[</span><span class="s2">&quot;PROMPT&quot;</span><span class="p">]</span>
     <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
         <span class="k">pass</span>
+    <span class="c1"># increment $SHLVL</span>
+    <span class="n">old_shlvl</span> <span class="o">=</span> <span class="n">to_shlvl</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;SHLVL&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+    <span class="n">ctx</span><span class="p">[</span><span class="s2">&quot;SHLVL&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">adjust_shlvl</span><span class="p">(</span><span class="n">old_shlvl</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
     <span class="c1"># finalize env</span>
     <span class="k">if</span> <span class="n">env</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">ctx</span></div>
 
 
-<div class="viewcode-block" id="make_args_env"><a class="viewcode-back" href="../../api/environ.html#xonsh.environ.make_args_env">[docs]</a><span class="k">def</span> <span class="nf">make_args_env</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="make_args_env"><a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.make_args_env">[docs]</a><span class="k">def</span> <span class="nf">make_args_env</span><span class="p">(</span><span class="n">args</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Makes a dictionary containing the $ARGS and $ARG&lt;N&gt; environment</span>
 <span class="sd">    variables. If the supplied ARGS is None, then sys.argv is used.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -2497,7 +2606,7 @@
   <h3 id="searchlabel">Quick search</h3>
     <div class="searchformwrapper">
     <form class="search" action="../../search.html" method="get">
-      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
       <input type="submit" value="Go" />
     </form>
     </div>
@@ -2535,7 +2644,7 @@
         <li class="right" >
           <a href="../../py-modindex.html" title="Python Module Index"
              >modules</a> &nbsp; &nbsp;</li>
-    <li><a href="../../contents.html">xonsh 0.11.0 documentation</a> &#187;</li>
+    <li><a href="../../contents.html">xonsh 0.12.0.dev129.dev129 documentation</a> &#187;</li>
 
           <li class="nav-item nav-item-1"><a href="../index.html" >Module code</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">xonsh.environ</a></li> 
@@ -2545,7 +2654,7 @@
 
     <div class="footer" role="contentinfo">
         &#169; Copyright 2015, Anthony Scopatz.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.0.0.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 4.5.0.
     </div>
     <!-- cloud_sptheme 1.4 -->
   </body>
