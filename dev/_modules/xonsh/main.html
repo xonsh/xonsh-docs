@@ -297,7 +297,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../api/_autosummary/helpers/xonsh.dumb_shell.html">xonsh.dumb_shell</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../api/_autosummary/helpers/xonsh.wizard.html">xonsh.wizard</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../api/_autosummary/helpers/xonsh.xonfig.html">xonsh.xonfig</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../api/_autosummary/helpers/xonsh.xontribs_meta.html">xonsh.xontribs_meta</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/_autosummary/helpers/xonsh.xontribs.html">xonsh.xontribs</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../api/_autosummary/helpers/xonsh.codecache.html">xonsh.codecache</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../api/_autosummary/helpers/xonsh.contexts.html">xonsh.contexts</a></li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../api/_autosummary/xontribs/xontrib.html">xontrib</a><input class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><div class="visually-hidden">Toggle child pages in navigation</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
@@ -381,7 +381,7 @@
 <span class="kn">from</span> <span class="nn">xonsh.timings</span> <span class="kn">import</span> <span class="n">setup_timings</span>
 <span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="n">display_error_message</span><span class="p">,</span> <span class="n">print_color</span><span class="p">,</span> <span class="n">to_bool_or_int</span>
 <span class="kn">from</span> <span class="nn">xonsh.xonfig</span> <span class="kn">import</span> <span class="n">print_welcome_screen</span>
-<span class="kn">from</span> <span class="nn">xonsh.xontribs</span> <span class="kn">import</span> <span class="n">xontribs_load</span>
+<span class="kn">from</span> <span class="nn">xonsh.xontribs</span> <span class="kn">import</span> <span class="n">auto_load_xontribs_from_entrypoints</span><span class="p">,</span> <span class="n">xontribs_load</span>
 
 <span class="n">events</span><span class="o">.</span><span class="n">transmogrify</span><span class="p">(</span><span class="s2">&quot;on_post_init&quot;</span><span class="p">,</span> <span class="s2">&quot;LoadEvent&quot;</span><span class="p">)</span>
 <span class="n">events</span><span class="o">.</span><span class="n">doc</span><span class="p">(</span>
@@ -427,6 +427,16 @@
 <span class="sd">Fired just after the command loop finishes, if it is.</span>
 
 <span class="sd">NOTE: All the caveats of the ``atexit`` module also apply to this event.</span>
+<span class="sd">&quot;&quot;&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">events</span><span class="o">.</span><span class="n">transmogrify</span><span class="p">(</span><span class="s2">&quot;on_xontribs_loaded&quot;</span><span class="p">,</span> <span class="s2">&quot;LoadEvent&quot;</span><span class="p">)</span>
+<span class="n">events</span><span class="o">.</span><span class="n">doc</span><span class="p">(</span>
+    <span class="s2">&quot;on_xontribs_loaded&quot;</span><span class="p">,</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">on_xontribs_loaded() -&gt; None</span>
+
+<span class="sd">Fired after external xontribs with ``entrypoints defined`` are loaded.</span>
 <span class="sd">&quot;&quot;&quot;</span><span class="p">,</span>
 <span class="p">)</span>
 
@@ -620,6 +630,56 @@
     <span class="n">interactive</span> <span class="o">=</span> <span class="mi">3</span></div>
 
 
+<span class="k">def</span> <span class="nf">_get_rc_files</span><span class="p">(</span><span class="n">shell_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">env</span><span class="p">):</span>
+    <span class="c1"># determine which RC files to load, including whether any RC directories</span>
+    <span class="c1"># should be scanned for such files</span>
+    <span class="n">rc_cli</span> <span class="o">=</span> <span class="n">shell_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;rc&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">shell_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;norc&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
+        <span class="n">args</span><span class="o">.</span><span class="n">mode</span> <span class="o">!=</span> <span class="n">XonshMode</span><span class="o">.</span><span class="n">interactive</span>
+        <span class="ow">and</span> <span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">force_interactive</span>
+        <span class="ow">and</span> <span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">login</span>
+    <span class="p">):</span>
+        <span class="c1"># if --no-rc was passed, or we&#39;re not in an interactive shell and</span>
+        <span class="c1"># interactive mode was not forced, then disable loading RC files and dirs</span>
+        <span class="k">return</span> <span class="p">(),</span> <span class="p">()</span>
+
+    <span class="k">if</span> <span class="n">rc_cli</span><span class="p">:</span>
+        <span class="c1"># if an explicit --rc was passed, then we should load only that RC</span>
+        <span class="c1"># file, and nothing else (ignore both XONSHRC and XONSHRC_DIR)</span>
+        <span class="n">rc</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">r</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">rc_cli</span> <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">r</span><span class="p">))</span>
+        <span class="n">rcd</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">r</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">rc_cli</span> <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">r</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">rc</span><span class="p">,</span> <span class="n">rcd</span>
+
+    <span class="c1"># otherwise, get the RC files from XONSHRC, and RC dirs from XONSHRC_DIR</span>
+    <span class="n">rc</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSHRC&quot;</span><span class="p">)</span>
+    <span class="n">rcd</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSHRC_DIR&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">rc</span><span class="p">,</span> <span class="n">rcd</span>
+
+
+<span class="k">def</span> <span class="nf">_load_rc_files</span><span class="p">(</span><span class="n">shell_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">execer</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+    <span class="n">events</span><span class="o">.</span><span class="n">on_pre_rc</span><span class="o">.</span><span class="n">fire</span><span class="p">()</span>
+    <span class="c1"># load rc files</span>
+    <span class="n">login</span> <span class="o">=</span> <span class="n">shell_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;login&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+    <span class="n">rc</span><span class="p">,</span> <span class="n">rcd</span> <span class="o">=</span> <span class="n">_get_rc_files</span><span class="p">(</span><span class="n">shell_kwargs</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">env</span><span class="p">)</span>
+    <span class="n">XSH</span><span class="o">.</span><span class="n">rc_files</span> <span class="o">=</span> <span class="n">xonshrc_context</span><span class="p">(</span>
+        <span class="n">rcfiles</span><span class="o">=</span><span class="n">rc</span><span class="p">,</span> <span class="n">rcdirs</span><span class="o">=</span><span class="n">rcd</span><span class="p">,</span> <span class="n">execer</span><span class="o">=</span><span class="n">execer</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="n">ctx</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">env</span><span class="p">,</span> <span class="n">login</span><span class="o">=</span><span class="n">login</span>
+    <span class="p">)</span>
+    <span class="n">events</span><span class="o">.</span><span class="n">on_post_rc</span><span class="o">.</span><span class="n">fire</span><span class="p">()</span>
+
+
+<span class="k">def</span> <span class="nf">_autoload_xontribs</span><span class="p">(</span><span class="n">env</span><span class="p">):</span>
+    <span class="n">events</span><span class="o">.</span><span class="n">on_timingprobe</span><span class="o">.</span><span class="n">fire</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;pre_xontribs_autoload&quot;</span><span class="p">)</span>
+    <span class="n">disabled</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONTRIBS_AUTOLOAD_DISABLED&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">disabled</span> <span class="ow">is</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="n">blocked_xontribs</span> <span class="o">=</span> <span class="n">disabled</span> <span class="ow">or</span> <span class="p">()</span>
+    <span class="n">auto_load_xontribs_from_entrypoints</span><span class="p">(</span>
+        <span class="n">blocked_xontribs</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_DEBUG&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span>
+    <span class="p">)</span>
+    <span class="n">events</span><span class="o">.</span><span class="n">on_xontribs_loaded</span><span class="o">.</span><span class="n">fire</span><span class="p">()</span>
+    <span class="n">events</span><span class="o">.</span><span class="n">on_timingprobe</span><span class="o">.</span><span class="n">fire</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;post_xontribs_autoload&quot;</span><span class="p">)</span>
+
+
 <div class="viewcode-block" id="start_services"><a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.main.html#xonsh.main.start_services">[docs]</a><span class="k">def</span> <span class="nf">start_services</span><span class="p">(</span><span class="n">shell_kwargs</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">pre_env</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Starts up the essential services in the proper order.</span>
 <span class="sd">    This returns the environment instance as a convenience.</span>
@@ -641,39 +701,12 @@
 
     <span class="n">install_import_hooks</span><span class="p">(</span><span class="n">execer</span><span class="p">)</span>
 
-    <span class="c1"># load rc files</span>
-    <span class="n">login</span> <span class="o">=</span> <span class="n">shell_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;login&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
-    <span class="n">rc_cli</span> <span class="o">=</span> <span class="n">shell_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;rc&quot;</span><span class="p">)</span>
     <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
     <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">pre_env</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="n">env</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span>
 
-    <span class="c1"># determine which RC files to load, including whether any RC directories</span>
-    <span class="c1"># should be scanned for such files</span>
-    <span class="k">if</span> <span class="n">shell_kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;norc&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
-        <span class="n">args</span><span class="o">.</span><span class="n">mode</span> <span class="o">!=</span> <span class="n">XonshMode</span><span class="o">.</span><span class="n">interactive</span>
-        <span class="ow">and</span> <span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">force_interactive</span>
-        <span class="ow">and</span> <span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">login</span>
-    <span class="p">):</span>
-        <span class="c1"># if --no-rc was passed, or we&#39;re not in an interactive shell and</span>
-        <span class="c1"># interactive mode was not forced, then disable loading RC files and dirs</span>
-        <span class="n">rc</span> <span class="o">=</span> <span class="p">()</span>
-        <span class="n">rcd</span> <span class="o">=</span> <span class="p">()</span>
-    <span class="k">elif</span> <span class="n">rc_cli</span><span class="p">:</span>
-        <span class="c1"># if an explicit --rc was passed, then we should load only that RC</span>
-        <span class="c1"># file, and nothing else (ignore both XONSHRC and XONSHRC_DIR)</span>
-        <span class="n">rc</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">rc_cli</span> <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">r</span><span class="p">)]</span>
-        <span class="n">rcd</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">rc_cli</span> <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">r</span><span class="p">)]</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="c1"># otherwise, get the RC files from XONSHRC, and RC dirs from XONSHRC_DIR</span>
-        <span class="n">rc</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSHRC&quot;</span><span class="p">)</span>
-        <span class="n">rcd</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSHRC_DIR&quot;</span><span class="p">)</span>
-
-    <span class="n">events</span><span class="o">.</span><span class="n">on_pre_rc</span><span class="o">.</span><span class="n">fire</span><span class="p">()</span>
-    <span class="n">XSH</span><span class="o">.</span><span class="n">rc_files</span> <span class="o">=</span> <span class="n">xonshrc_context</span><span class="p">(</span>
-        <span class="n">rcfiles</span><span class="o">=</span><span class="n">rc</span><span class="p">,</span> <span class="n">rcdirs</span><span class="o">=</span><span class="n">rcd</span><span class="p">,</span> <span class="n">execer</span><span class="o">=</span><span class="n">execer</span><span class="p">,</span> <span class="n">ctx</span><span class="o">=</span><span class="n">ctx</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">env</span><span class="p">,</span> <span class="n">login</span><span class="o">=</span><span class="n">login</span>
-    <span class="p">)</span>
-    <span class="n">events</span><span class="o">.</span><span class="n">on_post_rc</span><span class="o">.</span><span class="n">fire</span><span class="p">()</span>
+    <span class="n">_autoload_xontribs</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+    <span class="n">_load_rc_files</span><span class="p">(</span><span class="n">shell_kwargs</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">execer</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
     <span class="c1"># create shell</span>
     <span class="n">XSH</span><span class="o">.</span><span class="n">shell</span> <span class="o">=</span> <span class="n">Shell</span><span class="p">(</span><span class="n">execer</span><span class="o">=</span><span class="n">execer</span><span class="p">,</span> <span class="o">**</span><span class="n">shell_kwargs</span><span class="p">)</span>
     <span class="n">ctx</span><span class="p">[</span><span class="s2">&quot;__name__&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;__main__&quot;</span>
