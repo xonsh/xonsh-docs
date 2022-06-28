@@ -5,7 +5,7 @@
     <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="../../genindex.html" /><link rel="search" title="Search" href="../../search.html" />
 
     <link rel="shortcut icon" href="../../_static/magic_conch.ico"/><meta name="generator" content="sphinx-4.5.0, furo 2022.06.21"/>
-        <title>xonsh.openpy - xonsh 0.12.6 documentation</title>
+        <title>xontrib.whole_word_jumping - xonsh 0.12.6 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?digest=40978830699223671f4072448e654b5958f38b89" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css" />
@@ -354,139 +354,106 @@
           </label>
         </div>
         <article role="main">
-          <h1>Source code for xonsh.openpy</h1><div class="highlight"><pre>
-<span></span><span class="sd">&quot;&quot;&quot;Tools to open ``*.py`` files as Unicode.</span>
+          <h1>Source code for xontrib.whole_word_jumping</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Jump/delete across whole (non-whitespace) words with Ctrl+Left/Right/Delete/Backspace.</span>
 
-<span class="sd">Uses the encoding specified within the file, as per PEP 263.</span>
+<span class="sd">Control+left/right: Jump to previous/next whole word</span>
+<span class="sd">Control+backspace: Delete to beginning of whole word</span>
+<span class="sd">Control+delete: Delete to end of whole word</span>
+<span class="sd">Shift+delete: Delete whole word</span>
 
-<span class="sd">Much of the code is taken from the tokenize module in Python 3.2.</span>
+<span class="sd">Alt+Left/Right/Delete/Backspace remain unmodified:</span>
 
-<span class="sd">This file was forked from the IPython project:</span>
+<span class="sd">Alt+left/right: Jump to previous/next token</span>
+<span class="sd">Alt+backspace: Delete to beginning of token</span>
+<span class="sd">Alt+delete: Delete to end of token</span>
 
-<span class="sd">* Copyright (c) 2008-2014, IPython Development Team</span>
-<span class="sd">* Copyright (C) 2001-2007 Fernando Perez &lt;fperez@colorado.edu&gt;</span>
-<span class="sd">* Copyright (c) 2001, Janko Hauser &lt;jhauser@zscout.de&gt;</span>
-<span class="sd">* Copyright (c) 2001, Nathaniel Gray &lt;n8gray@caltech.edu&gt;</span>
+<span class="sd">Some terminals cannot differentiate between Backspace and Control+Backspace.</span>
+<span class="sd">In this case, users can set `$XONSH_WHOLE_WORD_CTRL_BKSP = False` to skip</span>
+<span class="sd">configuration of the Control+Backspace key binding.</span>
 <span class="sd">&quot;&quot;&quot;</span>
-<span class="kn">import</span> <span class="nn">io</span>
-<span class="kn">import</span> <span class="nn">re</span>
 
-<span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="kn">import</span> <span class="n">LazyObject</span>
-<span class="kn">from</span> <span class="nn">xonsh.tokenize</span> <span class="kn">import</span> <span class="n">detect_encoding</span><span class="p">,</span> <span class="n">tokopen</span>
+<span class="kn">import</span> <span class="nn">prompt_toolkit.input.ansi_escape_sequences</span> <span class="k">as</span> <span class="nn">ansiseq</span>
+<span class="kn">from</span> <span class="nn">prompt_toolkit.filters</span> <span class="kn">import</span> <span class="n">EmacsInsertMode</span><span class="p">,</span> <span class="n">ViInsertMode</span>
+<span class="kn">from</span> <span class="nn">prompt_toolkit.key_binding.bindings.named_commands</span> <span class="kn">import</span> <span class="n">get_by_name</span>
+<span class="kn">from</span> <span class="nn">prompt_toolkit.keys</span> <span class="kn">import</span> <span class="n">Keys</span>
 
-<span class="n">cookie_comment_re</span> <span class="o">=</span> <span class="n">LazyObject</span><span class="p">(</span>
-    <span class="k">lambda</span><span class="p">:</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;^\s*#.*coding[:=]\s*([-\w.]+)&quot;</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">UNICODE</span><span class="p">),</span>
-    <span class="nb">globals</span><span class="p">(),</span>
-    <span class="s2">&quot;cookie_comment_re&quot;</span><span class="p">,</span>
-<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span><span class="p">,</span> <span class="n">XonshSession</span>
+<span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="kn">import</span> <span class="n">ON_WINDOWS</span>
 
 
-<div class="viewcode-block" id="source_to_unicode"><a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.openpy.html#xonsh.openpy.source_to_unicode">[docs]</a><span class="k">def</span> <span class="nf">source_to_unicode</span><span class="p">(</span><span class="n">txt</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;replace&quot;</span><span class="p">,</span> <span class="n">skip_encoding_cookie</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;Converts a bytes string with python source code to unicode.</span>
+<div class="viewcode-block" id="custom_keybindings"><a class="viewcode-back" href="../../api/_autosummary/xontribs/xontrib.whole_word_jumping.html#xontrib.whole_word_jumping.custom_keybindings">[docs]</a><span class="k">def</span> <span class="nf">custom_keybindings</span><span class="p">(</span><span class="n">bindings</span><span class="p">,</span> <span class="o">**</span><span class="n">kw</span><span class="p">):</span>
+    <span class="n">insert_mode</span> <span class="o">=</span> <span class="n">ViInsertMode</span><span class="p">()</span> <span class="o">|</span> <span class="n">EmacsInsertMode</span><span class="p">()</span>
 
-<span class="sd">    Unicode strings are passed through unchanged. Byte strings are checked</span>
-<span class="sd">    for the python source file encoding cookie to determine encoding.</span>
-<span class="sd">    txt can be either a bytes buffer or a string containing the source</span>
-<span class="sd">    code.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">txt</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
-        <span class="k">return</span> <span class="n">txt</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">txt</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">):</span>
-        <span class="n">buf</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">(</span><span class="n">txt</span><span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">buf</span> <span class="o">=</span> <span class="n">txt</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="n">encoding</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">detect_encoding</span><span class="p">(</span><span class="n">buf</span><span class="o">.</span><span class="n">readline</span><span class="p">)</span>
-    <span class="k">except</span> <span class="ne">SyntaxError</span><span class="p">:</span>
-        <span class="n">encoding</span> <span class="o">=</span> <span class="s2">&quot;ascii&quot;</span>
-    <span class="n">buf</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-    <span class="n">text</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">TextIOWrapper</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span> <span class="n">encoding</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">errors</span><span class="p">,</span> <span class="n">line_buffering</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-    <span class="n">text</span><span class="o">.</span><span class="n">mode</span> <span class="o">=</span> <span class="s2">&quot;r&quot;</span>
-    <span class="k">if</span> <span class="n">skip_encoding_cookie</span><span class="p">:</span>
-        <span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">strip_encoding_cookie</span><span class="p">(</span><span class="n">text</span><span class="p">))</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">text</span><span class="o">.</span><span class="n">read</span><span class="p">()</span></div>
+    <span class="c1"># Key bindings for jumping over whole words (everything that&#39;s not</span>
+    <span class="c1"># white space) using Ctrl+Left and Ctrl+Right;</span>
+    <span class="c1"># Alt+Left and Alt+Right still jump over smaller word segments.</span>
+    <span class="c1"># See https://github.com/xonsh/xonsh/issues/2403</span>
 
+    <span class="nd">@bindings</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">Keys</span><span class="o">.</span><span class="n">ControlLeft</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">ctrl_left</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
+        <span class="n">buff</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">current_buffer</span>
+        <span class="n">pos</span> <span class="o">=</span> <span class="n">buff</span><span class="o">.</span><span class="n">document</span><span class="o">.</span><span class="n">find_previous_word_beginning</span><span class="p">(</span><span class="n">count</span><span class="o">=</span><span class="n">event</span><span class="o">.</span><span class="n">arg</span><span class="p">,</span> <span class="n">WORD</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">pos</span><span class="p">:</span>
+            <span class="n">buff</span><span class="o">.</span><span class="n">cursor_position</span> <span class="o">+=</span> <span class="n">pos</span>
 
-<div class="viewcode-block" id="strip_encoding_cookie"><a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.openpy.html#xonsh.openpy.strip_encoding_cookie">[docs]</a><span class="k">def</span> <span class="nf">strip_encoding_cookie</span><span class="p">(</span><span class="n">filelike</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;Generator to pull lines from a text-mode file, skipping the encoding</span>
-<span class="sd">    cookie if it is found in the first two lines.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">it</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">(</span><span class="n">filelike</span><span class="p">)</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="n">first</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">it</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">cookie_comment_re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">first</span><span class="p">):</span>
-            <span class="k">yield</span> <span class="n">first</span>
-        <span class="n">second</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">it</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">cookie_comment_re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">second</span><span class="p">):</span>
-            <span class="k">yield</span> <span class="n">second</span>
-    <span class="k">except</span> <span class="ne">StopIteration</span><span class="p">:</span>
-        <span class="k">return</span>
-    <span class="k">yield from</span> <span class="n">it</span></div>
+    <span class="nd">@bindings</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">Keys</span><span class="o">.</span><span class="n">ControlRight</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">ctrl_right</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
+        <span class="n">buff</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">current_buffer</span>
+        <span class="n">pos</span> <span class="o">=</span> <span class="n">buff</span><span class="o">.</span><span class="n">document</span><span class="o">.</span><span class="n">find_next_word_ending</span><span class="p">(</span><span class="n">count</span><span class="o">=</span><span class="n">event</span><span class="o">.</span><span class="n">arg</span><span class="p">,</span> <span class="n">WORD</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">pos</span><span class="p">:</span>
+            <span class="n">buff</span><span class="o">.</span><span class="n">cursor_position</span> <span class="o">+=</span> <span class="n">pos</span>
 
+    <span class="nd">@bindings</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">Keys</span><span class="o">.</span><span class="n">ShiftDelete</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=</span><span class="n">insert_mode</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">delete_surrounding_big_word</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
+        <span class="n">buff</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">current_buffer</span>
+        <span class="n">startpos</span><span class="p">,</span> <span class="n">endpos</span> <span class="o">=</span> <span class="n">buff</span><span class="o">.</span><span class="n">document</span><span class="o">.</span><span class="n">find_boundaries_of_current_word</span><span class="p">(</span><span class="n">WORD</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">startpos</span> <span class="o">=</span> <span class="n">buff</span><span class="o">.</span><span class="n">cursor_position</span> <span class="o">+</span> <span class="n">startpos</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="n">startpos</span> <span class="o">=</span> <span class="mi">0</span> <span class="k">if</span> <span class="n">startpos</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="n">startpos</span>
+        <span class="n">endpos</span> <span class="o">=</span> <span class="n">buff</span><span class="o">.</span><span class="n">cursor_position</span> <span class="o">+</span> <span class="n">endpos</span>
+        <span class="n">endpos</span> <span class="o">=</span> <span class="n">endpos</span> <span class="o">+</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">startpos</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="n">endpos</span>
+        <span class="n">buff</span><span class="o">.</span><span class="n">text</span> <span class="o">=</span> <span class="n">buff</span><span class="o">.</span><span class="n">text</span><span class="p">[:</span><span class="n">startpos</span><span class="p">]</span> <span class="o">+</span> <span class="n">buff</span><span class="o">.</span><span class="n">text</span><span class="p">[</span><span class="n">endpos</span><span class="p">:]</span>
+        <span class="n">buff</span><span class="o">.</span><span class="n">cursor_position</span> <span class="o">=</span> <span class="n">startpos</span>
 
-<div class="viewcode-block" id="read_py_file"><a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.openpy.html#xonsh.openpy.read_py_file">[docs]</a><span class="k">def</span> <span class="nf">read_py_file</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">skip_encoding_cookie</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;Read a Python file, using the encoding declared inside the file.</span>
+    <span class="nd">@bindings</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">Keys</span><span class="o">.</span><span class="n">ControlDelete</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=</span><span class="n">insert_mode</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">delete_big_word</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
+        <span class="n">buff</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">current_buffer</span>
+        <span class="n">pos</span> <span class="o">=</span> <span class="n">buff</span><span class="o">.</span><span class="n">document</span><span class="o">.</span><span class="n">find_next_word_ending</span><span class="p">(</span><span class="n">count</span><span class="o">=</span><span class="n">event</span><span class="o">.</span><span class="n">arg</span><span class="p">,</span> <span class="n">WORD</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">pos</span><span class="p">:</span>
+            <span class="n">buff</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">count</span><span class="o">=</span><span class="n">pos</span><span class="p">)</span>
 
-<span class="sd">    Parameters</span>
-<span class="sd">    ----------</span>
-<span class="sd">    filename : str</span>
-<span class="sd">        The path to the file to read.</span>
-<span class="sd">    skip_encoding_cookie : bool</span>
-<span class="sd">        If True (the default), and the encoding declaration is found in the first</span>
-<span class="sd">        two lines, that line will be excluded from the output - compiling a</span>
-<span class="sd">        unicode string with an encoding declaration is a SyntaxError in Python 2.</span>
+    <span class="nd">@bindings</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">Keys</span><span class="o">.</span><span class="n">Escape</span><span class="p">,</span> <span class="n">Keys</span><span class="o">.</span><span class="n">Delete</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=</span><span class="n">insert_mode</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">delete_small_word</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
+        <span class="n">get_by_name</span><span class="p">(</span><span class="s2">&quot;kill-word&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
 
-<span class="sd">    Returns</span>
-<span class="sd">    -------</span>
-<span class="sd">    A unicode string containing the contents of the file.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">with</span> <span class="n">tokopen</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>  <span class="c1"># the open function defined in this module.</span>
-        <span class="k">if</span> <span class="n">skip_encoding_cookie</span><span class="p">:</span>
-            <span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">strip_encoding_cookie</span><span class="p">(</span><span class="n">f</span><span class="p">))</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span></div>
+    <span class="c1"># PTK sets both &quot;\x7f&quot; (^?) and &quot;\x08&quot; (^H) to the same behavior. Refs:</span>
+    <span class="c1"># https://github.com/prompt-toolkit/python-prompt-toolkit/blob/65c3d0607c69c19d80abb052a18569a2546280e5/src/prompt_toolkit/input/ansi_escape_sequences.py#L65</span>
+    <span class="c1"># https://github.com/prompt-toolkit/python-prompt-toolkit/issues/257#issuecomment-190328366</span>
+    <span class="c1"># We patch the ANSI sequences used by PTK.  This requires a terminal</span>
+    <span class="c1"># that sends different codes for &lt;backspace&gt; and &lt;control-h&gt;.</span>
+    <span class="c1"># PTK sets Keys.Backspace = Keys.ControlH, so we hardcode the code.</span>
+    <span class="c1"># Windows has the codes reversed, see https://github.com/xonsh/xonsh/commit/406d20f78f18af39d9bbaf9580b0a763df78a0db</span>
+    <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_WHOLE_WORD_CTRL_BKSP&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
+        <span class="n">CONTROL_BKSP</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\x08</span><span class="s2">&quot;</span>
+        <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
+            <span class="c1"># issue #4845: Windows only (isort competes with black :-()</span>
+            <span class="kn">from</span> <span class="nn">prompt_toolkit.input</span> <span class="kn">import</span> <span class="n">win32</span> <span class="k">as</span> <span class="n">ptk_win32</span>  <span class="c1"># black:skip</span>
 
+            <span class="c1"># On windows BKSP is &quot;\x08&quot; and CTRL-BKSP is &quot;\x7f&quot;</span>
+            <span class="n">CONTROL_BKSP</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\x7f</span><span class="s2">&quot;</span>
+            <span class="n">ptk_win32</span><span class="o">.</span><span class="n">ConsoleInputReader</span><span class="o">.</span><span class="n">mappings</span><span class="p">[</span><span class="sa">b</span><span class="s2">&quot;</span><span class="se">\x7f</span><span class="s2">&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">CONTROL_BKSP</span>
+        <span class="n">ansiseq</span><span class="o">.</span><span class="n">ANSI_SEQUENCES</span><span class="p">[</span><span class="n">CONTROL_BKSP</span><span class="p">]</span> <span class="o">=</span> <span class="n">CONTROL_BKSP</span>
+        <span class="n">ansiseq</span><span class="o">.</span><span class="n">REVERSE_ANSI_SEQUENCES</span><span class="p">[</span><span class="n">CONTROL_BKSP</span><span class="p">]</span> <span class="o">=</span> <span class="n">CONTROL_BKSP</span>
 
-<div class="viewcode-block" id="read_py_url"><a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.openpy.html#xonsh.openpy.read_py_url">[docs]</a><span class="k">def</span> <span class="nf">read_py_url</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;replace&quot;</span><span class="p">,</span> <span class="n">skip_encoding_cookie</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;Read a Python file from a URL, using the encoding declared inside the file.</span>
+        <span class="nd">@bindings</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">CONTROL_BKSP</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=</span><span class="n">insert_mode</span><span class="p">)</span>
+        <span class="k">def</span> <span class="nf">backward_delete_big_word</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
+            <span class="n">get_by_name</span><span class="p">(</span><span class="s2">&quot;unix-word-rubout&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="n">event</span><span class="p">)</span></div>
 
-<span class="sd">    Parameters</span>
-<span class="sd">    ----------</span>
-<span class="sd">    url : str</span>
-<span class="sd">        The URL from which to fetch the file.</span>
-<span class="sd">    errors : str</span>
-<span class="sd">        How to handle decoding errors in the file. Options are the same as for</span>
-<span class="sd">        bytes.decode(), but here &#39;replace&#39; is the default.</span>
-<span class="sd">    skip_encoding_cookie : bool</span>
-<span class="sd">        If True (the default), and the encoding declaration is found in the first</span>
-<span class="sd">        two lines, that line will be excluded from the output - compiling a</span>
-<span class="sd">        unicode string with an encoding declaration is a SyntaxError in Python 2.</span>
-
-<span class="sd">    Returns</span>
-<span class="sd">    -------</span>
-<span class="sd">    A unicode string containing the contents of the file.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># Deferred import for faster start</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="kn">from</span> <span class="nn">urllib.request</span> <span class="kn">import</span> <span class="n">urlopen</span>  <span class="c1"># Py 3</span>
-    <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-        <span class="kn">from</span> <span class="nn">urllib</span> <span class="kn">import</span> <span class="n">urlopen</span>
-    <span class="n">response</span> <span class="o">=</span> <span class="n">urlopen</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
-    <span class="n">buf</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
-    <span class="k">return</span> <span class="n">source_to_unicode</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span> <span class="n">errors</span><span class="p">,</span> <span class="n">skip_encoding_cookie</span><span class="p">)</span></div>
+    <span class="c1"># backward_delete_small_word works on Alt+Backspace by default</span>
 
 
-<span class="k">def</span> <span class="nf">_list_readline</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;Given a list, returns a readline() function that returns the next element</span>
-<span class="sd">    with each call.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">x</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-
-    <span class="k">def</span> <span class="nf">readline</span><span class="p">():</span>
-        <span class="k">return</span> <span class="nb">next</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-
-    <span class="k">return</span> <span class="n">readline</span>
+<span class="k">def</span> <span class="nf">_load_xontrib_</span><span class="p">(</span><span class="n">xsh</span><span class="p">:</span> <span class="n">XonshSession</span><span class="p">,</span> <span class="o">**</span><span class="n">_</span><span class="p">):</span>
+    <span class="n">xsh</span><span class="o">.</span><span class="n">builtins</span><span class="o">.</span><span class="n">events</span><span class="o">.</span><span class="n">on_ptk_create</span><span class="p">(</span><span class="n">custom_keybindings</span><span class="p">)</span>
 </pre></div>
         </article>
       </div>
