@@ -379,7 +379,7 @@
     <span class="n">STDOUT_CAPTURE_KINDS</span><span class="p">,</span>
     <span class="n">CommandPipeline</span><span class="p">,</span>
     <span class="n">HiddenCommandPipeline</span><span class="p">,</span>
-    <span class="n">pause_call_resume</span><span class="p">,</span>
+    <span class="n">resume_process</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">xonsh.procs.posix</span> <span class="kn">import</span> <span class="n">PopenThread</span>
 <span class="kn">from</span> <span class="nn">xonsh.procs.proxies</span> <span class="kn">import</span> <span class="n">ProcProxy</span><span class="p">,</span> <span class="n">ProcProxyThread</span>
@@ -1214,14 +1214,8 @@
     <span class="k">return</span> <span class="n">specs</span></div>
 
 
-<span class="k">def</span> <span class="nf">_should_set_title</span><span class="p">(</span><span class="n">captured</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
-    <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
-    <span class="k">return</span> <span class="p">(</span>
-        <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_INTERACTIVE&quot;</span><span class="p">)</span>
-        <span class="ow">and</span> <span class="ow">not</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_STORE_STDOUT&quot;</span><span class="p">)</span>
-        <span class="ow">and</span> <span class="n">captured</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">STDOUT_CAPTURE_KINDS</span>
-        <span class="ow">and</span> <span class="n">XSH</span><span class="o">.</span><span class="n">shell</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-    <span class="p">)</span>
+<span class="k">def</span> <span class="nf">_should_set_title</span><span class="p">():</span>
+    <span class="k">return</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_INTERACTIVE&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">XSH</span><span class="o">.</span><span class="n">shell</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
 
 
 <div class="viewcode-block" id="run_subproc"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.run_subproc">[docs]</a><span class="k">def</span> <span class="nf">run_subproc</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
@@ -1245,6 +1239,23 @@
             <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;TRACE SUBPROC: </span><span class="si">{</span><span class="n">cmds</span><span class="si">}</span><span class="s2">, captured=</span><span class="si">{</span><span class="n">captured</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
 
     <span class="n">specs</span> <span class="o">=</span> <span class="n">cmds_to_specs</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="n">captured</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="n">envs</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">_should_set_title</span><span class="p">():</span>
+        <span class="c1"># context manager updates the command information that gets</span>
+        <span class="c1"># accessed by CurrentJobField when setting the terminal&#39;s title</span>
+        <span class="k">with</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;PROMPT_FIELDS&quot;</span><span class="p">][</span><span class="s2">&quot;current_job&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">update_current_cmds</span><span class="p">(</span><span class="n">cmds</span><span class="p">):</span>
+            <span class="c1"># remove current_job from prompt level cache</span>
+            <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;PROMPT_FIELDS&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">reset_key</span><span class="p">(</span><span class="s2">&quot;current_job&quot;</span><span class="p">)</span>
+            <span class="c1"># The terminal&#39;s title needs to be set before starting the</span>
+            <span class="c1"># subprocess to avoid accidentally answering interactive questions</span>
+            <span class="c1"># from commands such as `rm -i` (see #1436)</span>
+            <span class="n">XSH</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">settitle</span><span class="p">()</span>
+            <span class="c1"># run the subprocess</span>
+            <span class="k">return</span> <span class="n">_run_specs</span><span class="p">(</span><span class="n">specs</span><span class="p">,</span> <span class="n">cmds</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_run_specs</span><span class="p">(</span><span class="n">specs</span><span class="p">,</span> <span class="n">cmds</span><span class="p">)</span></div>
+
+
+<span class="k">def</span> <span class="nf">_run_specs</span><span class="p">(</span><span class="n">specs</span><span class="p">,</span> <span class="n">cmds</span><span class="p">):</span>
     <span class="n">captured</span> <span class="o">=</span> <span class="n">specs</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">captured</span>
     <span class="k">if</span> <span class="n">captured</span> <span class="o">==</span> <span class="s2">&quot;hiddenobject&quot;</span><span class="p">:</span>
         <span class="n">command</span> <span class="o">=</span> <span class="n">HiddenCommandPipeline</span><span class="p">(</span><span class="n">specs</span><span class="p">)</span>
@@ -1263,15 +1274,12 @@
                 <span class="s2">&quot;pgrp&quot;</span><span class="p">:</span> <span class="n">command</span><span class="o">.</span><span class="n">term_pgid</span><span class="p">,</span>
             <span class="p">}</span>
         <span class="p">)</span>
-    <span class="k">if</span> <span class="n">_should_set_title</span><span class="p">(</span><span class="n">captured</span><span class="o">=</span><span class="n">captured</span><span class="p">):</span>
-        <span class="c1"># set title here to get currently executing command</span>
-        <span class="n">pause_call_resume</span><span class="p">(</span><span class="n">proc</span><span class="p">,</span> <span class="n">XSH</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">settitle</span><span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="c1"># for some reason, some programs are in a stopped state when the flow</span>
-        <span class="c1"># reaches this point, hence a SIGCONT should be sent to `proc` to make</span>
-        <span class="c1"># sure that the shell doesn&#39;t hang. This `pause_call_resume` invocation</span>
-        <span class="c1"># does this</span>
-        <span class="n">pause_call_resume</span><span class="p">(</span><span class="n">proc</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span>
+    <span class="c1"># For some reason, some programs are in a stopped state when the flow</span>
+    <span class="c1"># reaches this point, hence a SIGCONT should be sent to `proc` to make</span>
+    <span class="c1"># sure that the shell doesn&#39;t hang.</span>
+    <span class="c1"># See issue #2999 and the fix in PR #3000</span>
+    <span class="n">resume_process</span><span class="p">(</span><span class="n">proc</span><span class="p">)</span>
+
     <span class="c1"># now figure out what we should return</span>
     <span class="k">if</span> <span class="n">captured</span> <span class="o">==</span> <span class="s2">&quot;object&quot;</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">command</span>  <span class="c1"># object can be returned even if backgrounding</span>
@@ -1286,7 +1294,7 @@
         <span class="k">return</span> <span class="n">command</span><span class="o">.</span><span class="n">output</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">command</span><span class="o">.</span><span class="n">end</span><span class="p">()</span>
-        <span class="k">return</span></div>
+        <span class="k">return</span>
 </pre></div>
         </article>
       </div>
