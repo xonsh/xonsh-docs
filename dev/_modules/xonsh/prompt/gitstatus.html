@@ -449,12 +449,48 @@
     <span class="k">return</span> <span class="n">out</span>
 
 
-<span class="k">class</span> <span class="nc">_GSField</span><span class="p">(</span><span class="n">PromptField</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">_GitDir</span><span class="p">(</span><span class="n">PromptField</span><span class="p">):</span>
+    <span class="n">_cwd</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+        <span class="c1"># call the subprocess only if cwd changed</span>
+        <span class="c1"># or if value is None (in case `git init` was run)</span>
+        <span class="kn">from</span> <span class="nn">xonsh.dirstack</span> <span class="kn">import</span> <span class="n">_get_cwd</span>
+
+        <span class="n">cwd</span> <span class="o">=</span> <span class="n">_get_cwd</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">cwd</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cwd</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cwd</span> <span class="o">=</span> <span class="n">cwd</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">_get_sp_output</span><span class="p">(</span>
+                <span class="n">ctx</span><span class="o">.</span><span class="n">xsh</span><span class="p">,</span> <span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;rev-parse&quot;</span><span class="p">,</span> <span class="s2">&quot;--git-dir&quot;</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="kc">None</span>
+
+
+<span class="n">repo_path</span> <span class="o">=</span> <span class="n">_GitDir</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="inside_repo"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.gitstatus.html#xonsh.prompt.gitstatus.inside_repo">[docs]</a><span class="k">def</span> <span class="nf">inside_repo</span><span class="p">(</span><span class="n">ctx</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">ctx</span><span class="o">.</span><span class="n">pick_val</span><span class="p">(</span><span class="n">repo_path</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="GitStatusPromptField"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.gitstatus.html#xonsh.prompt.gitstatus.GitStatusPromptField">[docs]</a><span class="k">class</span> <span class="nc">GitStatusPromptField</span><span class="p">(</span><span class="n">PromptField</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Only calls the updator if we are inside a git repository&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="GitStatusPromptField.update"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.gitstatus.html#xonsh.prompt.gitstatus.GitStatusPromptField.update">[docs]</a>    <span class="k">def</span> <span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">inside_repo</span><span class="p">(</span><span class="n">ctx</span><span class="p">):</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">updator</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">updator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="kc">None</span></div></div>
+
+
+<span class="k">class</span> <span class="nc">_GSField</span><span class="p">(</span><span class="n">GitStatusPromptField</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;wrap output from git command to value&quot;&quot;&quot;</span>
 
     <span class="n">_args</span><span class="p">:</span> <span class="s2">&quot;tuple[str, ...]&quot;</span> <span class="o">=</span> <span class="p">()</span>
 
-    <span class="k">def</span> <span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">updator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">_get_sp_output</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">xsh</span><span class="p">,</span> <span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">_args</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
 
 
@@ -462,7 +498,7 @@
 <span class="n">tag</span> <span class="o">=</span> <span class="n">_GSField</span><span class="p">(</span><span class="n">_args</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;describe&quot;</span><span class="p">,</span> <span class="s2">&quot;--always&quot;</span><span class="p">))</span>
 
 
-<span class="nd">@PromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">()</span>
+<span class="nd">@GitStatusPromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">()</span>
 <span class="k">def</span> <span class="nf">tag_or_hash</span><span class="p">(</span><span class="n">fld</span><span class="p">:</span> <span class="n">PromptField</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
     <span class="n">fld</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">pick</span><span class="p">(</span><span class="n">tag</span><span class="p">)</span> <span class="ow">or</span> <span class="n">ctx</span><span class="o">.</span><span class="n">pick</span><span class="p">(</span><span class="n">short_head</span><span class="p">)</span>
 
@@ -473,23 +509,6 @@
     <span class="k">return</span> <span class="n">default</span>
 
 
-<span class="k">class</span> <span class="nc">_GitDir</span><span class="p">(</span><span class="n">_GSField</span><span class="p">):</span>
-    <span class="n">_args</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;rev-parse&quot;</span><span class="p">,</span> <span class="s2">&quot;--git-dir&quot;</span><span class="p">)</span>
-    <span class="n">_cwd</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
-
-    <span class="k">def</span> <span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
-        <span class="c1"># call the subprocess only if cwd changed</span>
-        <span class="kn">from</span> <span class="nn">xonsh.dirstack</span> <span class="kn">import</span> <span class="n">_get_cwd</span>
-
-        <span class="n">cwd</span> <span class="o">=</span> <span class="n">_get_cwd</span><span class="p">()</span>
-        <span class="k">if</span> <span class="n">cwd</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cwd</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_cwd</span> <span class="o">=</span> <span class="n">cwd</span>
-            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span>
-
-
-<span class="n">repo_path</span> <span class="o">=</span> <span class="n">_GitDir</span><span class="p">()</span>
-
-
 <div class="viewcode-block" id="get_stash_count"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.gitstatus.html#xonsh.prompt.gitstatus.get_stash_count">[docs]</a><span class="k">def</span> <span class="nf">get_stash_count</span><span class="p">(</span><span class="n">gitdir</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Get git-stash count&quot;&quot;&quot;</span>
     <span class="k">with</span> <span class="n">contextlib</span><span class="o">.</span><span class="n">suppress</span><span class="p">(</span><span class="ne">OSError</span><span class="p">):</span>
@@ -498,7 +517,7 @@
     <span class="k">return</span> <span class="mi">0</span></div>
 
 
-<span class="nd">@PromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;⚑&quot;</span><span class="p">)</span>
+<span class="nd">@GitStatusPromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;⚑&quot;</span><span class="p">)</span>
 <span class="k">def</span> <span class="nf">stash_count</span><span class="p">(</span><span class="n">fld</span><span class="p">:</span> <span class="n">PromptField</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">PromptFields</span><span class="p">):</span>
     <span class="n">fld</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">get_stash_count</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">pick_val</span><span class="p">(</span><span class="n">repo_path</span><span class="p">))</span>
 
@@ -517,7 +536,7 @@
             <span class="k">yield</span> <span class="n">name</span></div>
 
 
-<span class="nd">@PromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{CYAN}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">separator</span><span class="o">=</span><span class="s2">&quot;|&quot;</span><span class="p">)</span>
+<span class="nd">@GitStatusPromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{CYAN}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">separator</span><span class="o">=</span><span class="s2">&quot;|&quot;</span><span class="p">)</span>
 <span class="k">def</span> <span class="nf">operations</span><span class="p">(</span><span class="n">fld</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">PromptFields</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="n">gitdir</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">pick_val</span><span class="p">(</span><span class="n">repo_path</span><span class="p">)</span>
     <span class="n">op</span> <span class="o">=</span> <span class="n">fld</span><span class="o">.</span><span class="n">separator</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">get_operations</span><span class="p">(</span><span class="n">gitdir</span><span class="p">))</span>
@@ -527,7 +546,7 @@
         <span class="n">fld</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
 
 
-<span class="nd">@PromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">()</span>
+<span class="nd">@GitStatusPromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">()</span>
 <span class="k">def</span> <span class="nf">porcelain</span><span class="p">(</span><span class="n">fld</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">PromptFields</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;Return parsed values from ``git status --porcelain``&quot;&quot;&quot;</span>
 
@@ -585,7 +604,7 @@
     <span class="n">fld</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">info</span><span class="p">[</span><span class="n">fld</span><span class="o">.</span><span class="n">info</span><span class="p">]</span></div>
 
 
-<span class="k">class</span> <span class="nc">_GSInfo</span><span class="p">(</span><span class="n">PromptField</span><span class="p">):</span>
+<span class="k">class</span> <span class="nc">_GSInfo</span><span class="p">(</span><span class="n">GitStatusPromptField</span><span class="p">):</span>
     <span class="n">info</span><span class="p">:</span> <span class="nb">str</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
@@ -603,7 +622,7 @@
 <span class="n">staged</span> <span class="o">=</span> <span class="n">_GSInfo</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">●&quot;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">info</span><span class="o">=</span><span class="s2">&quot;staged&quot;</span><span class="p">)</span>
 
 
-<span class="nd">@PromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">()</span>
+<span class="nd">@GitStatusPromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">()</span>
 <span class="k">def</span> <span class="nf">numstat</span><span class="p">(</span><span class="n">fld</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
     <span class="n">changed</span> <span class="o">=</span> <span class="n">_get_sp_output</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">xsh</span><span class="p">,</span> <span class="s2">&quot;git&quot;</span><span class="p">,</span> <span class="s2">&quot;diff&quot;</span><span class="p">,</span> <span class="s2">&quot;--numstat&quot;</span><span class="p">)</span>
 
@@ -619,17 +638,17 @@
     <span class="n">fld</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="p">(</span><span class="n">insert</span><span class="p">,</span> <span class="n">delete</span><span class="p">)</span>
 
 
-<span class="nd">@PromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{BLUE}</span><span class="s2">+&quot;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nd">@GitStatusPromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{BLUE}</span><span class="s2">+&quot;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span><span class="p">)</span>
 <span class="k">def</span> <span class="nf">lines_added</span><span class="p">(</span><span class="n">fld</span><span class="p">:</span> <span class="n">PromptField</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">PromptFields</span><span class="p">):</span>
     <span class="n">fld</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">pick_val</span><span class="p">(</span><span class="n">numstat</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
 
 
-<span class="nd">@PromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">-&quot;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nd">@GitStatusPromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">-&quot;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span><span class="p">)</span>
 <span class="k">def</span> <span class="nf">lines_removed</span><span class="p">(</span><span class="n">fld</span><span class="p">:</span> <span class="n">PromptField</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
     <span class="n">fld</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">pick_val</span><span class="p">(</span><span class="n">numstat</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
 
 
-<span class="nd">@PromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{BOLD_GREEN}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">symbol</span><span class="o">=</span><span class="s2">&quot;✓&quot;</span><span class="p">)</span>
+<span class="nd">@GitStatusPromptField</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{BOLD_GREEN}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">symbol</span><span class="o">=</span><span class="s2">&quot;✓&quot;</span><span class="p">)</span>
 <span class="k">def</span> <span class="nf">clean</span><span class="p">(</span><span class="n">fld</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
     <span class="n">changes</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">pick_val</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
@@ -676,11 +695,11 @@
                 <span class="k">continue</span>
             <span class="k">yield</span> <span class="n">frag</span></div>
 
-    <span class="k">def</span> <span class="nf">_collect</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">ctx</span><span class="o">.</span><span class="n">pick_val</span><span class="p">(</span><span class="n">repo_path</span><span class="p">):</span>
-            <span class="c1"># no need to display any other fragments</span>
-            <span class="k">return</span>
-        <span class="k">yield from</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_collect</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span></div>
+<div class="viewcode-block" id="GitStatus.update"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.gitstatus.html#xonsh.prompt.gitstatus.GitStatus.update">[docs]</a>    <span class="k">def</span> <span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">inside_repo</span><span class="p">(</span><span class="n">ctx</span><span class="p">):</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="kc">None</span></div></div>
 
 
 <span class="n">gitstatus</span> <span class="o">=</span> <span class="n">GitStatus</span><span class="p">()</span>
