@@ -5,7 +5,7 @@
     <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="../../../genindex.html" /><link rel="search" title="Search" href="../../../search.html" />
 
     <link rel="shortcut icon" href="../../../_static/magic_conch.ico"/><meta name="generator" content="sphinx-4.5.0, furo 2022.04.07"/>
-        <title>xonsh.lib.os - xonsh 0.13.2 documentation</title>
+        <title>xonsh.prompt.job - xonsh 0.13.2 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?digest=68f4518137b9aefe99b631505a2064c3c42c9852" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css" />
@@ -354,38 +354,37 @@
           </label>
         </div>
         <article role="main">
-          <h1>Source code for xonsh.lib.os</h1><div class="highlight"><pre>
-<span></span><span class="sd">"""Xonsh extension of the standard library os module, using xonsh for</span>
-<span class="sd">subprocess calls"""</span>
-<span class="kn">import</span> <span class="nn">sys</span>
+          <h1>Source code for xonsh.prompt.job</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""Prompt formatter for current jobs"""</span>
 
-<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">subproc_uncaptured</span>
-<span class="kn">from</span> <span class="nn">xonsh.dirstack</span> <span class="kn">import</span> <span class="n">with_pushd</span>
+<span class="kn">import</span> <span class="nn">contextlib</span>
+<span class="kn">import</span> <span class="nn">typing</span> <span class="k">as</span> <span class="nn">tp</span>
 
-<span class="n">indir</span> <span class="o">=</span> <span class="n">with_pushd</span>
-<span class="sd">"""alias to push_d context manager"""</span>
+<span class="kn">from</span> <span class="nn">xonsh.prompt.base</span> <span class="kn">import</span> <span class="n">PromptField</span>
 
 
-<div class="viewcode-block" id="rmtree"><a class="viewcode-back" href="../../../api/_autosummary/helpers/xonsh.lib.os.html#xonsh.lib.os.rmtree">[docs]</a><span class="k">def</span> <span class="nf">rmtree</span><span class="p">(</span><span class="n">dirname</span><span class="p">,</span> <span class="n">force</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
-    <span class="sd">"""Remove a directory, even if it has read-only files (Windows).</span>
-<span class="sd">    Git creates read-only files that must be removed on teardown. See</span>
-<span class="sd">    https://stackoverflow.com/questions/2656322  for more info.</span>
+<div class="viewcode-block" id="CurrentJobField"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.job.html#xonsh.prompt.job.CurrentJobField">[docs]</a><span class="k">class</span> <span class="nc">CurrentJobField</span><span class="p">(</span><span class="n">PromptField</span><span class="p">):</span>
+    <span class="n">_current_cmds</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Optional</span><span class="p">[</span><span class="nb">list</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
-<span class="sd">    Parameters</span>
-<span class="sd">    ----------</span>
-<span class="sd">    dirname : str</span>
-<span class="sd">        Directory to be removed</span>
-<span class="sd">    force : bool</span>
-<span class="sd">        If True force removal, defaults to False</span>
-<span class="sd">    """</span>
-    <span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">platform</span> <span class="o">==</span> <span class="s2">"win32"</span><span class="p">:</span>
-        <span class="n">cmd_args</span> <span class="o">=</span> <span class="s2">"/S/Q"</span>
-        <span class="n">subproc_uncaptured</span><span class="p">([</span><span class="s2">"rmdir"</span><span class="p">,</span> <span class="n">cmd_args</span><span class="p">,</span> <span class="n">dirname</span><span class="p">])</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">cmd_args</span> <span class="o">=</span> <span class="s2">"-r"</span>
-        <span class="k">if</span> <span class="n">force</span><span class="p">:</span>
-            <span class="n">cmd_args</span> <span class="o">+=</span> <span class="s2">"f"</span>
-        <span class="n">subproc_uncaptured</span><span class="p">([</span><span class="s2">"rm"</span><span class="p">,</span> <span class="n">cmd_args</span><span class="p">,</span> <span class="n">dirname</span><span class="p">])</span></div>
+<div class="viewcode-block" id="CurrentJobField.update"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.job.html#xonsh.prompt.job.CurrentJobField.update">[docs]</a>    <span class="k">def</span> <span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_cmds</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">cmd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_cmds</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="n">cmd</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">s</span> <span class="o">==</span> <span class="s2">"sudo"</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">s</span> <span class="o">=</span> <span class="n">cmd</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">s</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="CurrentJobField.update_current_cmds"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.job.html#xonsh.prompt.job.CurrentJobField.update_current_cmds">[docs]</a>    <span class="nd">@contextlib</span><span class="o">.</span><span class="n">contextmanager</span>
+    <span class="k">def</span> <span class="nf">update_current_cmds</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cmds</span><span class="p">):</span>
+        <span class="sd">"""Context manager that updates the information used to update the job name"""</span>
+        <span class="n">old_cmds</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_cmds</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_current_cmds</span> <span class="o">=</span> <span class="n">cmds</span>
+            <span class="k">yield</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_current_cmds</span> <span class="o">=</span> <span class="n">old_cmds</span></div></div>
 </pre></div>
         </article>
       </div>
