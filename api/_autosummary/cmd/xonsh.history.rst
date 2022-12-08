@@ -1,0 +1,27 @@
+﻿xonsh.history
+=============
+
+
+.. currentmodule:: xonsh.history
+
+.. automodule:: xonsh.history
+    :members:
+    :undoc-members:
+    :inherited-members:
+
+.. autosummary::
+   :toctree:
+   :template: api-summary-module.rst
+   :recursive:
+
+   xonsh.history.base
+
+   xonsh.history.dummy
+
+   xonsh.history.json
+
+   xonsh.history.main
+
+   xonsh.history.sqlite
+
+

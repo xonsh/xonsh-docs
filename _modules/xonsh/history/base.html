@@ -5,7 +5,7 @@
     <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="../../../genindex.html" /><link rel="search" title="Search" href="../../../search.html" />
 
     <link rel="shortcut icon" href="../../../_static/magic_conch.ico"/><meta name="generator" content="sphinx-4.5.0, furo 2022.04.07"/>
-        <title>xonsh.history.base - xonsh 0.13.2 documentation</title>
+        <title>xonsh.history.base - xonsh 0.13.4 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?digest=68f4518137b9aefe99b631505a2064c3c42c9852" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css" />
@@ -124,7 +124,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../../contents.html"><div class="brand">xonsh 0.13.2 documentation</div></a>
+      <a href="../../../contents.html"><div class="brand">xonsh 0.13.4 documentation</div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -150,7 +150,7 @@
     <img class="sidebar-logo" src="../../../_static/ascii_conch_part_transparent_tight.png" alt="Logo"/>
   </div>
   
-  <span class="sidebar-brand-text">xonsh 0.13.2 documentation</span>
+  <span class="sidebar-brand-text">xonsh 0.13.4 documentation</span>
   
 </a><form class="sidebar-search-container" method="get" action="../../../search.html" role="search">
   <input class="sidebar-search" placeholder=Search name="q" aria-label="Search">
@@ -356,8 +356,13 @@
         <article role="main">
           <h1>Source code for xonsh.history.base</h1><div class="highlight"><pre>
 <span></span><span class="sd">"""Base class of Xonsh History backends."""</span>
+<span class="kn">import</span> <span class="nn">functools</span>
+<span class="kn">import</span> <span class="nn">re</span>
 <span class="kn">import</span> <span class="nn">types</span>
 <span class="kn">import</span> <span class="nn">uuid</span>
+
+<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
+<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="n">print_warning</span>
 
 
 <div class="viewcode-block" id="HistoryEntry"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.base.html#xonsh.history.base.HistoryEntry">[docs]</a><span class="k">class</span> <span class="nc">HistoryEntry</span><span class="p">(</span><span class="n">types</span><span class="o">.</span><span class="n">SimpleNamespace</span><span class="p">):</span>
@@ -430,6 +435,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">hist_size</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">hist_units</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">remember_history</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ignore_regex</span>  <span class="c1"># Tap the ignore regex to validate it</span>
 
     <span class="k">def</span> <span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="sd">"""Return the number of items in current session."""</span>
@@ -519,7 +525,40 @@
         <span class="sd">"""Clears the history of the current session from both the disk and</span>
 <span class="sd">        memory.</span>
 <span class="sd">        """</span>
-        <span class="k">pass</span></div></div>
+        <span class="k">pass</span></div>
+
+    <span class="nd">@functools</span><span class="o">.</span><span class="n">cached_property</span>
+    <span class="k">def</span> <span class="nf">ignore_regex</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">compiled_regex</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">regex</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"XONSH_HISTORY_IGNORE_REGEX"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">regex</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">compiled_regex</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">regex</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">re</span><span class="o">.</span><span class="n">error</span><span class="p">:</span>
+                <span class="n">print_warning</span><span class="p">(</span>
+                    <span class="s2">"XONSH_HISTORY_IGNORE_REGEX is not a valid regular expression and will be ignored"</span>
+                <span class="p">)</span>
+        <span class="k">return</span> <span class="n">compiled_regex</span>
+
+<div class="viewcode-block" id="History.is_ignored"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.base.html#xonsh.history.base.History.is_ignored">[docs]</a>    <span class="k">def</span> <span class="nf">is_ignored</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cmd</span><span class="p">):</span>
+        <span class="sd">"""Determines if a history item should be added to the event history.</span>
+<span class="sd">        Call this in your append method.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        cmd: dict</span>
+<span class="sd">            The prospective item to append (structure is the same as the append method).</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        bool</span>
+<span class="sd">            True if the item should be appended, False if not.</span>
+<span class="sd">        """</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ignore_regex</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">cmd</span><span class="p">[</span><span class="s2">"inp"</span><span class="p">])</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ignore_regex</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="kc">False</span>
+        <span class="p">)</span></div></div>
 </pre></div>
         </article>
       </div>
