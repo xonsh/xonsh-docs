@@ -481,6 +481,27 @@
     <span class="k">return</span> <span class="n">branch</span></div>
 
 
+<span class="k">def</span> <span class="nf">_run_fossil_cmd</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
+    <span class="n">timeout</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;VC_BRANCH_TIMEOUT&quot;</span><span class="p">)</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">result</span>
+
+
+<div class="viewcode-block" id="get_fossil_branch"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.vc.html#xonsh.prompt.vc.get_fossil_branch">[docs]</a><span class="k">def</span> <span class="nf">get_fossil_branch</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Attempts to find the current fossil branch. If this could not</span>
+<span class="sd">    be determined (timeout, not in a fossil checkout, etc.) then this returns None.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># from fossil branch --help: &quot;fossil branch current: Print the name of the branch for the current check-out&quot;</span>
+    <span class="n">cmd</span> <span class="o">=</span> <span class="s2">&quot;fossil branch current&quot;</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">branch</span> <span class="o">=</span> <span class="n">xt</span><span class="o">.</span><span class="n">decode_bytes</span><span class="p">(</span><span class="n">_run_fossil_cmd</span><span class="p">(</span><span class="n">cmd</span><span class="p">))</span>
+    <span class="k">except</span> <span class="p">(</span><span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">,</span> <span class="ne">OSError</span><span class="p">):</span>
+        <span class="n">branch</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">branch</span> <span class="o">=</span> <span class="n">RE_REMOVE_ANSI</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">branch</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">branch</span></div>
+
+
 <span class="n">_FIRST_BRANCH_TIMEOUT</span> <span class="o">=</span> <span class="kc">True</span>
 
 
@@ -513,7 +534,7 @@
 
 <div class="viewcode-block" id="current_branch"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.vc.html#xonsh.prompt.vc.current_branch">[docs]</a><span class="k">def</span> <span class="nf">current_branch</span><span class="p">():</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Gets the branch for a current working directory. Returns an empty string</span>
-<span class="sd">    if the cwd is not a repository.  This currently only works for git and hg</span>
+<span class="sd">    if the cwd is not a repository.  This currently only works for git, hg, and fossil</span>
 <span class="sd">    and should be extended in the future.  If a timeout occurred, the string</span>
 <span class="sd">    &#39;&lt;branch-timeout&gt;&#39; is returned.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -522,6 +543,8 @@
         <span class="n">branch</span> <span class="o">=</span> <span class="n">get_git_branch</span><span class="p">()</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">branch</span> <span class="ow">and</span> <span class="n">_vc_has</span><span class="p">(</span><span class="s2">&quot;hg&quot;</span><span class="p">):</span>
         <span class="n">branch</span> <span class="o">=</span> <span class="n">get_hg_branch</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">branch</span> <span class="ow">and</span> <span class="n">_vc_has</span><span class="p">(</span><span class="s2">&quot;fossil&quot;</span><span class="p">):</span>
+        <span class="n">branch</span> <span class="o">=</span> <span class="n">get_fossil_branch</span><span class="p">()</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">branch</span><span class="p">,</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">TimeoutExpired</span><span class="p">):</span>
         <span class="n">branch</span> <span class="o">=</span> <span class="s2">&quot;&lt;branch-timeout&gt;&quot;</span>
         <span class="n">_first_branch_timeout_message</span><span class="p">()</span>
@@ -591,6 +614,20 @@
         <span class="k">return</span> <span class="kc">None</span></div>
 
 
+<div class="viewcode-block" id="fossil_dirty_working_directory"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.vc.html#xonsh.prompt.vc.fossil_dirty_working_directory">[docs]</a><span class="k">def</span> <span class="nf">fossil_dirty_working_directory</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Returns whether the fossil checkout is dirty. If this could not</span>
+<span class="sd">    be determined (timeout, file not found, etc.) then this returns None.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cmd</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;fossil&quot;</span><span class="p">,</span> <span class="s2">&quot;changes&quot;</span><span class="p">]</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="n">_run_fossil_cmd</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
+    <span class="k">except</span> <span class="p">(</span><span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">,</span> <span class="ne">OSError</span><span class="p">):</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">status</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">status</span></div>
+
+
 <div class="viewcode-block" id="dirty_working_directory"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.vc.html#xonsh.prompt.vc.dirty_working_directory">[docs]</a><span class="k">def</span> <span class="nf">dirty_working_directory</span><span class="p">():</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Returns a boolean as to whether there are uncommitted files in version</span>
 <span class="sd">    control repository we are inside. If this cannot be determined, returns</span>
@@ -601,6 +638,8 @@
         <span class="n">dwd</span> <span class="o">=</span> <span class="n">git_dirty_working_directory</span><span class="p">()</span>
     <span class="k">if</span> <span class="n">dwd</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">_vc_has</span><span class="p">(</span><span class="s2">&quot;hg&quot;</span><span class="p">):</span>
         <span class="n">dwd</span> <span class="o">=</span> <span class="n">hg_dirty_working_directory</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">dwd</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">_vc_has</span><span class="p">(</span><span class="s2">&quot;fossil&quot;</span><span class="p">):</span>
+        <span class="n">dwd</span> <span class="o">=</span> <span class="n">fossil_dirty_working_directory</span><span class="p">()</span>
     <span class="k">return</span> <span class="n">dwd</span></div>
 
 
