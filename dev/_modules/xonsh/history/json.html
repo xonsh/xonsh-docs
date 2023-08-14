@@ -349,6 +349,7 @@
 <span class="kn">import</span> <span class="nn">collections</span>
 <span class="kn">import</span> <span class="nn">collections.abc</span> <span class="k">as</span> <span class="nn">cabc</span>
 <span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
 <span class="kn">import</span> <span class="nn">sys</span>
 <span class="kn">import</span> <span class="nn">threading</span>
 <span class="kn">import</span> <span class="nn">time</span>
@@ -357,8 +358,12 @@
 
 <span class="k">try</span><span class="p">:</span>
     <span class="kn">import</span> <span class="nn">ujson</span> <span class="k">as</span> <span class="nn">json</span>
+
+    <span class="n">JSONDecodeError</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">JSONDecodeError</span>  <span class="c1"># type: ignore</span>
 <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
     <span class="kn">import</span> <span class="nn">json</span>  <span class="c1"># type: ignore</span>
+
+    <span class="n">JSONDecodeError</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">decoder</span><span class="o">.</span><span class="n">JSONDecodeError</span>  <span class="c1"># type: ignore</span>
 
 <span class="kn">import</span> <span class="nn">xonsh.lazyjson</span> <span class="k">as</span> <span class="nn">xlj</span>
 <span class="kn">import</span> <span class="nn">xonsh.tools</span> <span class="k">as</span> <span class="nn">xt</span>
@@ -896,7 +901,7 @@
                 <span class="k">continue</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="n">commands</span> <span class="o">=</span> <span class="n">json_file</span><span class="o">.</span><span class="n">load</span><span class="p">()[</span><span class="s2">&quot;cmds&quot;</span><span class="p">]</span>
-            <span class="k">except</span> <span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">decoder</span><span class="o">.</span><span class="n">JSONDecodeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+            <span class="k">except</span> <span class="p">(</span><span class="n">JSONDecodeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
                 <span class="c1"># file is corrupted somehow</span>
                 <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_DEBUG&quot;</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
                     <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;xonsh history file </span><span class="si">{0!r}</span><span class="s2"> is not valid JSON&quot;</span>
@@ -942,7 +947,47 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_skipped</span> <span class="o">=</span> <span class="mi">0</span>
 
         <span class="c1"># Flush empty history object to disk, overwriting previous data.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span></div></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="JsonHistory.delete"><a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.json.html#xonsh.history.json.JsonHistory.delete">[docs]</a>    <span class="k">def</span> <span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pattern</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Deletes all entries in history which matches a pattern.&quot;&quot;&quot;</span>
+        <span class="n">pattern</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">pattern</span><span class="p">)</span>
+
+        <span class="n">deleted</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="c1"># First, delete any matching commands in the in-memory buffer.</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">pattern</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">cmd</span><span class="p">[</span><span class="s2">&quot;inp&quot;</span><span class="p">]):</span>
+                <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+                <span class="n">deleted</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="c1"># Then, delete any matching commands on disk.</span>
+        <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">gc</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">gc</span><span class="o">.</span><span class="n">is_alive</span><span class="p">():</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.011</span><span class="p">)</span>  <span class="c1"># gc sleeps for 0.01 secs, sleep a beat longer</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">_xhj_get_history_files</span><span class="p">():</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">json_file</span> <span class="o">=</span> <span class="n">xlj</span><span class="o">.</span><span class="n">LazyJSON</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">reopen</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                <span class="c1"># Invalid json file</span>
+                <span class="k">continue</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">file_content</span> <span class="o">=</span> <span class="n">json_file</span><span class="o">.</span><span class="n">load</span><span class="p">()</span>
+                <span class="n">commands</span> <span class="o">=</span> <span class="n">file_content</span><span class="p">[</span><span class="s2">&quot;cmds&quot;</span><span class="p">]</span>
+                <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">commands</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="n">pattern</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">c</span><span class="p">[</span><span class="s2">&quot;inp&quot;</span><span class="p">]):</span>
+                        <span class="k">del</span> <span class="n">commands</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+                        <span class="n">deleted</span> <span class="o">+=</span> <span class="mi">1</span>
+
+                <span class="n">file_content</span><span class="p">[</span><span class="s2">&quot;cmds&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">commands</span>
+                <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">fp</span><span class="p">:</span>
+                    <span class="n">xlj</span><span class="o">.</span><span class="n">ljdump</span><span class="p">(</span><span class="n">file_content</span><span class="p">,</span> <span class="n">fp</span><span class="p">)</span>
+            <span class="k">except</span> <span class="p">(</span><span class="n">JSONDecodeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+                <span class="c1"># file is corrupted somehow</span>
+                <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_DEBUG&quot;</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;xonsh history file </span><span class="si">{0!r}</span><span class="s2"> is not valid JSON&quot;</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">f</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+                <span class="k">continue</span>
+
+        <span class="k">return</span> <span class="n">deleted</span></div></div>
 </pre></div>
         </article>
       </div>
