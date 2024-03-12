@@ -25,5 +25,3 @@
    xonsh.ptk_shell.shell
 
    xonsh.ptk_shell.updator
-
-

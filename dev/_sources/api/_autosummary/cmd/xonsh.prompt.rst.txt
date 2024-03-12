@@ -27,5 +27,3 @@
    xonsh.prompt.times
 
    xonsh.prompt.vc
-
-

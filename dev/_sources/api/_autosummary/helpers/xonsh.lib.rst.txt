@@ -23,5 +23,3 @@
    xonsh.lib.os
 
    xonsh.lib.subprocess
-
-

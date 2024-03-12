@@ -39,5 +39,3 @@
    xonsh.completers.python
 
    xonsh.completers.tools
-
-

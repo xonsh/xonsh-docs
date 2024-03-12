@@ -23,5 +23,3 @@
    xonsh.history.main
 
    xonsh.history.sqlite
-
-

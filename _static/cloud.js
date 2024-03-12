@@ -12,8 +12,8 @@
 
 
 
-    
-    
+
+
 
 
 // begin encapsulation
@@ -64,7 +64,7 @@
         return ($node && $node.length > 0) ? $node[0].getBoundingClientRect().bottom + topFrameOffset() : 0;
     }
 
-    
+
     function topOffset($target, $parent) {
         if (!($target && $target[0])) {
             return 0;
@@ -278,7 +278,7 @@
             setState(false);
         } else {
             var value = $.cookie("sidebar");
-            
+
             setState(value != "collapsed");
         }
 
@@ -326,9 +326,9 @@
         $window.on('resize cloud-sidebar-toggled', layout_header);
     });
 
-    
 
-    
+
+
         /*==========================================================================
          * smooth scrolling
          * instrument toc links w/in same page to use smooth scrolling
@@ -355,9 +355,9 @@
                 $window.trigger("hashchange"); // for toggle section code
             });
         });
-    
 
-    
+
+
 
     /*==========================================================================
      * patch sphinx search code to try to and prevent rest markup from showing up
@@ -492,7 +492,7 @@
      * based on name of containing class.  this is used to generate a "return to top"
      * link w/in nested section header.
      *==========================================================================*/
-    
+
         $(function () {
             var template = _.template(('<%- name %> \\2014\\0020').replace(
                 /\\(\d{4})/g, function (m, char) { return String.fromCharCode(parseInt(char,16)); }
@@ -507,7 +507,7 @@
                 $header.attr("data-nested-label", template({name: name, parent: $parent}));
             });
         });
-    
+
 
     /*==========================================================================
      * field definition markup

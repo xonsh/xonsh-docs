@@ -37,5 +37,3 @@
    xontrib.whole_word_jumping
 
    xontrib.xog
-
-

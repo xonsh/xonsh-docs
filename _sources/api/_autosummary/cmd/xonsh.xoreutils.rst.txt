@@ -37,5 +37,3 @@
    xonsh.xoreutils.which
 
    xonsh.xoreutils.yes
-
-

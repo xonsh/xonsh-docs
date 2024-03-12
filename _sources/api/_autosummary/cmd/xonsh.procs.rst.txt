@@ -23,5 +23,3 @@
    xonsh.procs.readers
 
    xonsh.procs.specs
-
-
