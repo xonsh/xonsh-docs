@@ -356,13 +356,26 @@ The ``$(<expr>)`` operator in xonsh executes a subprocess command and
 *captures* some information about that command.
 
 The ``$()`` syntax captures and returns the standard output stream of the
-command as a Python string.  This is similar to how ``$()`` performs in Bash.
+command as a Python string. This is similar to how ``$()`` performs in Bash.
 For example,
 
 .. code-block:: xonshcon
 
     >>> $(ls -l)
     'total 0\n-rw-rw-r-- 1 snail snail 0 Mar  8 15:46 xonsh\n'
+
+
+.. note::
+
+    By default the output is represented as one single block of output with new
+    line characters. You can set ``$XONSH_SUBPROC_OUTPUT_FORMAT`` to ``list_lines``
+    to have a list of distinct lines in the commands like ``du -h $(ls)``.
+
+.. note::
+
+    You can access a subprocess command you ran using ``__xonsh__.last``
+    e.g. to get the return code run ``__xonsh__.last.rtn``.
+
 
 The ``!()`` syntax captured more information about the command, as an instance
 of a class called ``CommandPipeline``.  This object contains more information
@@ -374,22 +387,43 @@ input and output were redirected.  For example:
 
     >>> !(ls nonexistent_directory)
     CommandPipeline(
-        stdin=<_io.BytesIO object at 0x7f1948182bf8>,
-        stdout=<_io.BytesIO object at 0x7f1948182af0>,
-        stderr=<_io.BytesIO object at 0x7f19483a6200>,
         pid=26968,
         returncode=2,
         args=['ls', 'nonexistent_directory'],
         alias=['ls', '--color=auto', '-v'],
-        stdin_redirect=['<stdin>', 'r'],
-        stdout_redirect=[9, 'wb'],
-        stderr_redirect=[11, 'w'],
         timestamps=[1485235484.5016758, None],
         executed_cmd=['ls', '--color=auto', '-v', 'nonexistent_directory'],
         input=None,
         output=,
         errors=None
     )
+
+The captured object ``!()`` operator allows for non-blocking execution.
+You can call a long-running command, intersperse other commands and
+read the captured output later:
+
+.. code-block:: xonshcon
+
+    >>> p = !(echo snail)
+    >>> p.output
+    ''
+    >>> p.end()
+    >>> p.output
+    'snail'
+
+You can force ``xonsh`` to block and wait for the command to complete by asking for the return code,
+printing the object or reading the ``out`` attribute:
+
+.. code-block:: xonshcon
+
+    >>> p = !(echo snail)
+    >>> p.out
+    'snail'
+    >>> p = !(echo party)
+    >>> p.rtn
+    0
+    >>> p.output
+    'party'
 
 This object will be "truthy" if its return code was 0, and it is equal (via
 ``==``) to its return code. It also hashes to its return code. Converting the object
@@ -475,7 +509,25 @@ or inject Python values with the ``@()`` operator:
 .. code-block:: xonshcon
 
     >>> $(echo $HOME)
-    '/home/snail\n'
+    '/home/snail'
+
+Threading
+=========
+
+If you want to work more closely with captured commands, you need to know about threading.
+Xonsh has a threading prediction mechanism that allows it to understand which commands can capture everything.
+For example, the ``echo`` command has no interaction with the user and is capturable.
+However, some tools have mixed behavior and can be run for either interactive or non-interactive tasks.
+The best example of this is ``ssh``, which allows for remote terminal sessions and executing commands.
+
+To handle different types of tasks, xonsh has the ``xthread`` and ``xunthread`` built-in aliases.
+If you need to capture the output from an interactive tool that has a capturable mode use ``xthread`` to run:
+
+.. code-block:: xonshcon
+
+    @ !(xthread ssh host -T 'echo remote')
+    CommandPipeline(output="remote")
+
 
 Uncaptured Subprocess with ``$[]`` and ``![]``
 ===============================================
@@ -544,7 +596,7 @@ be used to generate any of the tokens in the subprocess command list.
 
     >>> out = $(echo @(x + ' ' + y))
     >>> out
-    'xonsh party\n'
+    'xonsh party'
     >>> @("ech" + "o") "hey"
     hey
 
@@ -592,11 +644,11 @@ Consider the following example:
 
     >>> # this returns a string representing stdout
     >>> $(which ls)
-    'ls --color=auto\n'
+    'ls --color=auto'
 
     >>> # this attempts to run the command, but as one argument
-    >>> # (looks for 'ls --color=auto\n' with spaces and newline)
-    >>> @($(which ls).strip())
+    >>> # (looks for 'ls --color=auto' with spaces)
+    >>> @($(which ls))
     xonsh: subprocess mode: command not found: ls --color=auto
 
     >>> # this actually executes the intended command
@@ -1264,10 +1316,7 @@ or by the index in ``$arg<n>`` environment variables.
     >>> aliases['piu'] = 'pip install -U @($args)'
     >>> aliases['cdls'] = 'cd $arg0 && ls'
 
-.. warning:: That means, if you need ``@()`` in your alias, you can't rely on
-             automatic argument handling anymore. Any alias involving it needs
-             to add ``$args`` at the end manually if you don't want your alias
-             to ignore supplied arguments.
+.. warning:: You need to add ``@($args)`` manually if you need arguments.
 
 .. code-block:: xonshcon
 
@@ -1435,6 +1484,30 @@ Removing an alias is as easy as deleting the key from the alias dictionary:
    Otherwise, they may shadow the alias itself, as Python variables take
    precedence over aliases when xonsh executes commands.
 
+Callable alias and capturing
+----------------------------
+
+Callable aliases tend to be capturable. Only the explicitly denoted uncaptured subprocess
+operator ``$[]`` is uncapturable, and the subprocess's stdout passes directly
+through xonsh to the screen.
+
+.. code-block:: xonshcon
+
+    >>> @aliases.register('hunter')
+    ... def _hunter():
+    ...     print('catch me')
+    ...     echo if  # The same as `![echo if]`
+    ...     $[echo you]
+    ...     ![echo can]
+    >>> hunter
+    catch me
+    if
+    you
+    can
+
+    >>> $(hunter)
+    you
+    'catch me\nif\ncan\n'
 
 Anonymous Aliases
 -----------------

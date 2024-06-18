@@ -5,7 +5,7 @@
     <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="../../genindex.html" /><link rel="search" title="Search" href="../../search.html" />
 
     <link rel="shortcut icon" href="../../_static/magic_conch.ico"/><!-- Generated with Sphinx 7.3.7 and Furo 2024.01.29 -->
-        <title>xonsh.jobs - xonsh 0.16.0 documentation</title>
+        <title>xonsh.jobs - xonsh 0.17.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=fa44fd50" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=135e06be" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=fd3f3429" />
@@ -124,7 +124,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../contents.html"><div class="brand">xonsh 0.16.0 documentation</div></a>
+      <a href="../../contents.html"><div class="brand">xonsh 0.17.0 documentation</div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -150,7 +150,7 @@
     <img class="sidebar-logo" src="../../_static/ascii_conch_part_transparent_tight.png" alt="Logo"/>
   </div>
   
-  <span class="sidebar-brand-text">xonsh 0.16.0 documentation</span>
+  <span class="sidebar-brand-text">xonsh 0.17.0 documentation</span>
   
 </a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -363,7 +363,7 @@
 <span class="kn">from</span> <span class="nn">xonsh.completers.tools</span> <span class="kn">import</span> <span class="n">RichCompletion</span>
 <span class="kn">from</span> <span class="nn">xonsh.lazyasd</span> <span class="kn">import</span> <span class="n">LazyObject</span>
 <span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="kn">import</span> <span class="n">FD_STDERR</span><span class="p">,</span> <span class="n">LIBC</span><span class="p">,</span> <span class="n">ON_CYGWIN</span><span class="p">,</span> <span class="n">ON_DARWIN</span><span class="p">,</span> <span class="n">ON_MSYS</span><span class="p">,</span> <span class="n">ON_WINDOWS</span>
-<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="n">on_main_thread</span><span class="p">,</span> <span class="n">unthreadable</span>
+<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="n">get_signal_name</span><span class="p">,</span> <span class="n">on_main_thread</span><span class="p">,</span> <span class="n">unthreadable</span>
 
 <span class="c1"># Track time stamp of last exit command, so that two consecutive attempts to</span>
 <span class="c1"># exit can kill all jobs and exit.</span>
@@ -384,6 +384,89 @@
 <span class="c1"># The use_main_jobs context manager uses this variable to access the tasks on</span>
 <span class="c1"># the main thread.</span>
 <span class="n">_tasks_main</span><span class="p">:</span> <span class="n">collections</span><span class="o">.</span><span class="n">deque</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">collections</span><span class="o">.</span><span class="n">deque</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="proc_untraced_waitpid">
+<a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.proc_untraced_waitpid">[docs]</a>
+<span class="k">def</span> <span class="nf">proc_untraced_waitpid</span><span class="p">(</span><span class="n">proc</span><span class="p">,</span> <span class="n">hang</span><span class="p">,</span> <span class="n">task</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">raise_child_process_error</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Read a stop signals from the process and update the process state.</span>
+
+<span class="sd">    Return code</span>
+<span class="sd">    ===========</span>
+
+<span class="sd">    Basically ``p = subprocess.Popen()`` populates ``p.returncode`` after ``p.wait()``, ``p.poll()``</span>
+<span class="sd">    or ``p.communicate()`` (https://docs.python.org/3/library/os.html#os.waitpid).</span>
+<span class="sd">    But if you&#39;re using `os.waitpid()` BEFORE these functions you&#39;re capturing return code</span>
+<span class="sd">    from a signal subsystem and ``p.returncode`` will be ``0``.</span>
+<span class="sd">    After ``os.waitid`` call you need to set return code and process signal manually.</span>
+<span class="sd">    See also ``xonsh.tools.describe_waitpid_status()``.</span>
+
+<span class="sd">    Signals</span>
+<span class="sd">    =======</span>
+
+<span class="sd">    The command that is waiting for input can be suspended by OS in case there is no terminal attached</span>
+<span class="sd">    because without terminal command will never end. Read more about SIGTTOU and SIGTTIN signals:</span>
+<span class="sd">     * https://www.linusakesson.net/programming/tty/</span>
+<span class="sd">     * http://curiousthing.org/sigttin-sigttou-deep-dive-linux</span>
+<span class="sd">     * https://www.gnu.org/software/libc/manual/html_node/Job-Control-Signals.html</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">info</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;backgrounded&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span> <span class="s2">&quot;signal&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;signal_name&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">}</span>
+
+    <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">info</span>
+
+    <span class="k">if</span> <span class="n">proc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">proc</span><span class="p">,</span> <span class="s2">&quot;pid&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        When the process stopped before os.waitpid it has no pid.</span>
+<span class="sd">        Note that in this case there is high probability</span>
+<span class="sd">        that we will have return code 0 instead of real return code.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">raise_child_process_error</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ChildProcessError</span><span class="p">(</span><span class="s2">&quot;Process Identifier (PID) not found.&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">info</span>
+
+    <span class="k">try</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The WUNTRACED flag indicates that the caller wishes to wait for stopped or terminated</span>
+<span class="sd">        child processes, but doesn&#39;t want to return information about them. A stopped process is one</span>
+<span class="sd">        that has been suspended and is waiting to be resumed or terminated.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">opt</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">WUNTRACED</span> <span class="k">if</span> <span class="n">hang</span> <span class="k">else</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">WUNTRACED</span> <span class="o">|</span> <span class="n">os</span><span class="o">.</span><span class="n">WNOHANG</span><span class="p">)</span>
+        <span class="n">wpid</span><span class="p">,</span> <span class="n">wcode</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">waitpid</span><span class="p">(</span><span class="n">proc</span><span class="o">.</span><span class="n">pid</span><span class="p">,</span> <span class="n">opt</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">ChildProcessError</span><span class="p">:</span>
+        <span class="n">wpid</span><span class="p">,</span> <span class="n">wcode</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span>
+        <span class="k">if</span> <span class="n">raise_child_process_error</span><span class="p">:</span>
+            <span class="k">raise</span>
+
+    <span class="k">if</span> <span class="n">wpid</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="c1"># Process has no changes in state.</span>
+        <span class="k">pass</span>
+
+    <span class="k">elif</span> <span class="n">os</span><span class="o">.</span><span class="n">WIFSTOPPED</span><span class="p">(</span><span class="n">wcode</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">task</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">task</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;stopped&quot;</span>
+        <span class="n">info</span><span class="p">[</span><span class="s2">&quot;backgrounded&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">proc</span><span class="o">.</span><span class="n">signal</span> <span class="o">=</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">WSTOPSIG</span><span class="p">(</span><span class="n">wcode</span><span class="p">),</span> <span class="n">os</span><span class="o">.</span><span class="n">WCOREDUMP</span><span class="p">(</span><span class="n">wcode</span><span class="p">))</span>
+        <span class="n">info</span><span class="p">[</span><span class="s2">&quot;signal&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">WSTOPSIG</span><span class="p">(</span><span class="n">wcode</span><span class="p">)</span>
+        <span class="n">proc</span><span class="o">.</span><span class="n">suspended</span> <span class="o">=</span> <span class="kc">True</span>
+
+    <span class="k">elif</span> <span class="n">os</span><span class="o">.</span><span class="n">WIFSIGNALED</span><span class="p">(</span><span class="n">wcode</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">()</span>  <span class="c1"># get a newline because ^C will have been printed</span>
+        <span class="n">proc</span><span class="o">.</span><span class="n">signal</span> <span class="o">=</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">WTERMSIG</span><span class="p">(</span><span class="n">wcode</span><span class="p">),</span> <span class="n">os</span><span class="o">.</span><span class="n">WCOREDUMP</span><span class="p">(</span><span class="n">wcode</span><span class="p">))</span>
+        <span class="n">proc</span><span class="o">.</span><span class="n">returncode</span> <span class="o">=</span> <span class="o">-</span><span class="n">os</span><span class="o">.</span><span class="n">WTERMSIG</span><span class="p">(</span><span class="n">wcode</span><span class="p">)</span>  <span class="c1"># Popen default.</span>
+        <span class="n">info</span><span class="p">[</span><span class="s2">&quot;signal&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">WTERMSIG</span><span class="p">(</span><span class="n">wcode</span><span class="p">)</span>
+
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">proc</span><span class="o">.</span><span class="n">returncode</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">WEXITSTATUS</span><span class="p">(</span><span class="n">wcode</span><span class="p">)</span>
+        <span class="n">proc</span><span class="o">.</span><span class="n">signal</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">info</span><span class="p">[</span><span class="s2">&quot;signal&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="n">info</span><span class="p">[</span><span class="s2">&quot;signal_name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;signal&quot;</span><span class="p">]</span><span class="si">}</span><span class="s1"> </span><span class="si">{</span><span class="n">get_signal_name</span><span class="p">(</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;signal&quot;</span><span class="p">])</span><span class="si">}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">info</span></div>
+
 
 
 <div class="viewcode-block" id="use_main_jobs">
@@ -507,11 +590,11 @@
         <span class="c1"># Return when there are no foreground active task</span>
         <span class="k">if</span> <span class="n">active_task</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">last_task</span>
-        <span class="n">obj</span> <span class="o">=</span> <span class="n">active_task</span><span class="p">[</span><span class="s2">&quot;obj&quot;</span><span class="p">]</span>
+        <span class="n">proc</span> <span class="o">=</span> <span class="n">active_task</span><span class="p">[</span><span class="s2">&quot;obj&quot;</span><span class="p">]</span>
         <span class="n">_continue</span><span class="p">(</span><span class="n">active_task</span><span class="p">)</span>
-        <span class="k">while</span> <span class="n">obj</span><span class="o">.</span><span class="n">returncode</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">while</span> <span class="n">proc</span><span class="o">.</span><span class="n">returncode</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="n">obj</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="mf">0.01</span><span class="p">)</span>
+                <span class="n">proc</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="mf">0.01</span><span class="p">)</span>
             <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">TimeoutExpired</span><span class="p">:</span>
                 <span class="k">pass</span>
             <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
@@ -628,28 +711,23 @@
         <span class="c1"># Return when there are no foreground active task</span>
         <span class="k">if</span> <span class="n">active_task</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">last_task</span>
-        <span class="n">obj</span> <span class="o">=</span> <span class="n">active_task</span><span class="p">[</span><span class="s2">&quot;obj&quot;</span><span class="p">]</span>
-        <span class="n">backgrounded</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">proc</span> <span class="o">=</span> <span class="n">active_task</span><span class="p">[</span><span class="s2">&quot;obj&quot;</span><span class="p">]</span>
+        <span class="n">info</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;backgrounded&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">}</span>
+
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">_</span><span class="p">,</span> <span class="n">wcode</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">waitpid</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">pid</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">WUNTRACED</span><span class="p">)</span>
-        <span class="k">except</span> <span class="ne">ChildProcessError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>  <span class="c1"># No child processes</span>
+            <span class="n">info</span> <span class="o">=</span> <span class="n">proc_untraced_waitpid</span><span class="p">(</span>
+                <span class="n">proc</span><span class="p">,</span> <span class="n">hang</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">task</span><span class="o">=</span><span class="n">active_task</span><span class="p">,</span> <span class="n">raise_child_process_error</span><span class="o">=</span><span class="kc">True</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ChildProcessError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">return_error</span><span class="p">:</span>
                 <span class="k">return</span> <span class="n">e</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">return</span> <span class="n">_safe_wait_for_active_job</span><span class="p">(</span>
-                    <span class="n">last_task</span><span class="o">=</span><span class="n">active_task</span><span class="p">,</span> <span class="n">backgrounded</span><span class="o">=</span><span class="n">backgrounded</span>
+                    <span class="n">last_task</span><span class="o">=</span><span class="n">active_task</span><span class="p">,</span> <span class="n">backgrounded</span><span class="o">=</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;backgrounded&quot;</span><span class="p">]</span>
                 <span class="p">)</span>
-        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">WIFSTOPPED</span><span class="p">(</span><span class="n">wcode</span><span class="p">):</span>
-            <span class="n">active_task</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;stopped&quot;</span>
-            <span class="n">backgrounded</span> <span class="o">=</span> <span class="kc">True</span>
-        <span class="k">elif</span> <span class="n">os</span><span class="o">.</span><span class="n">WIFSIGNALED</span><span class="p">(</span><span class="n">wcode</span><span class="p">):</span>
-            <span class="nb">print</span><span class="p">()</span>  <span class="c1"># get a newline because ^C will have been printed</span>
-            <span class="n">obj</span><span class="o">.</span><span class="n">signal</span> <span class="o">=</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">WTERMSIG</span><span class="p">(</span><span class="n">wcode</span><span class="p">),</span> <span class="n">os</span><span class="o">.</span><span class="n">WCOREDUMP</span><span class="p">(</span><span class="n">wcode</span><span class="p">))</span>
-            <span class="n">obj</span><span class="o">.</span><span class="n">returncode</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">obj</span><span class="o">.</span><span class="n">returncode</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">WEXITSTATUS</span><span class="p">(</span><span class="n">wcode</span><span class="p">)</span>
-            <span class="n">obj</span><span class="o">.</span><span class="n">signal</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">return</span> <span class="n">wait_for_active_job</span><span class="p">(</span><span class="n">last_task</span><span class="o">=</span><span class="n">active_task</span><span class="p">,</span> <span class="n">backgrounded</span><span class="o">=</span><span class="n">backgrounded</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="n">wait_for_active_job</span><span class="p">(</span>
+            <span class="n">last_task</span><span class="o">=</span><span class="n">active_task</span><span class="p">,</span> <span class="n">backgrounded</span><span class="o">=</span><span class="n">info</span><span class="p">[</span><span class="s2">&quot;backgrounded&quot;</span><span class="p">]</span>
+        <span class="p">)</span></div>
 
 
 
@@ -698,8 +776,8 @@
     <span class="n">to_remove</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
     <span class="n">tasks</span> <span class="o">=</span> <span class="n">get_tasks</span><span class="p">()</span>
     <span class="k">for</span> <span class="n">tid</span> <span class="ow">in</span> <span class="n">tasks</span><span class="p">:</span>
-        <span class="n">obj</span> <span class="o">=</span> <span class="n">get_task</span><span class="p">(</span><span class="n">tid</span><span class="p">)[</span><span class="s2">&quot;obj&quot;</span><span class="p">]</span>
-        <span class="k">if</span> <span class="n">obj</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">obj</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">proc</span> <span class="o">=</span> <span class="n">get_task</span><span class="p">(</span><span class="n">tid</span><span class="p">)[</span><span class="s2">&quot;obj&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">proc</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">proc</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">to_remove</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">job</span> <span class="ow">in</span> <span class="n">to_remove</span><span class="p">:</span>
         <span class="n">tasks</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">job</span><span class="p">)</span>
@@ -708,26 +786,36 @@
 
 <div class="viewcode-block" id="format_job_string">
 <a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.format_job_string">[docs]</a>
-<span class="k">def</span> <span class="nf">format_job_string</span><span class="p">(</span><span class="n">num</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="k">def</span> <span class="nf">format_job_string</span><span class="p">(</span><span class="n">num</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;dict&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="n">job</span> <span class="o">=</span> <span class="n">get_jobs</span><span class="p">()[</span><span class="n">num</span><span class="p">]</span>
     <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
         <span class="k">return</span> <span class="s2">&quot;&quot;</span>
     <span class="n">tasks</span> <span class="o">=</span> <span class="n">get_tasks</span><span class="p">()</span>
-    <span class="n">pos</span> <span class="o">=</span> <span class="s2">&quot;+&quot;</span> <span class="k">if</span> <span class="n">tasks</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">num</span> <span class="k">else</span> <span class="s2">&quot;-&quot;</span> <span class="k">if</span> <span class="n">tasks</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">num</span> <span class="k">else</span> <span class="s2">&quot; &quot;</span>
-    <span class="n">status</span> <span class="o">=</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span>
-    <span class="n">cmd</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;cmds&quot;</span><span class="p">]])</span>
-    <span class="n">pid</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="n">job</span><span class="p">[</span><span class="s1">&#39;pids&#39;</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">)&quot;</span> <span class="k">if</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;pids&quot;</span><span class="p">]</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
-    <span class="n">bg</span> <span class="o">=</span> <span class="s2">&quot; &amp;&quot;</span> <span class="k">if</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;bg&quot;</span><span class="p">]</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
-    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">num</span><span class="si">}</span><span class="s2">]</span><span class="si">{</span><span class="n">pos</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">status</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">cmd</span><span class="si">}{</span><span class="n">bg</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">pid</span><span class="si">}</span><span class="s2">&quot;</span></div>
+    <span class="n">r</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;num&quot;</span><span class="p">:</span> <span class="n">num</span><span class="p">,</span>
+        <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;cmd&quot;</span><span class="p">:</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+            <span class="p">[</span><span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;cmds&quot;</span><span class="p">]]</span>
+        <span class="p">),</span>
+        <span class="s2">&quot;pids&quot;</span><span class="p">:</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;pids&quot;</span><span class="p">]</span> <span class="k">if</span> <span class="s2">&quot;pids&quot;</span> <span class="ow">in</span> <span class="n">job</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="nb">format</span> <span class="o">==</span> <span class="s2">&quot;posix&quot;</span><span class="p">:</span>
+        <span class="n">r</span><span class="p">[</span><span class="s2">&quot;pos&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;+&quot;</span> <span class="k">if</span> <span class="n">tasks</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">num</span> <span class="k">else</span> <span class="s2">&quot;-&quot;</span> <span class="k">if</span> <span class="n">tasks</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">num</span> <span class="k">else</span> <span class="s2">&quot; &quot;</span>
+        <span class="n">r</span><span class="p">[</span><span class="s2">&quot;bg&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot; &amp;&quot;</span> <span class="k">if</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;bg&quot;</span><span class="p">]</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+        <span class="n">r</span><span class="p">[</span><span class="s2">&quot;pid&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="s1">&#39;,&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">pid</span><span class="p">)</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">pid</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">r</span><span class="p">[</span><span class="s1">&#39;pids&#39;</span><span class="p">])</span><span class="si">}</span><span class="s2">)&quot;</span> <span class="k">if</span> <span class="n">r</span><span class="p">[</span><span class="s2">&quot;pids&quot;</span><span class="p">]</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">return</span> <span class="s2">&quot;[</span><span class="si">{num}</span><span class="s2">]</span><span class="si">{pos}</span><span class="s2"> </span><span class="si">{status}</span><span class="s2">: </span><span class="si">{cmd}{bg}</span><span class="s2"> </span><span class="si">{pid}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="o">**</span><span class="n">r</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">repr</span><span class="p">(</span><span class="n">r</span><span class="p">)</span></div>
 
 
 
 <div class="viewcode-block" id="print_one_job">
 <a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.print_one_job">[docs]</a>
-<span class="k">def</span> <span class="nf">print_one_job</span><span class="p">(</span><span class="n">num</span><span class="p">,</span> <span class="n">outfile</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">):</span>
+<span class="k">def</span> <span class="nf">print_one_job</span><span class="p">(</span><span class="n">num</span><span class="p">,</span> <span class="n">outfile</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;dict&quot;</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Print a line describing job number ``num``.&quot;&quot;&quot;</span>
-    <span class="n">info</span> <span class="o">=</span> <span class="n">format_job_string</span><span class="p">(</span><span class="n">num</span><span class="p">)</span>
+    <span class="n">info</span> <span class="o">=</span> <span class="n">format_job_string</span><span class="p">(</span><span class="n">num</span><span class="p">,</span> <span class="nb">format</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">info</span><span class="p">:</span>
         <span class="nb">print</span><span class="p">(</span><span class="n">info</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">outfile</span><span class="p">)</span></div>
 
@@ -751,11 +839,22 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Add a new job to the jobs dictionary.&quot;&quot;&quot;</span>
     <span class="n">num</span> <span class="o">=</span> <span class="n">get_next_job_number</span><span class="p">()</span>
     <span class="n">info</span><span class="p">[</span><span class="s2">&quot;started&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-    <span class="n">info</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;running&quot;</span>
+    <span class="n">info</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">info</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="k">if</span> <span class="s2">&quot;status&quot;</span> <span class="ow">in</span> <span class="n">info</span> <span class="k">else</span> <span class="s2">&quot;running&quot;</span>
     <span class="n">get_tasks</span><span class="p">()</span><span class="o">.</span><span class="n">appendleft</span><span class="p">(</span><span class="n">num</span><span class="p">)</span>
     <span class="n">get_jobs</span><span class="p">()[</span><span class="n">num</span><span class="p">]</span> <span class="o">=</span> <span class="n">info</span>
     <span class="k">if</span> <span class="n">info</span><span class="p">[</span><span class="s2">&quot;bg&quot;</span><span class="p">]</span> <span class="ow">and</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_INTERACTIVE&quot;</span><span class="p">):</span>
         <span class="n">print_one_job</span><span class="p">(</span><span class="n">num</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="update_job_attr">
+<a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.jobs.html#xonsh.jobs.update_job_attr">[docs]</a>
+<span class="k">def</span> <span class="nf">update_job_attr</span><span class="p">(</span><span class="n">pid</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Update job attribute.&quot;&quot;&quot;</span>
+    <span class="n">jobs</span> <span class="o">=</span> <span class="n">get_jobs</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">num</span><span class="p">,</span> <span class="n">job</span> <span class="ow">in</span> <span class="n">get_jobs</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="s2">&quot;pids&quot;</span> <span class="ow">in</span> <span class="n">job</span> <span class="ow">and</span> <span class="n">pid</span> <span class="ow">in</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;pids&quot;</span><span class="p">]:</span>
+            <span class="n">jobs</span><span class="p">[</span><span class="n">num</span><span class="p">][</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span></div>
 
 
 
@@ -836,8 +935,9 @@
 <span class="sd">    Display a list of all current jobs.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">_clear_dead_jobs</span><span class="p">()</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="s2">&quot;posix&quot;</span> <span class="k">if</span> <span class="s2">&quot;--posix&quot;</span> <span class="ow">in</span> <span class="n">args</span> <span class="k">else</span> <span class="s2">&quot;dict&quot;</span>
     <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">get_tasks</span><span class="p">():</span>
-        <span class="n">print_one_job</span><span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="n">outfile</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+        <span class="n">print_one_job</span><span class="p">(</span><span class="n">j</span><span class="p">,</span> <span class="n">outfile</span><span class="o">=</span><span class="n">stdout</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="nb">format</span><span class="p">)</span>
     <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span></div>
 
 
@@ -1020,7 +1120,7 @@
       
     </aside>
   </div>
-</div><script src="../../_static/documentation_options.js?v=ecbec2ee"></script>
+</div><script src="../../_static/documentation_options.js?v=0c3dd48d"></script>
     <script src="../../_static/doctools.js?v=9a2dae69"></script>
     <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/scripts/furo.js?v=32e29ea5"></script>
