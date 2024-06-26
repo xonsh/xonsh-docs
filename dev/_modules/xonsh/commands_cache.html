@@ -538,14 +538,21 @@
                     <span class="k">yield</span> <span class="n">p</span></div>
 
 
-    <span class="k">def</span> <span class="nf">_check_changes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">paths</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]):</span>
-        <span class="c1"># did PATH change?</span>
-        <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">_update_paths_cache</span><span class="p">(</span><span class="n">paths</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_update_aliases_cache</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update aliases checksum and return result: updated or not.&quot;&quot;&quot;</span>
+        <span class="n">prev_hash</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_alias_checksum</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_alias_checksum</span> <span class="o">=</span> <span class="nb">hash</span><span class="p">(</span><span class="nb">frozenset</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">aliases</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">prev_hash</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_alias_checksum</span>
 
-        <span class="c1"># did aliases change?</span>
-        <span class="n">al_hash</span> <span class="o">=</span> <span class="nb">hash</span><span class="p">(</span><span class="nb">frozenset</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">aliases</span><span class="p">))</span>
-        <span class="k">yield</span> <span class="n">al_hash</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_alias_checksum</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_alias_checksum</span> <span class="o">=</span> <span class="n">al_hash</span>
+    <span class="k">def</span> <span class="nf">_update_and_check_changes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">paths</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update cache and return the result: updated or still the same.</span>
+
+<span class="sd">        Be careful in this place. Both `_update_*` functions must be called</span>
+<span class="sd">        because they are changing state after update.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">is_aliases_change</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_update_aliases_cache</span><span class="p">()</span>
+        <span class="n">is_paths_change</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_update_paths_cache</span><span class="p">(</span><span class="n">paths</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">is_aliases_change</span> <span class="ow">or</span> <span class="n">is_paths_change</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span> <span class="nf">all_commands</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -583,7 +590,7 @@
         <span class="c1"># iterate backwards so that entries at the front of PATH overwrite</span>
         <span class="c1"># entries at the back.</span>
         <span class="n">paths</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">reversed</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">remove_dups</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PATH&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]))))</span>
-        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_check_changes</span><span class="p">(</span><span class="n">paths</span><span class="p">)):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_update_and_check_changes</span><span class="p">(</span><span class="n">paths</span><span class="p">):</span>
             <span class="n">all_cmds</span> <span class="o">=</span> <span class="n">CacheDict</span><span class="p">()</span>
             <span class="k">for</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_iter_binaries</span><span class="p">(</span><span class="n">paths</span><span class="p">):</span>
                 <span class="c1"># None     -&gt; not in aliases</span>
