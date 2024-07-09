@@ -255,6 +255,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../api/_autosummary/cmd/xonsh.aliases.html">xonsh.aliases</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../api/_autosummary/cmd/xonsh.dirstack.html">xonsh.dirstack</a></li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../api/_autosummary/cmd/xonsh.procs.html">xonsh.procs</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of xonsh.procs</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../api/_autosummary/cmd/xonsh.procs.executables.html">xonsh.procs.executables</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../api/_autosummary/cmd/xonsh.procs.jobs.html">xonsh.procs.jobs</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../api/_autosummary/cmd/xonsh.procs.pipelines.html">xonsh.procs.pipelines</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../api/_autosummary/cmd/xonsh.procs.posix.html">xonsh.procs.posix</a></li>
@@ -424,7 +425,12 @@
 
 <span class="kn">from</span> <span class="nn">xonsh.lib.lazyasd</span> <span class="kn">import</span> <span class="n">lazyobject</span>
 <span class="kn">from</span> <span class="nn">xonsh.platform</span> <span class="kn">import</span> <span class="n">ON_POSIX</span><span class="p">,</span> <span class="n">ON_WINDOWS</span><span class="p">,</span> <span class="n">pathbasename</span>
-<span class="kn">from</span> <span class="nn">xonsh.tools</span> <span class="kn">import</span> <span class="n">executables_in</span>
+<span class="kn">from</span> <span class="nn">xonsh.procs.executables</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">get_paths</span><span class="p">,</span>
+    <span class="n">get_possible_names</span><span class="p">,</span>
+    <span class="n">is_executable_in_posix</span><span class="p">,</span>
+    <span class="n">is_executable_in_windows</span><span class="p">,</span>
+<span class="p">)</span>
 
 <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
     <span class="kn">from</span> <span class="nn">case_insensitive_dict</span> <span class="kn">import</span> <span class="n">CaseInsensitiveDict</span> <span class="k">as</span> <span class="n">CacheDict</span>
@@ -437,6 +443,51 @@
     <span class="n">cmds</span><span class="p">:</span> <span class="s2">&quot;tuple[str, ...]&quot;</span>
 
 
+<span class="k">def</span> <span class="nf">_yield_accessible_unix_file_names</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;yield file names of executable files in path.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+        <span class="k">return</span>
+    <span class="k">for</span> <span class="n">file_</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">scandir</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">is_executable_in_posix</span><span class="p">(</span><span class="n">file_</span><span class="p">):</span>
+            <span class="k">yield</span> <span class="n">file_</span><span class="o">.</span><span class="n">name</span>
+
+
+<span class="k">def</span> <span class="nf">_executables_in_posix</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+        <span class="k">return</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">yield from</span> <span class="n">_yield_accessible_unix_file_names</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_executables_in_windows</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+        <span class="k">return</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">scandir</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">is_executable_in_windows</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+                <span class="k">yield</span> <span class="n">x</span><span class="o">.</span><span class="n">name</span>
+    <span class="k">except</span> <span class="ne">FileNotFoundError</span><span class="p">:</span>
+        <span class="c1"># On Windows, there&#39;s no guarantee for the directory to really</span>
+        <span class="c1"># exist even if isdir returns True. This may happen for instance</span>
+        <span class="c1"># if the path contains trailing spaces.</span>
+        <span class="k">return</span>
+
+
+<div class="viewcode-block" id="executables_in">
+<a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.commands_cache.html#xonsh.commands_cache.executables_in">[docs]</a>
+<span class="k">def</span> <span class="nf">executables_in</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">tp</span><span class="o">.</span><span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Returns a generator of files in path that the user could execute.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
+        <span class="n">func</span> <span class="o">=</span> <span class="n">_executables_in_windows</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">func</span> <span class="o">=</span> <span class="n">_executables_in_posix</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">yield from</span> <span class="n">func</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">PermissionError</span><span class="p">:</span>
+        <span class="k">return</span></div>
+
+
+
 <div class="viewcode-block" id="CommandsCache">
 <a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.commands_cache.html#xonsh.commands_cache.CommandsCache">[docs]</a>
 <span class="k">class</span> <span class="nc">CommandsCache</span><span class="p">(</span><span class="n">cabc</span><span class="o">.</span><span class="n">Mapping</span><span class="p">):</span>
@@ -445,6 +496,10 @@
 <span class="sd">    where loc is either a str pointing to the executable on the file system or</span>
 <span class="sd">    None (if no executable exists) and has_alias is a boolean flag for whether</span>
 <span class="sd">    the command has an alias.</span>
+
+<span class="sd">    Note! There is ``xonsh.procs.executables`` module with resolving executables.</span>
+<span class="sd">    Usage ``executables`` is preferred instead of commands_cache for cases</span>
+<span class="sd">    where you just need to locate executable command.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">CACHE_FILE</span> <span class="o">=</span> <span class="s2">&quot;path-commands-cache.pickle&quot;</span>
@@ -517,28 +572,7 @@
 <div class="viewcode-block" id="CommandsCache.get_possible_names">
 <a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.commands_cache.html#xonsh.commands_cache.CommandsCache.get_possible_names">[docs]</a>
     <span class="k">def</span> <span class="nf">get_possible_names</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Expand name to all possible variants based on `PATHEXT`.</span>
-
-<span class="sd">        PATHEXT is a Windows convention containing extensions to be</span>
-<span class="sd">        considered when searching for an executable file.</span>
-
-<span class="sd">        Conserves order of any extensions found and gives precedence</span>
-<span class="sd">        to the bare name.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">extensions</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PATHEXT&quot;</span><span class="p">,</span> <span class="p">[])</span>
-        <span class="k">return</span> <span class="p">[</span><span class="n">name</span> <span class="o">+</span> <span class="n">ext</span> <span class="k">for</span> <span class="n">ext</span> <span class="ow">in</span> <span class="n">extensions</span><span class="p">]</span></div>
-
-
-<div class="viewcode-block" id="CommandsCache.remove_dups">
-<a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.commands_cache.html#xonsh.commands_cache.CommandsCache.remove_dups">[docs]</a>
-    <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="nf">remove_dups</span><span class="p">(</span><span class="n">paths</span><span class="p">):</span>
-        <span class="n">cont</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
-        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">map</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">realpath</span><span class="p">,</span> <span class="n">paths</span><span class="p">):</span>
-            <span class="k">if</span> <span class="n">p</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">cont</span><span class="p">:</span>
-                <span class="n">cont</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
-                <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">p</span><span class="p">):</span>
-                    <span class="k">yield</span> <span class="n">p</span></div>
+        <span class="k">return</span> <span class="n">get_possible_names</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="p">)</span></div>
 
 
     <span class="k">def</span> <span class="nf">_update_aliases_cache</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -589,10 +623,15 @@
 <div class="viewcode-block" id="CommandsCache.update_cache">
 <a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.commands_cache.html#xonsh.commands_cache.CommandsCache.update_cache">[docs]</a>
     <span class="k">def</span> <span class="nf">update_cache</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;The main function to update commands cache.</span>
+<span class="sd">        Note! There is ``xonsh.procs.executables`` module with resolving executables.</span>
+<span class="sd">        Usage ``executables`` is preferred instead of commands_cache for cases</span>
+<span class="sd">        where you just need to locate executable command.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">env</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span>
         <span class="c1"># iterate backwards so that entries at the front of PATH overwrite</span>
         <span class="c1"># entries at the back.</span>
-        <span class="n">paths</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">reversed</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">remove_dups</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PATH&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]))))</span>
+        <span class="n">paths</span> <span class="o">=</span> <span class="n">get_paths</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_update_and_check_changes</span><span class="p">(</span><span class="n">paths</span><span class="p">):</span>
             <span class="n">all_cmds</span> <span class="o">=</span> <span class="n">CacheDict</span><span class="p">()</span>
             <span class="k">for</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_iter_binaries</span><span class="p">(</span><span class="n">paths</span><span class="p">):</span>
@@ -701,6 +740,9 @@
     <span class="k">def</span> <span class="nf">locate_binary</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">ignore_alias</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Locates an executable on the file system using the cache.</span>
 
+<span class="sd">        NOT RECOMMENDED. Take a look into `xonsh.procs.executables.locate_executable`</span>
+<span class="sd">        before using this function.</span>
+
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        name : str</span>
@@ -717,6 +759,9 @@
 <a class="viewcode-back" href="../../api/_autosummary/helpers/xonsh.commands_cache.html#xonsh.commands_cache.CommandsCache.lazy_locate_binary">[docs]</a>
     <span class="k">def</span> <span class="nf">lazy_locate_binary</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">ignore_alias</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Locates an executable in the cache, without checking its validity.</span>
+
+<span class="sd">        NOT RECOMMENDED. Take a look into `xonsh.procs.executables.locate_executable`</span>
+<span class="sd">        before using this function.</span>
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
