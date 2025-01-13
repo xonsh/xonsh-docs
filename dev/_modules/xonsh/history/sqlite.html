@@ -6,7 +6,7 @@
 
     <link rel="shortcut icon" href="../../../_static/magic_conch.ico"/><!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>xonsh.history.sqlite - xonsh 0.19.0 documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=fa44fd50" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css?v=4ae1632d" />
     <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=c8b63bf6" />
@@ -412,25 +412,25 @@
           <h1>Source code for xonsh.history.sqlite</h1><div class="highlight"><pre>
 <span></span><span class="sd">&quot;&quot;&quot;Implements the xonsh history backend via sqlite3.&quot;&quot;&quot;</span>
 
-<span class="kn">import</span> <span class="nn">collections</span>
-<span class="kn">import</span> <span class="nn">json</span>
-<span class="kn">import</span> <span class="nn">os</span>
-<span class="kn">import</span> <span class="nn">re</span>
-<span class="kn">import</span> <span class="nn">sqlite3</span>
-<span class="kn">import</span> <span class="nn">sys</span>
-<span class="kn">import</span> <span class="nn">threading</span>
-<span class="kn">import</span> <span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">collections</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sqlite3</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 
-<span class="kn">import</span> <span class="nn">xonsh.tools</span> <span class="k">as</span> <span class="nn">xt</span>
-<span class="kn">from</span> <span class="nn">xonsh.built_ins</span> <span class="kn">import</span> <span class="n">XSH</span>
-<span class="kn">from</span> <span class="nn">xonsh.history.base</span> <span class="kn">import</span> <span class="n">History</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">xonsh.tools</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">xt</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.built_ins</span><span class="w"> </span><span class="kn">import</span> <span class="n">XSH</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.history.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">History</span>
 
 <span class="n">XH_SQLITE_CACHE</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">local</span><span class="p">()</span>
 <span class="n">XH_SQLITE_TABLE_NAME</span> <span class="o">=</span> <span class="s2">&quot;xonsh_history&quot;</span>
 <span class="n">XH_SQLITE_CREATED_SQL_TBL</span> <span class="o">=</span> <span class="s2">&quot;CREATED_SQL_TABLE&quot;</span>
 
 
-<span class="k">def</span> <span class="nf">_xh_sqlite_get_file_name</span><span class="p">():</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_xh_sqlite_get_file_name</span><span class="p">():</span>
     <span class="n">envs</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
     <span class="n">file_name</span> <span class="o">=</span> <span class="n">envs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_HISTORY_SQLITE_FILE&quot;</span><span class="p">)</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">file_name</span><span class="p">:</span>
@@ -439,13 +439,13 @@
     <span class="k">return</span> <span class="n">xt</span><span class="o">.</span><span class="n">expanduser_abs_path</span><span class="p">(</span><span class="n">file_name</span><span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_xh_sqlite_get_conn</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_xh_sqlite_get_conn</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="k">if</span> <span class="n">filename</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">filename</span> <span class="o">=</span> <span class="n">_xh_sqlite_get_file_name</span><span class="p">()</span>
     <span class="k">return</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">filename</span><span class="p">))</span>
 
 
-<span class="k">def</span> <span class="nf">_xh_sqlite_create_history_table</span><span class="p">(</span><span class="n">cursor</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_xh_sqlite_create_history_table</span><span class="p">(</span><span class="n">cursor</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Create Table for history items.</span>
 
 <span class="sd">    Columns:</span>
@@ -499,21 +499,21 @@
         <span class="nb">setattr</span><span class="p">(</span><span class="n">XH_SQLITE_CACHE</span><span class="p">,</span> <span class="n">XH_SQLITE_CREATED_SQL_TBL</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_xh_sqlite_get_frequency</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="nb">input</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_xh_sqlite_get_frequency</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="nb">input</span><span class="p">):</span>
     <span class="c1"># type: (sqlite3.Cursor, str) -&gt; int</span>
     <span class="n">sql</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;SELECT sum(frequency) FROM </span><span class="si">{</span><span class="n">XH_SQLITE_TABLE_NAME</span><span class="si">}</span><span class="s2"> WHERE inp=?&quot;</span>
     <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="p">(</span><span class="nb">input</span><span class="p">,))</span>
     <span class="k">return</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">or</span> <span class="mi">0</span>
 
 
-<span class="k">def</span> <span class="nf">_xh_sqlite_erase_dups</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="nb">input</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_xh_sqlite_erase_dups</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="nb">input</span><span class="p">):</span>
     <span class="n">freq</span> <span class="o">=</span> <span class="n">_xh_sqlite_get_frequency</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="nb">input</span><span class="p">)</span>
     <span class="n">sql</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;DELETE FROM </span><span class="si">{</span><span class="n">XH_SQLITE_TABLE_NAME</span><span class="si">}</span><span class="s2"> WHERE inp=?&quot;</span>
     <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="p">(</span><span class="nb">input</span><span class="p">,))</span>
     <span class="k">return</span> <span class="n">freq</span>
 
 
-<span class="k">def</span> <span class="nf">_sql_insert</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">values</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_sql_insert</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">values</span><span class="p">):</span>
     <span class="c1"># type: (sqlite3.Cursor, dict) -&gt; None</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;handy function to run insert query&quot;&quot;&quot;</span>
     <span class="n">sql</span> <span class="o">=</span> <span class="s2">&quot;INSERT INTO </span><span class="si">{}</span><span class="s2"> (</span><span class="si">{}</span><span class="s2">) VALUES (</span><span class="si">{}</span><span class="s2">);&quot;</span>
@@ -524,7 +524,7 @@
     <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_xh_sqlite_insert_command</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">sessionid</span><span class="p">,</span> <span class="n">store_stdout</span><span class="p">,</span> <span class="n">remove_duplicates</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_xh_sqlite_insert_command</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">sessionid</span><span class="p">,</span> <span class="n">store_stdout</span><span class="p">,</span> <span class="n">remove_duplicates</span><span class="p">):</span>
     <span class="n">tss</span> <span class="o">=</span> <span class="n">cmd</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;ts&quot;</span><span class="p">,</span> <span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">])</span>
     <span class="n">values</span> <span class="o">=</span> <span class="n">collections</span><span class="o">.</span><span class="n">OrderedDict</span><span class="p">(</span>
         <span class="p">[</span>
@@ -547,7 +547,7 @@
     <span class="n">_sql_insert</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_xh_sqlite_get_count</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">sessionid</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_xh_sqlite_get_count</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">sessionid</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="n">sql</span> <span class="o">=</span> <span class="s2">&quot;SELECT count(*) FROM xonsh_history &quot;</span>
     <span class="n">params</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">if</span> <span class="n">sessionid</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -557,7 +557,7 @@
     <span class="k">return</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
 
 
-<span class="k">def</span> <span class="nf">_xh_sqlite_get_records</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">sessionid</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">newest_first</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_xh_sqlite_get_records</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">sessionid</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">newest_first</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
     <span class="n">sql</span> <span class="o">=</span> <span class="s2">&quot;SELECT inp, tsb, rtn, frequency, cwd FROM xonsh_history &quot;</span>
     <span class="n">params</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">if</span> <span class="n">sessionid</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -572,7 +572,7 @@
     <span class="k">return</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()</span>
 
 
-<span class="k">def</span> <span class="nf">_xh_sqlite_delete_records</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">size_to_keep</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_xh_sqlite_delete_records</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">size_to_keep</span><span class="p">):</span>
     <span class="n">sql</span> <span class="o">=</span> <span class="s2">&quot;SELECT min(tsb) FROM (&quot;</span>
     <span class="n">sql</span> <span class="o">+=</span> <span class="s2">&quot;SELECT tsb FROM xonsh_history ORDER BY tsb DESC &quot;</span>
     <span class="n">sql</span> <span class="o">+=</span> <span class="s2">&quot;LIMIT </span><span class="si">%d</span><span class="s2">)&quot;</span> <span class="o">%</span> <span class="n">size_to_keep</span>
@@ -588,7 +588,7 @@
 
 <div class="viewcode-block" id="xh_sqlite_append_history">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.xh_sqlite_append_history">[docs]</a>
-<span class="k">def</span> <span class="nf">xh_sqlite_append_history</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">xh_sqlite_append_history</span><span class="p">(</span>
     <span class="n">cmd</span><span class="p">,</span> <span class="n">sessionid</span><span class="p">,</span> <span class="n">store_stdout</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">remove_duplicates</span><span class="o">=</span><span class="kc">False</span>
 <span class="p">):</span>
     <span class="k">with</span> <span class="n">_xh_sqlite_get_conn</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
@@ -601,7 +601,7 @@
 
 <div class="viewcode-block" id="xh_sqlite_get_count">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.xh_sqlite_get_count">[docs]</a>
-<span class="k">def</span> <span class="nf">xh_sqlite_get_count</span><span class="p">(</span><span class="n">sessionid</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">xh_sqlite_get_count</span><span class="p">(</span><span class="n">sessionid</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="k">with</span> <span class="n">_xh_sqlite_get_conn</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
         <span class="n">c</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
         <span class="k">return</span> <span class="n">_xh_sqlite_get_count</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">sessionid</span><span class="o">=</span><span class="n">sessionid</span><span class="p">)</span></div>
@@ -610,7 +610,7 @@
 
 <div class="viewcode-block" id="xh_sqlite_items">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.xh_sqlite_items">[docs]</a>
-<span class="k">def</span> <span class="nf">xh_sqlite_items</span><span class="p">(</span><span class="n">sessionid</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">newest_first</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">xh_sqlite_items</span><span class="p">(</span><span class="n">sessionid</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">newest_first</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
     <span class="k">with</span> <span class="n">_xh_sqlite_get_conn</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
         <span class="n">c</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
         <span class="n">_xh_sqlite_create_history_table</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
@@ -620,7 +620,7 @@
 
 <div class="viewcode-block" id="xh_sqlite_delete_items">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.xh_sqlite_delete_items">[docs]</a>
-<span class="k">def</span> <span class="nf">xh_sqlite_delete_items</span><span class="p">(</span><span class="n">size_to_keep</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">xh_sqlite_delete_items</span><span class="p">(</span><span class="n">size_to_keep</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="k">with</span> <span class="n">_xh_sqlite_get_conn</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
         <span class="n">c</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
         <span class="n">_xh_sqlite_create_history_table</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
@@ -630,7 +630,7 @@
 
 <div class="viewcode-block" id="xh_sqlite_pull">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.xh_sqlite_pull">[docs]</a>
-<span class="k">def</span> <span class="nf">xh_sqlite_pull</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">last_pull_time</span><span class="p">,</span> <span class="n">current_sessionid</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">xh_sqlite_pull</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">last_pull_time</span><span class="p">,</span> <span class="n">current_sessionid</span><span class="p">):</span>
     <span class="n">sql</span> <span class="o">=</span> <span class="s2">&quot;SELECT inp FROM xonsh_history WHERE tsb &gt; ? AND sessionid != ? ORDER BY tsb&quot;</span>
     <span class="n">params</span> <span class="o">=</span> <span class="p">[</span><span class="n">last_pull_time</span><span class="p">,</span> <span class="n">current_sessionid</span><span class="p">]</span>
     <span class="k">with</span> <span class="n">_xh_sqlite_get_conn</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
@@ -642,7 +642,7 @@
 
 <div class="viewcode-block" id="xh_sqlite_wipe_session">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.xh_sqlite_wipe_session">[docs]</a>
-<span class="k">def</span> <span class="nf">xh_sqlite_wipe_session</span><span class="p">(</span><span class="n">sessionid</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">xh_sqlite_wipe_session</span><span class="p">(</span><span class="n">sessionid</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Wipe the current session&#39;s entries from the database.&quot;&quot;&quot;</span>
     <span class="n">sql</span> <span class="o">=</span> <span class="s2">&quot;DELETE FROM xonsh_history WHERE sessionid = ?&quot;</span>
     <span class="k">with</span> <span class="n">_xh_sqlite_get_conn</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
@@ -654,7 +654,7 @@
 
 <div class="viewcode-block" id="xh_sqlite_delete_input_matching">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.xh_sqlite_delete_input_matching">[docs]</a>
-<span class="k">def</span> <span class="nf">xh_sqlite_delete_input_matching</span><span class="p">(</span><span class="n">pattern</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">xh_sqlite_delete_input_matching</span><span class="p">(</span><span class="n">pattern</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Deletes entries from the database where the input matches a pattern.&quot;&quot;&quot;</span>
     <span class="k">with</span> <span class="n">_xh_sqlite_get_conn</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
         <span class="n">c</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
@@ -668,10 +668,10 @@
 
 <div class="viewcode-block" id="SqliteHistoryGC">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.SqliteHistoryGC">[docs]</a>
-<span class="k">class</span> <span class="nc">SqliteHistoryGC</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SqliteHistoryGC</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Shell history garbage collection.&quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wait_for_shell</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wait_for_shell</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Thread responsible for garbage collecting old history.</span>
 
 <span class="sd">        May wait for shell (and for xonshrc to have been loaded) to start work.</span>
@@ -685,7 +685,7 @@
 
 <div class="viewcode-block" id="SqliteHistoryGC.run">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.SqliteHistoryGC.run">[docs]</a>
-    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">wait_for_shell</span><span class="p">:</span>
             <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.01</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">size</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -709,10 +709,10 @@
 
 <div class="viewcode-block" id="SqliteHistory">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.SqliteHistory">[docs]</a>
-<span class="k">class</span> <span class="nc">SqliteHistory</span><span class="p">(</span><span class="n">History</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SqliteHistory</span><span class="p">(</span><span class="n">History</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Xonsh history backend implemented with sqlite3.&quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gc</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">save_cwd</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">gc</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">save_cwd</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">filename</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">filename</span> <span class="o">=</span> <span class="n">_xh_sqlite_get_file_name</span><span class="p">()</span>
@@ -745,7 +745,7 @@
 
 <div class="viewcode-block" id="SqliteHistory.append">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.SqliteHistory.append">[docs]</a>
-    <span class="k">def</span> <span class="nf">append</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cmd</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">append</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cmd</span><span class="p">):</span>
         <span class="k">if</span> <span class="p">(</span><span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">remember_history</span><span class="p">)</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_ignored</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
             <span class="k">return</span>
         <span class="n">envs</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
@@ -788,7 +788,7 @@
 
 <div class="viewcode-block" id="SqliteHistory.all_items">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.SqliteHistory.all_items">[docs]</a>
-    <span class="k">def</span> <span class="nf">all_items</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">newest_first</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">session_id</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">all_items</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">newest_first</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">session_id</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Display all history items.&quot;&quot;&quot;</span>
         <span class="k">for</span> <span class="n">inp</span><span class="p">,</span> <span class="n">ts</span><span class="p">,</span> <span class="n">rtn</span><span class="p">,</span> <span class="n">freq</span><span class="p">,</span> <span class="n">cwd</span> <span class="ow">in</span> <span class="n">xh_sqlite_items</span><span class="p">(</span>
             <span class="n">filename</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">,</span> <span class="n">newest_first</span><span class="o">=</span><span class="n">newest_first</span><span class="p">,</span> <span class="n">sessionid</span><span class="o">=</span><span class="n">session_id</span>
@@ -798,14 +798,14 @@
 
 <div class="viewcode-block" id="SqliteHistory.items">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.SqliteHistory.items">[docs]</a>
-    <span class="k">def</span> <span class="nf">items</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">newest_first</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">items</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">newest_first</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Display history items of current session.&quot;&quot;&quot;</span>
         <span class="k">yield from</span> <span class="bp">self</span><span class="o">.</span><span class="n">all_items</span><span class="p">(</span><span class="n">newest_first</span><span class="p">,</span> <span class="n">session_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sessionid</span><span class="p">))</span></div>
 
 
 <div class="viewcode-block" id="SqliteHistory.info">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.SqliteHistory.info">[docs]</a>
-    <span class="k">def</span> <span class="nf">info</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">info</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="n">data</span> <span class="o">=</span> <span class="n">collections</span><span class="o">.</span><span class="n">OrderedDict</span><span class="p">()</span>
         <span class="n">data</span><span class="p">[</span><span class="s2">&quot;backend&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;sqlite&quot;</span>
         <span class="n">data</span><span class="p">[</span><span class="s2">&quot;sessionid&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sessionid</span><span class="p">)</span>
@@ -821,7 +821,7 @@
 
 <div class="viewcode-block" id="SqliteHistory.pull">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.SqliteHistory.pull">[docs]</a>
-    <span class="k">def</span> <span class="nf">pull</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">show_commands</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">pull</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">show_commands</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">XSH</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">shell</span><span class="p">,</span> <span class="s2">&quot;prompter&quot;</span><span class="p">):</span>
             <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Shell type </span><span class="si">{</span><span class="n">XSH</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">shell</span><span class="si">}</span><span class="s2"> is not supported.&quot;</span><span class="p">)</span>
             <span class="k">return</span> <span class="mi">0</span>
@@ -840,7 +840,7 @@
 
 <div class="viewcode-block" id="SqliteHistory.run_gc">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.SqliteHistory.run_gc">[docs]</a>
-    <span class="k">def</span> <span class="nf">run_gc</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">_</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">run_gc</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">_</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">gc</span> <span class="o">=</span> <span class="n">SqliteHistoryGC</span><span class="p">(</span><span class="n">wait_for_shell</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">size</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">blocking</span><span class="p">:</span>
             <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">gc</span><span class="o">.</span><span class="n">is_alive</span><span class="p">():</span>
@@ -849,7 +849,7 @@
 
 <div class="viewcode-block" id="SqliteHistory.clear">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.SqliteHistory.clear">[docs]</a>
-    <span class="k">def</span> <span class="nf">clear</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">clear</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Clears the current session&#39;s history from both memory and disk.&quot;&quot;&quot;</span>
         <span class="c1"># Wipe memory</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">inps</span> <span class="o">=</span> <span class="p">[]</span>
@@ -863,7 +863,7 @@
 
 <div class="viewcode-block" id="SqliteHistory.delete">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.SqliteHistory.delete">[docs]</a>
-    <span class="k">def</span> <span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pattern</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pattern</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Deletes all entries in the database where the input matches a pattern.&quot;&quot;&quot;</span>
         <span class="n">xh_sqlite_delete_input_matching</span><span class="p">(</span>
             <span class="n">pattern</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">pattern</span><span class="p">),</span> <span class="n">filename</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span>
