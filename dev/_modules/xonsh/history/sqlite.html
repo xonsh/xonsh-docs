@@ -627,30 +627,47 @@
 
 
 
-<div class="viewcode-block" id="xh_sqlite_pull">
-<a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.xh_sqlite_pull">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">xh_sqlite_pull</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">last_pull_time</span><span class="p">,</span> <span class="n">current_sessionid</span><span class="p">,</span> <span class="n">src_sessionid</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="xh_sqlite_pull_all">
+<a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.xh_sqlite_pull_all">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">xh_sqlite_pull_all</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">last_pull_times</span><span class="p">,</span> <span class="n">current_sessionid</span><span class="p">):</span>
+    <span class="n">sql</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;SELECT inp, tsb, sessionid FROM </span><span class="si">{</span><span class="n">XH_SQLITE_TABLE_NAME</span><span class="si">}</span><span class="s2"> WHERE tsb &gt; ? AND sessionid != ? ORDER BY tsb&quot;</span>
+    <span class="n">oldest_pull_time</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">last_pull_times</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+    <span class="n">last_full_pull_time</span> <span class="o">=</span> <span class="n">last_pull_times</span><span class="p">[</span><span class="kc">None</span><span class="p">]</span>
+    <span class="k">with</span> <span class="n">_xh_sqlite_get_conn</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">c</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="p">(</span><span class="n">oldest_pull_time</span><span class="p">,</span> <span class="n">current_sessionid</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">inp</span><span class="p">,</span> <span class="n">tsb</span><span class="p">,</span> <span class="n">sessionid</span> <span class="ow">in</span> <span class="n">c</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">tsb</span> <span class="o">&gt;</span> <span class="n">last_pull_times</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">sessionid</span><span class="p">,</span> <span class="n">last_full_pull_time</span><span class="p">):</span>
+                <span class="k">yield</span> <span class="n">inp</span></div>
+
+
+
+<div class="viewcode-block" id="xh_sqlite_pull_session">
+<a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.xh_sqlite_pull_session">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">xh_sqlite_pull_session</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">last_pull_times</span><span class="p">,</span> <span class="n">current_sessionid</span><span class="p">,</span> <span class="n">src_sessionid</span><span class="p">):</span>
     <span class="c1"># ensure we don&#39;t duplicate history entries if some crazy person passes the current session</span>
     <span class="k">if</span> <span class="n">src_sessionid</span> <span class="o">==</span> <span class="n">current_sessionid</span><span class="p">:</span>
         <span class="k">return</span> <span class="p">[]</span>
 
-    <span class="k">if</span> <span class="n">src_sessionid</span><span class="p">:</span>
-        <span class="n">sql</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;SELECT inp FROM </span><span class="si">{</span><span class="n">XH_SQLITE_TABLE_NAME</span><span class="si">}</span><span class="s2"> WHERE tsb &gt; ?&quot;</span>
-            <span class="s2">&quot; AND sessionid = ? ORDER BY tsb&quot;</span>
-        <span class="p">)</span>
-        <span class="n">params</span> <span class="o">=</span> <span class="p">[</span><span class="n">last_pull_time</span><span class="p">,</span> <span class="n">src_sessionid</span><span class="p">]</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">sql</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;SELECT inp FROM </span><span class="si">{</span><span class="n">XH_SQLITE_TABLE_NAME</span><span class="si">}</span><span class="s2"> WHERE tsb &gt; ?&quot;</span>
-            <span class="s2">&quot; AND sessionid != ? ORDER BY tsb&quot;</span>
-        <span class="p">)</span>
-        <span class="n">params</span> <span class="o">=</span> <span class="p">[</span><span class="n">last_pull_time</span><span class="p">,</span> <span class="n">current_sessionid</span><span class="p">]</span>
-
+    <span class="n">last_full_pull_time</span> <span class="o">=</span> <span class="n">last_pull_times</span><span class="p">[</span><span class="kc">None</span><span class="p">]</span>
+    <span class="n">start_time</span> <span class="o">=</span> <span class="n">last_pull_times</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">src_sessionid</span><span class="p">,</span> <span class="n">last_full_pull_time</span><span class="p">)</span>
+    <span class="n">sql</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;SELECT inp FROM </span><span class="si">{</span><span class="n">XH_SQLITE_TABLE_NAME</span><span class="si">}</span><span class="s2"> WHERE tsb &gt; ? AND sessionid = ? ORDER BY tsb&quot;</span>
     <span class="k">with</span> <span class="n">_xh_sqlite_get_conn</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
         <span class="n">c</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
-        <span class="n">c</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">params</span><span class="p">))</span>
-        <span class="k">return</span> <span class="n">c</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()</span></div>
+        <span class="n">c</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="p">(</span><span class="n">start_time</span><span class="p">,</span> <span class="n">src_sessionid</span><span class="p">))</span>
+        <span class="k">yield from</span> <span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">c</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="xh_sqlite_pull">
+<a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.xh_sqlite_pull">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">xh_sqlite_pull</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">last_pull_times</span><span class="p">,</span> <span class="n">current_sessionid</span><span class="p">,</span> <span class="n">src_sessionid</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">src_sessionid</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">yield from</span> <span class="n">xh_sqlite_pull_all</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">last_pull_times</span><span class="p">,</span> <span class="n">current_sessionid</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">yield from</span> <span class="n">xh_sqlite_pull_session</span><span class="p">(</span>
+            <span class="n">filename</span><span class="p">,</span> <span class="n">last_pull_times</span><span class="p">,</span> <span class="n">current_sessionid</span><span class="p">,</span> <span class="n">src_sessionid</span>
+        <span class="p">)</span></div>
 
 
 
@@ -733,7 +750,7 @@
         <span class="k">if</span> <span class="n">filename</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">filename</span> <span class="o">=</span> <span class="n">_xh_sqlite_get_file_name</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">filename</span> <span class="o">=</span> <span class="n">filename</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">last_pull_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">last_pull_times</span> <span class="o">=</span> <span class="p">{</span><span class="kc">None</span><span class="p">:</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">gc</span> <span class="o">=</span> <span class="n">SqliteHistoryGC</span><span class="p">()</span> <span class="k">if</span> <span class="n">gc</span> <span class="k">else</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last_hist_inp</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">inps</span> <span class="o">=</span> <span class="p">[]</span>
@@ -844,16 +861,21 @@
 
         <span class="n">cnt</span> <span class="o">=</span> <span class="mi">0</span>
         <span class="n">prev</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">xh_sqlite_pull</span><span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">last_pull_time</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sessionid</span><span class="p">),</span> <span class="n">src_sessionid</span>
+        <span class="k">for</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="n">xh_sqlite_pull</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">last_pull_times</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sessionid</span><span class="p">),</span> <span class="n">src_sessionid</span>
         <span class="p">):</span>
             <span class="k">if</span> <span class="n">show_commands</span><span class="p">:</span>
-                <span class="nb">print</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
-            <span class="k">if</span> <span class="n">r</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">prev</span><span class="p">:</span>
-                <span class="n">XSH</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">prompter</span><span class="o">.</span><span class="n">history</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="nb">print</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">cmd</span> <span class="o">!=</span> <span class="n">prev</span><span class="p">:</span>
+                <span class="n">XSH</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">prompter</span><span class="o">.</span><span class="n">history</span><span class="o">.</span><span class="n">append_string</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
                 <span class="n">cnt</span> <span class="o">+=</span> <span class="mi">1</span>
-            <span class="n">prev</span> <span class="o">=</span> <span class="n">r</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">last_pull_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+            <span class="n">prev</span> <span class="o">=</span> <span class="n">cmd</span>
+
+        <span class="c1"># we can dump the session-specific pull times if this is a full pull</span>
+        <span class="k">if</span> <span class="n">src_sessionid</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">last_pull_times</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">last_pull_times</span><span class="p">[</span><span class="n">src_sessionid</span><span class="p">]</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+
         <span class="k">return</span> <span class="n">cnt</span></div>
 
 
