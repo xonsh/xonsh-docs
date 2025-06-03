@@ -411,6 +411,8 @@
           <h1>Source code for xonsh.shells.ptk_shell.key_bindings</h1><div class="highlight"><pre>
 <span></span><span class="sd">&quot;&quot;&quot;Key bindings for prompt_toolkit xonsh shell.&quot;&quot;&quot;</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+
 <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit</span><span class="w"> </span><span class="kn">import</span> <span class="n">search</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.application.current</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_app</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.enums</span><span class="w"> </span><span class="kn">import</span> <span class="n">DEFAULT_BUFFER</span>
@@ -421,10 +423,12 @@
     <span class="n">IsMultiline</span><span class="p">,</span>
     <span class="n">IsSearching</span><span class="p">,</span>
     <span class="n">ViInsertMode</span><span class="p">,</span>
+    <span class="n">has_suggestion</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.input</span><span class="w"> </span><span class="kn">import</span> <span class="n">ansi_escape_sequences</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.key_binding.bindings.named_commands</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_by_name</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.key_binding.key_bindings</span><span class="w"> </span><span class="kn">import</span> <span class="n">KeyBindings</span><span class="p">,</span> <span class="n">KeyBindingsBase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.key_binding.key_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">KeyPressEvent</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.keys</span><span class="w"> </span><span class="kn">import</span> <span class="n">Keys</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.aliases</span><span class="w"> </span><span class="kn">import</span> <span class="n">xonsh_exit</span>
@@ -850,6 +854,23 @@
 
     <span class="c1"># Complete a single auto-suggestion word</span>
     <span class="n">create_alias</span><span class="p">([</span><span class="n">Keys</span><span class="o">.</span><span class="n">ControlRight</span><span class="p">],</span> <span class="p">[</span><span class="s2">&quot;escape&quot;</span><span class="p">,</span> <span class="s2">&quot;f&quot;</span><span class="p">])</span>
+    <span class="n">create_alias</span><span class="p">([</span><span class="n">Keys</span><span class="o">.</span><span class="n">ControlSquareClose</span><span class="p">],</span> <span class="p">[</span><span class="s2">&quot;escape&quot;</span><span class="p">,</span> <span class="s2">&quot;f&quot;</span><span class="p">])</span>
+
+    <span class="nd">@handle</span><span class="p">(</span><span class="n">Keys</span><span class="o">.</span><span class="n">ControlRight</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=</span><span class="n">has_suggestion</span><span class="p">)</span>
+    <span class="nd">@handle</span><span class="p">(</span><span class="n">Keys</span><span class="o">.</span><span class="n">ControlSquareClose</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=</span><span class="n">has_suggestion</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_fill</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">KeyPressEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Fill partial suggestion. This supports VI_MODE</span>
+<span class="sd">            derived from:</span>
+<span class="sd">            https://github.com/prompt-toolkit/python-prompt-toolkit/blob/465ab02854763fafc0099a2e38a56328c1cb0625/src/prompt_toolkit/key_binding/bindings/auto_suggest.py#L54</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">b</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">current_buffer</span>
+        <span class="n">suggestion</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="n">suggestion</span>
+
+        <span class="k">if</span> <span class="n">suggestion</span><span class="p">:</span>
+            <span class="n">t</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;([^\s/]+(?:\s+|/))&quot;</span><span class="p">,</span> <span class="n">suggestion</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
+            <span class="n">b</span><span class="o">.</span><span class="n">insert_text</span><span class="p">(</span><span class="nb">next</span><span class="p">(</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">t</span> <span class="k">if</span> <span class="n">x</span><span class="p">))</span>
 
     <span class="c1"># since macOS uses Control as reserved, then we use the alt/option key instead</span>
     <span class="c1"># which is mapped as the &quot;escape&quot; key</span>
