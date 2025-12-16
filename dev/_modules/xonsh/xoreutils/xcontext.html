@@ -6,7 +6,7 @@
         <link rel="prefetch" href="../../../_static/ascii_conch_part_transparent_tight.png" as="image">
 
     <link rel="shortcut icon" href="../../../_static/magic_conch.ico"><!-- Generated with Sphinx 8.2.3 and Furo 2025.09.25 -->
-        <title>xonsh.completers.man - xonsh 0.21.2 documentation</title>
+        <title>xonsh.xoreutils.xcontext - xonsh 0.21.2 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=580074bf" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css?v=4ae1632d" />
@@ -401,158 +401,78 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <h1>Source code for xonsh.completers.man</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+          <h1>Source code for xonsh.xoreutils.xcontext</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;The xontext command.&quot;&quot;&quot;</span>
+
 <span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">textwrap</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.built_ins</span><span class="w"> </span><span class="kn">import</span> <span class="n">XSH</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.completers.tools</span><span class="w"> </span><span class="kn">import</span> <span class="n">RichCompletion</span><span class="p">,</span> <span class="n">contextual_command_completer</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.parsers.completion_context</span><span class="w"> </span><span class="kn">import</span> <span class="n">CommandContext</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.cli_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">ArgParserAlias</span>
 
 
-<div class="viewcode-block" id="get_man_completions_path">
-<a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.man.html#xonsh.completers.man.get_man_completions_path">[docs]</a>
-<span class="nd">@functools</span><span class="o">.</span><span class="n">cache</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">get_man_completions_path</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
-    <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span> <span class="ow">or</span> <span class="p">{}</span>
-    <span class="n">datadir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;XONSH_DATA_DIR&quot;</span><span class="p">])</span> <span class="o">/</span> <span class="s2">&quot;generated_completions&quot;</span> <span class="o">/</span> <span class="s2">&quot;man&quot;</span>
-    <span class="k">if</span> <span class="n">datadir</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span> <span class="ow">and</span> <span class="p">(</span><span class="ow">not</span> <span class="n">datadir</span><span class="o">.</span><span class="n">is_dir</span><span class="p">()):</span>
-        <span class="n">shutil</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="n">datadir</span><span class="p">,</span> <span class="n">datadir</span><span class="o">.</span><span class="n">with_suffix</span><span class="p">(</span><span class="s2">&quot;.bkp&quot;</span><span class="p">))</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">datadir</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
-        <span class="n">datadir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">datadir</span></div>
-
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">_get_man_page</span><span class="p">(</span><span class="n">cmd</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;without control characters&quot;&quot;&quot;</span>
-    <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">detype</span><span class="p">()</span>
-    <span class="n">manpage</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">(</span>
-        <span class="p">[</span><span class="s2">&quot;man&quot;</span><span class="p">,</span> <span class="n">cmd</span><span class="p">],</span> <span class="n">stdout</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">env</span>
-    <span class="p">)</span>
-    <span class="c1"># This is a trick to get rid of reverse line feeds</span>
-    <span class="k">return</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">([</span><span class="s2">&quot;col&quot;</span><span class="p">,</span> <span class="s2">&quot;-b&quot;</span><span class="p">],</span> <span class="n">stdin</span><span class="o">=</span><span class="n">manpage</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">env</span><span class="p">)</span>
-
-
-<span class="nd">@functools</span><span class="o">.</span><span class="n">cache</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">_man_option_string_regex</span><span class="p">():</span>
-    <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
-        <span class="sa">r</span><span class="s2">&quot;(?:(,\s?)|^|(\sor\s))(?P&lt;option&gt;-[\w]|--[\w-]+)(?=\[?(\s|,|=\w+|$))&quot;</span>
-    <span class="p">)</span>
-
-
-<div class="viewcode-block" id="generate_options_of">
-<a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.man.html#xonsh.completers.man.generate_options_of">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">generate_options_of</span><span class="p">(</span><span class="n">cmd</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-    <span class="n">out</span> <span class="o">=</span> <span class="n">_get_man_page</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">out</span><span class="p">:</span>
-        <span class="k">return</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_headers</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;split as header-body based on indent&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span><span class="p">:</span>
-            <span class="k">return</span>
-        <span class="n">header</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
-        <span class="n">body</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">textwrap</span><span class="o">.</span><span class="n">dedent</span><span class="p">(</span><span class="n">text</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n\t</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">    &quot;</span><span class="p">))</span><span class="o">.</span><span class="n">splitlines</span><span class="p">():</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
-                <span class="k">continue</span>
-            <span class="k">if</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">((</span><span class="s2">&quot; &quot;</span><span class="p">,</span> <span class="s2">&quot;</span><span class="se">\t</span><span class="s2">&quot;</span><span class="p">)):</span>
-                <span class="n">body</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="k">if</span> <span class="n">header</span> <span class="ow">or</span> <span class="n">body</span><span class="p">:</span>
-                    <span class="k">yield</span> <span class="n">header</span><span class="p">,</span> <span class="n">body</span>
-
-                <span class="c1"># found new section</span>
-                <span class="n">header</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
-                <span class="n">body</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">if</span> <span class="n">header</span> <span class="ow">or</span> <span class="n">body</span><span class="p">:</span>
-            <span class="k">yield</span> <span class="n">header</span><span class="p">,</span> <span class="n">body</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">split_options_string</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-        <span class="n">text</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
-        <span class="n">regex</span> <span class="o">=</span> <span class="n">_man_option_string_regex</span><span class="p">()</span>
-
-        <span class="n">regex</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
-        <span class="n">options</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">for</span> <span class="n">match</span> <span class="ow">in</span> <span class="n">regex</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
-            <span class="n">option</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">groupdict</span><span class="p">()</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;option&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">option</span><span class="p">:</span>
-                <span class="n">options</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">option</span><span class="p">)</span>
-            <span class="n">text</span> <span class="o">=</span> <span class="n">text</span><span class="p">[</span><span class="n">match</span><span class="o">.</span><span class="n">end</span><span class="p">()</span> <span class="p">:]</span>
-        <span class="k">return</span> <span class="n">options</span><span class="p">,</span> <span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_option_section</span><span class="p">():</span>
-        <span class="n">option_sect</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">get_headers</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">decode</span><span class="p">()))</span>
-        <span class="n">small_names</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span> <span class="n">k</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">option_sect</span><span class="p">}</span>
-        <span class="k">for</span> <span class="n">head</span> <span class="ow">in</span> <span class="p">(</span>
-            <span class="s2">&quot;options&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;command options&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;description&quot;</span><span class="p">,</span>
-        <span class="p">):</span>  <span class="c1"># prefer sections in this order</span>
-            <span class="k">if</span> <span class="n">head</span> <span class="ow">in</span> <span class="n">small_names</span><span class="p">:</span>
-                <span class="n">title</span> <span class="o">=</span> <span class="n">small_names</span><span class="p">[</span><span class="n">head</span><span class="p">]</span>
-                <span class="k">return</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">option_sect</span><span class="p">[</span><span class="n">title</span><span class="p">])</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_options</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;finally get the options&quot;&quot;&quot;</span>
-        <span class="c1"># return old section if</span>
-        <span class="k">for</span> <span class="n">opt</span><span class="p">,</span> <span class="n">lines</span> <span class="ow">in</span> <span class="n">get_headers</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
-            <span class="c1"># todo: some have [+-] or such vague notations</span>
-            <span class="k">if</span> <span class="n">opt</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;-&quot;</span><span class="p">):</span>
-                <span class="c1"># sometime a single line will have both desc and options</span>
-                <span class="n">option_strings</span><span class="p">,</span> <span class="n">rest</span> <span class="o">=</span> <span class="n">split_options_string</span><span class="p">(</span><span class="n">opt</span><span class="p">)</span>
-                <span class="n">descs</span> <span class="o">=</span> <span class="p">[]</span>
-                <span class="k">if</span> <span class="n">rest</span><span class="p">:</span>
-                    <span class="n">descs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rest</span><span class="p">)</span>
-                <span class="k">if</span> <span class="n">lines</span><span class="p">:</span>
-                    <span class="n">descs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">textwrap</span><span class="o">.</span><span class="n">dedent</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)))</span>
-                <span class="k">if</span> <span class="n">option_strings</span><span class="p">:</span>
-                    <span class="k">yield</span> <span class="s2">&quot;. &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">descs</span><span class="p">),</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">option_strings</span><span class="p">)</span>
-            <span class="k">elif</span> <span class="n">lines</span><span class="p">:</span>
-                <span class="c1"># sometimes the options are nested inside subheaders</span>
-                <span class="k">yield from</span> <span class="n">get_options</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">))</span>
-
-    <span class="k">yield from</span> <span class="n">get_options</span><span class="p">(</span><span class="n">get_option_section</span><span class="p">())</span></div>
-
-
-
-<span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">_parse_man_page_options</span><span class="p">(</span><span class="n">cmd</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;dict[str, tuple[str, ...]]&quot;</span><span class="p">:</span>
-    <span class="n">path</span> <span class="o">=</span> <span class="n">get_man_completions_path</span><span class="p">()</span> <span class="o">/</span> <span class="n">Path</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span><span class="o">.</span><span class="n">with_suffix</span><span class="p">(</span><span class="s2">&quot;.json&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">name</span>
-    <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
-        <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">read_text</span><span class="p">())</span>
-    <span class="n">options</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">generate_options_of</span><span class="p">(</span><span class="n">cmd</span><span class="p">))</span>
-    <span class="n">path</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">options</span><span class="p">))</span>
-    <span class="k">return</span> <span class="n">options</span>
-
-
-<div class="viewcode-block" id="complete_from_man">
-<a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.man.html#xonsh.completers.man.complete_from_man">[docs]</a>
-<span class="nd">@contextual_command_completer</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">complete_from_man</span><span class="p">(</span><span class="n">context</span><span class="p">:</span> <span class="n">CommandContext</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Completes an option name, based on the contents of the associated man</span>
-<span class="sd">    page.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="k">if</span> <span class="n">context</span><span class="o">.</span><span class="n">arg_index</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">context</span><span class="o">.</span><span class="n">prefix</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;-&quot;</span><span class="p">):</span>
-        <span class="k">return</span>
-    <span class="n">cmd</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">value</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">completions</span><span class="p">():</span>
-        <span class="k">for</span> <span class="n">desc</span><span class="p">,</span> <span class="n">opts</span> <span class="ow">in</span> <span class="n">_parse_man_page_options</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="k">yield</span> <span class="n">RichCompletion</span><span class="p">(</span>
-                <span class="n">value</span><span class="o">=</span><span class="n">opts</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">display</span><span class="o">=</span><span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">opts</span><span class="p">),</span> <span class="n">description</span><span class="o">=</span><span class="n">desc</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_version</span><span class="p">(</span><span class="n">binary</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Helper to get version string from a binary.&quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">binary</span><span class="p">,</span> <span class="s2">&quot;--version&quot;</span><span class="p">],</span> <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">STDOUT</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">out</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">except</span> <span class="p">(</span><span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">,</span> <span class="ne">FileNotFoundError</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">(</span>
+                <span class="p">[</span><span class="n">binary</span><span class="p">,</span> <span class="s2">&quot;-V&quot;</span><span class="p">],</span> <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">STDOUT</span>
             <span class="p">)</span>
+            <span class="k">return</span> <span class="n">out</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">except</span> <span class="p">(</span><span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">,</span> <span class="ne">FileNotFoundError</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s2">&quot;&quot;</span>
 
-    <span class="k">return</span> <span class="n">completions</span><span class="p">(),</span> <span class="kc">False</span></div>
 
+<div class="viewcode-block" id="xcontext_main">
+<a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.xoreutils.xcontext.html#xonsh.xoreutils.xcontext.xcontext_main">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">xcontext_main</span><span class="p">(</span><span class="n">_args</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_stdout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_stderr</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Report information about the current xonsh environment.&quot;&quot;&quot;</span>
+    <span class="n">stdout</span> <span class="o">=</span> <span class="n">_stdout</span> <span class="ow">or</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[Current xonsh session]&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="n">xpy</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">executable</span>
+    <span class="n">xpy_ver</span> <span class="o">=</span> <span class="n">_get_version</span><span class="p">(</span><span class="n">xpy</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xpython: </span><span class="si">{</span><span class="n">xpy</span><span class="si">}</span><span class="s2"> # </span><span class="si">{</span><span class="n">xpy_ver</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="n">xpip</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">aliases</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;xpip&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">xpip</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">xpip</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xpip: </span><span class="si">{</span><span class="s1">&#39; &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">xpip</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">callable</span><span class="p">(</span><span class="n">xpip</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xpip: </span><span class="si">{</span><span class="n">xpip</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xpip: </span><span class="si">{</span><span class="n">xpip</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;xpip: not found&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[Current commands environment]&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="n">cmds</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;xonsh&quot;</span><span class="p">,</span> <span class="s2">&quot;python&quot;</span><span class="p">,</span> <span class="s2">&quot;pip&quot;</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">shutil</span><span class="o">.</span><span class="n">which</span><span class="p">(</span><span class="s2">&quot;pytest&quot;</span><span class="p">):</span>
+        <span class="n">cmds</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;pytest&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="n">cmds</span><span class="p">:</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">shutil</span><span class="o">.</span><span class="n">which</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">path</span><span class="p">:</span>
+            <span class="n">ver</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+            <span class="k">if</span> <span class="n">cmd</span> <span class="o">==</span> <span class="s2">&quot;python&quot;</span><span class="p">:</span>
+                <span class="n">ver</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot; # </span><span class="si">{</span><span class="n">_get_version</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">cmd</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">path</span><span class="si">}{</span><span class="n">ver</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">cmd</span><span class="si">}</span><span class="s2">: not found&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="n">envs</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;CONDA_DEFAULT_ENV&quot;</span><span class="p">,</span> <span class="s2">&quot;VIRTUAL_ENV&quot;</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">envs</span><span class="p">:</span>
+        <span class="n">val</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ev</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">val</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ev</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">val</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="k">return</span> <span class="mi">0</span></div>
+
+
+
+<span class="n">xcontext</span> <span class="o">=</span> <span class="n">ArgParserAlias</span><span class="p">(</span><span class="n">func</span><span class="o">=</span><span class="n">xcontext_main</span><span class="p">,</span> <span class="n">has_args</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">prog</span><span class="o">=</span><span class="s2">&quot;xcontext&quot;</span><span class="p">)</span>
 </pre></div>
         </article>
       </div>
