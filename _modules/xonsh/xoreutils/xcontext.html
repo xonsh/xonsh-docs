@@ -6,7 +6,7 @@
         <link rel="prefetch" href="../../../_static/xonsh_terminal_icon_256.png" as="image">
 
     <link rel="shortcut icon" href="../../../_static/magic_conch.ico"><!-- Generated with Sphinx 8.2.3 and Furo 2025.09.25 -->
-        <title>xonsh.completers.base - xonsh 0.22.0 documentation</title>
+        <title>xonsh.xoreutils.xcontext - xonsh 0.22.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=580074bf" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css?v=4ae1632d" />
@@ -401,47 +401,78 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <h1>Source code for xonsh.completers.base</h1><div class="highlight"><pre>
-<span></span><span class="sd">&quot;&quot;&quot;Base completer for xonsh.&quot;&quot;&quot;</span>
+          <h1>Source code for xonsh.xoreutils.xcontext</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;The xontext command.&quot;&quot;&quot;</span>
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">cabc</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.completers.commands</span><span class="w"> </span><span class="kn">import</span> <span class="n">complete_command</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.completers.path</span><span class="w"> </span><span class="kn">import</span> <span class="n">contextual_complete_path</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.completers.python</span><span class="w"> </span><span class="kn">import</span> <span class="n">complete_python</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.completers.tools</span><span class="w"> </span><span class="kn">import</span> <span class="n">apply_lprefix</span><span class="p">,</span> <span class="n">contextual_completer</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.parsers.completion_context</span><span class="w"> </span><span class="kn">import</span> <span class="n">CompletionContext</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.built_ins</span><span class="w"> </span><span class="kn">import</span> <span class="n">XSH</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.cli_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">ArgParserAlias</span>
 
 
-<div class="viewcode-block" id="complete_base">
-<a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.completers.base.html#xonsh.completers.base.complete_base">[docs]</a>
-<span class="nd">@contextual_completer</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">complete_base</span><span class="p">(</span><span class="n">context</span><span class="p">:</span> <span class="n">CompletionContext</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;If the line is empty, complete based on valid commands, python names, and paths.&quot;&quot;&quot;</span>
-    <span class="c1"># If we are completing the first argument, complete based on</span>
-    <span class="c1"># valid commands and python names.</span>
-    <span class="k">if</span> <span class="n">context</span><span class="o">.</span><span class="n">command</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">context</span><span class="o">.</span><span class="n">command</span><span class="o">.</span><span class="n">arg_index</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="c1"># don&#39;t do unnecessary completions</span>
-        <span class="k">return</span>
-
-    <span class="c1"># get and unpack python completions</span>
-    <span class="n">python_comps</span> <span class="o">=</span> <span class="n">complete_python</span><span class="p">(</span><span class="n">context</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">set</span><span class="p">()</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">python_comps</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Sequence</span><span class="p">):</span>
-        <span class="n">python_comps</span><span class="p">,</span> <span class="n">python_comps_len</span> <span class="o">=</span> <span class="n">python_comps</span>  <span class="c1"># type: ignore</span>
-        <span class="k">yield from</span> <span class="n">apply_lprefix</span><span class="p">(</span><span class="n">python_comps</span><span class="p">,</span> <span class="n">python_comps_len</span><span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="k">yield from</span> <span class="n">python_comps</span>
-
-    <span class="c1"># add command completions</span>
-    <span class="k">yield from</span> <span class="n">complete_command</span><span class="p">(</span><span class="n">context</span><span class="o">.</span><span class="n">command</span><span class="p">)</span>
-
-    <span class="c1"># add paths, if needed</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">context</span><span class="o">.</span><span class="n">command</span><span class="o">.</span><span class="n">prefix</span><span class="p">:</span>
-        <span class="n">path_comps</span><span class="p">,</span> <span class="n">path_comp_len</span> <span class="o">=</span> <span class="n">contextual_complete_path</span><span class="p">(</span>
-            <span class="n">context</span><span class="o">.</span><span class="n">command</span><span class="p">,</span> <span class="n">cdpath</span><span class="o">=</span><span class="kc">False</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_version</span><span class="p">(</span><span class="n">binary</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Helper to get version string from a binary.&quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">binary</span><span class="p">,</span> <span class="s2">&quot;--version&quot;</span><span class="p">],</span> <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">STDOUT</span>
         <span class="p">)</span>
-        <span class="k">yield from</span> <span class="n">apply_lprefix</span><span class="p">(</span><span class="n">path_comps</span><span class="p">,</span> <span class="n">path_comp_len</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="n">out</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">except</span> <span class="p">(</span><span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">,</span> <span class="ne">FileNotFoundError</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">(</span>
+                <span class="p">[</span><span class="n">binary</span><span class="p">,</span> <span class="s2">&quot;-V&quot;</span><span class="p">],</span> <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">STDOUT</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">out</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">except</span> <span class="p">(</span><span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">,</span> <span class="ne">FileNotFoundError</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s2">&quot;&quot;</span>
 
+
+<div class="viewcode-block" id="xcontext_main">
+<a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.xoreutils.xcontext.html#xonsh.xoreutils.xcontext.xcontext_main">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">xcontext_main</span><span class="p">(</span><span class="n">_args</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_stdout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_stderr</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Report information about the current xonsh environment.&quot;&quot;&quot;</span>
+    <span class="n">stdout</span> <span class="o">=</span> <span class="n">_stdout</span> <span class="ow">or</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[Current xonsh session]&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="n">xpy</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">executable</span>
+    <span class="n">xpy_ver</span> <span class="o">=</span> <span class="n">_get_version</span><span class="p">(</span><span class="n">xpy</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xpython: </span><span class="si">{</span><span class="n">xpy</span><span class="si">}</span><span class="s2"> # </span><span class="si">{</span><span class="n">xpy_ver</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="n">xpip</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">aliases</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;xpip&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">xpip</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">xpip</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xpip: </span><span class="si">{</span><span class="s1">&#39; &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">xpip</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">callable</span><span class="p">(</span><span class="n">xpip</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xpip: </span><span class="si">{</span><span class="n">xpip</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xpip: </span><span class="si">{</span><span class="n">xpip</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;xpip: not found&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[Current commands environment]&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="n">cmds</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;xonsh&quot;</span><span class="p">,</span> <span class="s2">&quot;python&quot;</span><span class="p">,</span> <span class="s2">&quot;pip&quot;</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">shutil</span><span class="o">.</span><span class="n">which</span><span class="p">(</span><span class="s2">&quot;pytest&quot;</span><span class="p">):</span>
+        <span class="n">cmds</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;pytest&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="n">cmds</span><span class="p">:</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">shutil</span><span class="o">.</span><span class="n">which</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">path</span><span class="p">:</span>
+            <span class="n">ver</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+            <span class="k">if</span> <span class="n">cmd</span> <span class="o">==</span> <span class="s2">&quot;python&quot;</span><span class="p">:</span>
+                <span class="n">ver</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot; # </span><span class="si">{</span><span class="n">_get_version</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">cmd</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">path</span><span class="si">}{</span><span class="n">ver</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">cmd</span><span class="si">}</span><span class="s2">: not found&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="n">envs</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;CONDA_DEFAULT_ENV&quot;</span><span class="p">,</span> <span class="s2">&quot;VIRTUAL_ENV&quot;</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">envs</span><span class="p">:</span>
+        <span class="n">val</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ev</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">val</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ev</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">val</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="k">return</span> <span class="mi">0</span></div>
+
+
+
+<span class="n">xcontext</span> <span class="o">=</span> <span class="n">ArgParserAlias</span><span class="p">(</span><span class="n">func</span><span class="o">=</span><span class="n">xcontext_main</span><span class="p">,</span> <span class="n">has_args</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">prog</span><span class="o">=</span><span class="s2">&quot;xcontext&quot;</span><span class="p">)</span>
 </pre></div>
         </article>
       </div>
