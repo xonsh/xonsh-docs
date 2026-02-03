@@ -5,8 +5,8 @@
     <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html">
         <link rel="prefetch" href="../../_static/xonsh_terminal_icon_256.png" as="image">
 
-    <link rel="shortcut icon" href="../../_static/magic_conch.ico"><!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
-        <title>xonsh.environ - xonsh 0.22.1 documentation</title>
+    <link rel="shortcut icon" href="../../_static/magic_conch.ico"><!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
+        <title>xonsh.environ - xonsh 0.22.2 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
@@ -163,7 +163,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../contents.html"><div class="brand">xonsh 0.22.1 documentation</div></a>
+      <a href="../../contents.html"><div class="brand">xonsh 0.22.2 documentation</div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -187,7 +187,7 @@
     <img class="sidebar-logo" src="../../_static/xonsh_terminal_icon_256.png" alt="Logo"/>
   </div>
   
-  <span class="sidebar-brand-text">xonsh 0.22.1 documentation</span>
+  <span class="sidebar-brand-text">xonsh 0.22.2 documentation</span>
   
 </a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -364,7 +364,6 @@
 </li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="../../advanced_events.html">Advanced Events</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../devguide.html">Developer’s Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../changelog.html">Xonsh Change Log</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../faq.html">Frequently Asked Questions</a></li>
@@ -404,11 +403,13 @@
           <h1>Source code for xonsh.environ</h1><div class="highlight"><pre>
 <span></span><span class="sd">&quot;&quot;&quot;Environment for the xonsh shell.&quot;&quot;&quot;</span>
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">cabc</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">contextlib</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">inspect</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">locale</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">operator</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pathlib</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">platform</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pprint</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
@@ -419,6 +420,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">tp</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChainMap</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">abc</span> <span class="k">as</span> <span class="n">cabc</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">xonsh.prompt.base</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">prompt</span>
@@ -446,7 +448,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.tools</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">DefaultNotGiven</span><span class="p">,</span>
     <span class="n">DefaultNotGivenType</span><span class="p">,</span>
-    <span class="n">EnvPath</span><span class="p">,</span>
+    <span class="n">_expandpath</span><span class="p">,</span>
     <span class="n">abs_path_to_str</span><span class="p">,</span>
     <span class="n">adjust_shlvl</span><span class="p">,</span>
     <span class="n">always_false</span><span class="p">,</span>
@@ -455,11 +457,13 @@
     <span class="n">bool_or_none_to_str</span><span class="p">,</span>
     <span class="n">bool_to_str</span><span class="p">,</span>
     <span class="n">csv_to_set</span><span class="p">,</span>
+    <span class="n">decode_bytes</span><span class="p">,</span>
     <span class="n">detype</span><span class="p">,</span>
     <span class="n">dict_to_str</span><span class="p">,</span>
     <span class="n">dynamic_cwd_tuple_to_str</span><span class="p">,</span>
     <span class="n">ensure_string</span><span class="p">,</span>
     <span class="n">env_path_to_str</span><span class="p">,</span>
+    <span class="n">expand_path</span><span class="p">,</span>
     <span class="n">history_tuple_to_str</span><span class="p">,</span>
     <span class="n">intensify_colors_on_win_setter</span><span class="p">,</span>
     <span class="n">is_bool</span><span class="p">,</span>
@@ -468,7 +472,6 @@
     <span class="n">is_completion_mode</span><span class="p">,</span>
     <span class="n">is_completions_display_value</span><span class="p">,</span>
     <span class="n">is_dynamic_cwd_width</span><span class="p">,</span>
-    <span class="n">is_env_path</span><span class="p">,</span>
     <span class="n">is_float</span><span class="p">,</span>
     <span class="n">is_history_backend</span><span class="p">,</span>
     <span class="n">is_history_tuple</span><span class="p">,</span>
@@ -491,9 +494,6 @@
     <span class="n">ptk2_color_depth_setter</span><span class="p">,</span>
     <span class="n">seq_to_upper_pathsep</span><span class="p">,</span>
     <span class="n">set_to_csv</span><span class="p">,</span>
-    <span class="n">str_to_abs_path</span><span class="p">,</span>
-    <span class="n">str_to_env_path</span><span class="p">,</span>
-    <span class="n">str_to_path</span><span class="p">,</span>
     <span class="n">swap_values</span><span class="p">,</span>
     <span class="n">to_bool</span><span class="p">,</span>
     <span class="n">to_bool_or_int</span><span class="p">,</span>
@@ -531,6 +531,15 @@
 <span class="sd">Fires after an environment variable is changed.</span>
 <span class="sd">Note: Setting envvars inside the handler might</span>
 <span class="sd">cause a recursion until the limit.</span>
+
+<span class="sd">.. code-block:: python</span>
+
+<span class="sd">    @events.on_envvar_change</span>
+<span class="sd">    def _on_env_path_change(name, oldvalue, newvalue):</span>
+<span class="sd">        &#39;&#39;&#39;Keep `/tmp/bin` on top of PATH.&#39;&#39;&#39;</span>
+<span class="sd">        if name == &#39;PATH&#39; and (newvalue == [] or newvalue[0] != &#39;/tmp/bin&#39;):</span>
+<span class="sd">            $PATH = [&#39;/tmp/bin&#39;] + [v for v in newvalue if v != &#39;/tmp/bin&#39;]</span>
+
 <span class="sd">&quot;&quot;&quot;</span><span class="p">,</span>
 <span class="p">)</span>
 
@@ -557,6 +566,52 @@
 <span class="sd">Normal usage is to arm the event handler, then read (not modify) all existing values.</span>
 <span class="sd">&quot;&quot;&quot;</span><span class="p">,</span>
 <span class="p">)</span>
+
+
+<div class="viewcode-block" id="is_env_path">
+<a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.is_env_path">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">is_env_path</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This tests if something is an environment path, ie a list of strings.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">EnvPath</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="str_to_path">
+<a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.str_to_path">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">str_to_path</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Converts a string to a path.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">x</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">x</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">x</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">EnvPath</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="k">if</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Variable should be a pathlib.Path, str or single EnvPath type. </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="si">}</span><span class="s2"> given.&quot;</span>
+        <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="str_to_abs_path">
+<a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.str_to_abs_path">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">str_to_abs_path</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Converts a string to an absolute path.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">r</span><span class="o">.</span><span class="n">absolute</span><span class="p">()</span> <span class="k">if</span> <span class="p">(</span><span class="n">r</span> <span class="o">:=</span> <span class="n">str_to_path</span><span class="p">(</span><span class="n">x</span><span class="p">))</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">r</span></div>
+
+
+
+<div class="viewcode-block" id="str_to_env_path">
+<a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.str_to_env_path">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">str_to_env_path</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Converts a string to an environment path, ie a list of strings,</span>
+<span class="sd">    splitting on the OS separator.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># splitting will be done implicitly in EnvPath&#39;s __init__</span>
+    <span class="k">return</span> <span class="n">EnvPath</span><span class="p">(</span><span class="n">x</span><span class="p">)</span></div>
+
 
 
 <span class="nd">@lazyobject</span>
@@ -1510,6 +1565,14 @@
         <span class="s2">&quot;This is the location where xonsh user-level configuration information is stored.&quot;</span><span class="p">,</span>
         <span class="n">type_str</span><span class="o">=</span><span class="s2">&quot;str&quot;</span><span class="p">,</span>
     <span class="p">)</span>
+    <span class="n">XONSH_ORIGIN_ENV_FILE</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">no_default</span><span class="p">(</span>
+        <span class="s2">&quot;str&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;The path to the file where environment variables are saved when &quot;</span>
+        <span class="s2">&quot;running ``xonsh --save-origin-env``. When xonsh ``--load-origin-env`` &quot;</span>
+        <span class="s2">&quot;is executed, this file is used as the basis for the environment. &quot;</span>
+        <span class="s2">&quot;Thus, from an existing xonsh session, you can start a new one with &quot;</span>
+        <span class="s2">&quot;the same environment variables that were used when launching the original session.&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
     <span class="n">XONSH_SYS_CONFIG_DIR</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
         <span class="n">xonsh_sys_config_dir</span><span class="p">,</span>
         <span class="s2">&quot;This is the location where xonsh system-level configuration information is stored.&quot;</span><span class="p">,</span>
@@ -2293,6 +2356,10 @@
         <span class="s2">&quot;&quot;</span><span class="p">,</span>
         <span class="s2">&quot;The text of the next command that will be inserted in the next prompt.&quot;</span><span class="p">,</span>
     <span class="p">)</span>
+    <span class="n">XONSH_PROMPT_NEXT_CMD_SUGGESTION</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
+        <span class="s2">&quot;&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;The text of the next command suggestion that will be inserted in the next prompt.&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
 
     <span class="n">AUTO_SUGGEST_IN_COMPLETIONS</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
         <span class="kc">False</span><span class="p">,</span>
@@ -2948,6 +3015,8 @@
             <span class="n">val</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">MutableSet</span> <span class="o">|</span> <span class="n">cabc</span><span class="o">.</span><span class="n">MutableSequence</span> <span class="o">|</span> <span class="n">cabc</span><span class="o">.</span><span class="n">MutableMapping</span>
         <span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="n">EnvPath</span><span class="p">):</span>
+            <span class="n">val</span><span class="o">.</span><span class="n">target_env_var</span> <span class="o">=</span> <span class="n">key</span>
         <span class="k">return</span> <span class="n">val</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__setitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">val</span><span class="p">):</span>
@@ -3419,7 +3488,9 @@
         <span class="s2">&quot;PROMPT_FIELDS&quot;</span><span class="p">:</span> <span class="n">DEFAULT_VARS</span><span class="p">[</span><span class="s2">&quot;PROMPT_FIELDS&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">default</span><span class="p">(</span><span class="n">env</span><span class="p">),</span>
         <span class="s2">&quot;XONSH_VERSION&quot;</span><span class="p">:</span> <span class="n">XONSH_VERSION</span><span class="p">,</span>
     <span class="p">}</span>
+
     <span class="n">ctx</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">os_environ</span><span class="p">)</span>
+
     <span class="n">ctx</span><span class="p">[</span><span class="s2">&quot;PWD&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_get_cwd</span><span class="p">()</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
     <span class="c1"># These can cause problems for programs (#2543)</span>
     <span class="n">ctx</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;LINES&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
@@ -3450,6 +3521,222 @@
     <span class="n">env</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;ARG&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">):</span> <span class="n">arg</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">arg</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">args</span><span class="p">)}</span>
     <span class="n">env</span><span class="p">[</span><span class="s2">&quot;ARGS&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>  <span class="c1"># make a copy so we don&#39;t interfere with original variable</span>
     <span class="k">return</span> <span class="n">env</span></div>
+
+
+
+<div class="viewcode-block" id="EnvPath">
+<a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.EnvPath">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">EnvPath</span><span class="p">(</span><span class="n">cabc</span><span class="o">.</span><span class="n">MutableSequence</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A class that implements an environment path, which is a list of</span>
+<span class="sd">    strings. Provides a custom method that expands all paths if the</span>
+<span class="sd">    relevant env variable has been set.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">target_env_var</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># Will be populated by Env</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">args</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_l</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_l</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">pathsep</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_l</span> <span class="o">=</span> <span class="p">[</span><span class="n">args</span><span class="p">]</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">):</span>
+                <span class="c1"># decode bytes to a string and then split based on</span>
+                <span class="c1"># the default path separator</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_l</span> <span class="o">=</span> <span class="n">decode_bytes</span><span class="p">(</span><span class="n">args</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">pathsep</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Iterable</span><span class="p">):</span>
+                <span class="c1"># put everything in a list -before- performing the type check</span>
+                <span class="c1"># in order to be able to retrieve it later, for cases such as</span>
+                <span class="c1"># when a generator expression was passed as an argument</span>
+                <span class="n">args</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">bytes</span> <span class="o">|</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">args</span><span class="p">):</span>
+                    <span class="c1"># make TypeError&#39;s message as informative as possible</span>
+                    <span class="c1"># when given an invalid initialization sequence</span>
+                    <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                        <span class="s2">&quot;EnvPath&#39;s initialization sequence should only &quot;</span>
+                        <span class="s2">&quot;contain str, bytes and pathlib.Path entries&quot;</span>
+                    <span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_l</span> <span class="o">=</span> <span class="n">args</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;EnvPath cannot be initialized with items of type </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">args</span><span class="p">)</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">args</span><span class="si">!r}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">):</span>
+        <span class="c1"># handle slices separately</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="nb">slice</span><span class="p">):</span>
+            <span class="k">return</span> <span class="p">[</span><span class="n">_expandpath</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_l</span><span class="p">[</span><span class="n">item</span><span class="p">]]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_expandpath</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_l</span><span class="p">[</span><span class="n">item</span><span class="p">])</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__setitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">,</span> <span class="n">item</span><span class="p">):</span>
+        <span class="k">with</span> <span class="n">EnvPath</span><span class="o">.</span><span class="n">_OnPathChange</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_l</span><span class="o">.</span><span class="fm">__setitem__</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="n">item</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_l</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__delitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+        <span class="k">with</span> <span class="n">EnvPath</span><span class="o">.</span><span class="n">_OnPathChange</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_l</span><span class="o">.</span><span class="fm">__delitem__</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_prepare_path</span><span class="p">(</span><span class="n">p</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">expand_path</span><span class="p">(</span><span class="n">p</span><span class="p">))</span>
+
+<div class="viewcode-block" id="EnvPath.insert">
+<a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.EnvPath.insert">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">insert</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">with</span> <span class="n">EnvPath</span><span class="o">.</span><span class="n">_OnPathChange</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_l</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_path</span><span class="p">(</span><span class="n">value</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="EnvPath.append">
+<a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.EnvPath.append">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">append</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">with</span> <span class="n">EnvPath</span><span class="o">.</span><span class="n">_OnPathChange</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_l</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_prepare_path</span><span class="p">(</span><span class="n">value</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="EnvPath.prepend">
+<a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.EnvPath.prepend">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">prepend</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">with</span> <span class="n">EnvPath</span><span class="o">.</span><span class="n">_OnPathChange</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_l</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_path</span><span class="p">(</span><span class="n">value</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="EnvPath.remove">
+<a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.EnvPath.remove">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">remove</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">EnvPath</span><span class="o">.</span><span class="n">_OnPathChange</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_l</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_prepare_path</span><span class="p">(</span><span class="n">value</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;EnvPath warning: path </span><span class="si">{</span><span class="nb">repr</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="si">}</span><span class="s2"> not found.&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">paths</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the list of directories that this EnvPath contains.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_l</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__eq__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">other</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">return</span> <span class="nb">all</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="n">operator</span><span class="o">.</span><span class="n">eq</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">))</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_repr_pretty_</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">cycle</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Pretty print path list&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">cycle</span><span class="p">:</span>
+            <span class="n">p</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="s2">&quot;EnvPath(...)&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">p</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;EnvPath(</span><span class="se">\n</span><span class="s2">[&quot;</span><span class="p">,</span> <span class="s2">&quot;]</span><span class="se">\n</span><span class="s2">)&quot;</span><span class="p">):</span>
+                <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">item</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="n">idx</span><span class="p">:</span>
+                        <span class="n">p</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">)</span>
+                        <span class="n">p</span><span class="o">.</span><span class="n">breakable</span><span class="p">()</span>
+                    <span class="n">p</span><span class="o">.</span><span class="n">pretty</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__add__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="n">EnvPath</span><span class="p">):</span>
+            <span class="n">other</span> <span class="o">=</span> <span class="n">other</span><span class="o">.</span><span class="n">_l</span>
+        <span class="k">return</span> <span class="n">EnvPath</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_l</span> <span class="o">+</span> <span class="n">other</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__radd__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="n">EnvPath</span><span class="p">):</span>
+            <span class="n">other</span> <span class="o">=</span> <span class="n">other</span><span class="o">.</span><span class="n">_l</span>
+        <span class="k">return</span> <span class="n">EnvPath</span><span class="p">(</span><span class="n">other</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_l</span><span class="p">)</span>
+
+<div class="viewcode-block" id="EnvPath.add">
+<a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.EnvPath.add">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">front</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Add a value to this EnvPath,</span>
+
+<span class="sd">        path.add(data, front=bool, replace=bool) -&gt; ensures that path contains data, with position determined by kwargs</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        data : string or bytes or pathlib.Path</span>
+<span class="sd">            value to be added</span>
+<span class="sd">        front : bool</span>
+<span class="sd">            whether the value should be added to the front, will be</span>
+<span class="sd">            ignored if the data already exists in this EnvPath and</span>
+<span class="sd">            replace is False</span>
+<span class="sd">            Default : False</span>
+<span class="sd">        replace : bool</span>
+<span class="sd">            If True, the value will be removed and added to the</span>
+<span class="sd">            start or end(depending on the value of front)</span>
+<span class="sd">            Default : False</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        None</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">EnvPath</span><span class="o">.</span><span class="n">_OnPathChange</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_path</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">data</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_l</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_l</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span> <span class="k">if</span> <span class="n">front</span> <span class="k">else</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_l</span><span class="p">),</span> <span class="n">data</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">replace</span><span class="p">:</span>
+                <span class="c1"># https://stackoverflow.com/a/25251306/1621381</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_l</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">filter</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span> <span class="o">!=</span> <span class="n">data</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_l</span><span class="p">))</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_l</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span> <span class="k">if</span> <span class="n">front</span> <span class="k">else</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_l</span><span class="p">),</span> <span class="n">data</span><span class="p">)</span></div>
+
+
+    <span class="k">class</span><span class="w"> </span><span class="nc">_OnPathChange</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Track paths change event.&quot;&quot;&quot;</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">obj</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">obj</span> <span class="o">=</span> <span class="n">obj</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">before</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">_l</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="fm">__exit__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_val</span><span class="p">,</span> <span class="n">exc_tb</span><span class="p">):</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">target_env_var</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">before</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">_l</span><span class="p">:</span>
+                <span class="n">events</span><span class="o">.</span><span class="n">on_envvar_change</span><span class="o">.</span><span class="n">fire</span><span class="p">(</span>
+                    <span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">target_env_var</span><span class="p">,</span>
+                    <span class="n">oldvalue</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">before</span><span class="p">,</span>
+                    <span class="n">newvalue</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">_l</span><span class="p">,</span>
+                <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="save_origin_env_to_file">
+<a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.save_origin_env_to_file">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">save_origin_env_to_file</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">session_id</span><span class="p">):</span>
+    <span class="n">data_dir</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_DATA_DIR&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">env_file_name</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">data_dir</span><span class="p">)</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;origin-env-</span><span class="si">{</span><span class="n">session_id</span><span class="si">}</span><span class="s2">.json&quot;</span>
+
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">access</span><span class="p">(</span><span class="n">env_file_name</span><span class="o">.</span><span class="n">parent</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">W_OK</span><span class="p">):</span>
+        <span class="n">env_file_name</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="nb">dict</span><span class="p">(</span><span class="n">os_environ</span><span class="p">)))</span>
+        <span class="n">env</span><span class="p">[</span><span class="s2">&quot;XONSH_ORIGIN_ENV_FILE&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">env_file_name</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xonsh: Write access denied for </span><span class="si">{</span><span class="n">data_dir</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="load_origin_env_from_file">
+<a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.load_origin_env_from_file">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_origin_env_from_file</span><span class="p">():</span>
+    <span class="n">e</span> <span class="o">=</span> <span class="n">os_environ</span>
+    <span class="k">if</span> <span class="s2">&quot;XONSH_ORIGIN_ENV_FILE&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;xonsh: No env file to restore&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="n">load_origin_env_file</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">e</span><span class="p">[</span><span class="s2">&quot;XONSH_ORIGIN_ENV_FILE&quot;</span><span class="p">])</span>
+    <span class="k">if</span> <span class="n">load_origin_env_file</span><span class="o">.</span><span class="n">is_file</span><span class="p">()</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">access</span><span class="p">(</span><span class="n">load_origin_env_file</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">R_OK</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">load_origin_env_file</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;utf-8&quot;</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xonsh: Failed to load file </span><span class="si">{</span><span class="n">load_origin_env_file</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span></div>
 
 </pre></div>
         </article>
@@ -3483,9 +3770,9 @@
       
     </aside>
   </div>
-</div><script src="../../_static/documentation_options.js?v=f2fe71c6"></script>
-    <script src="../../_static/doctools.js?v=9bcbadda"></script>
-    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+</div><script src="../../_static/documentation_options.js?v=c506fbac"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>
     <script src="../../_static/runthis-client.min.js?v=ad2a40d9"></script>
     </body>

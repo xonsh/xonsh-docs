@@ -31,7 +31,7 @@ you are in a lesser terminal:
 .. code-block:: console
 
     $ xonsh
-    snail@home ~ @
+    snail@home ~ @ █
 
 Now we are in a xonsh shell. Our username happens to be ``snail``, our
 hostname happens to be ``home``, and we are in our home directory (``~``).
@@ -114,9 +114,7 @@ And that about wraps it up for the basics section.  It is just like Python.
 Xonsh Session Interface
 =======================
 
-**New in version 0.21.0
-
-Each session has a special global object `@` that provides instant functionality.
+Each session has a special global object ``@`` that provides instant functionality.
 It gives you access to different parts of the current session.
 For example, you can use ``@.env`` to change environment variables, or ``@.imp`` to import libraries.
 You will learn more about this in the following sections.
@@ -202,6 +200,13 @@ It can be used to temporarily set an environment variable:
     @ echo $SOMEVAR
     $SOMEVAR
     @
+
+You can also change the value using preset on the command line:
+
+.. code-block:: xonshcon
+
+    @ $HELLO='snail' xonsh -c 'echo Hello $HELLO'
+    Hello snail
 
 Environment Lookup with ``${<expr>}``
 -------------------------------------
