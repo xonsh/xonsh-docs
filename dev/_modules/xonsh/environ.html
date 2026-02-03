@@ -406,6 +406,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">cabc</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">contextlib</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">inspect</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">locale</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">platform</span>
@@ -1508,6 +1509,14 @@
         <span class="n">xonsh_config_dir</span><span class="p">,</span>
         <span class="s2">&quot;This is the location where xonsh user-level configuration information is stored.&quot;</span><span class="p">,</span>
         <span class="n">type_str</span><span class="o">=</span><span class="s2">&quot;str&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">XONSH_ORIGIN_ENV_FILE</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">no_default</span><span class="p">(</span>
+        <span class="s2">&quot;str&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;The path to the file where environment variables are saved when &quot;</span>
+        <span class="s2">&quot;running ``xonsh --save-origin-env``. When xonsh ``--load-origin-env`` &quot;</span>
+        <span class="s2">&quot;is executed, this file is used as the basis for the environment. &quot;</span>
+        <span class="s2">&quot;Thus, from an existing xonsh session, you can start a new one with &quot;</span>
+        <span class="s2">&quot;the same environment variables that were used when launching the original session.&quot;</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">XONSH_SYS_CONFIG_DIR</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
         <span class="n">xonsh_sys_config_dir</span><span class="p">,</span>
@@ -3422,7 +3431,9 @@
         <span class="s2">&quot;PROMPT_FIELDS&quot;</span><span class="p">:</span> <span class="n">DEFAULT_VARS</span><span class="p">[</span><span class="s2">&quot;PROMPT_FIELDS&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">default</span><span class="p">(</span><span class="n">env</span><span class="p">),</span>
         <span class="s2">&quot;XONSH_VERSION&quot;</span><span class="p">:</span> <span class="n">XONSH_VERSION</span><span class="p">,</span>
     <span class="p">}</span>
+
     <span class="n">ctx</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">os_environ</span><span class="p">)</span>
+
     <span class="n">ctx</span><span class="p">[</span><span class="s2">&quot;PWD&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_get_cwd</span><span class="p">()</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
     <span class="c1"># These can cause problems for programs (#2543)</span>
     <span class="n">ctx</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;LINES&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
@@ -3453,6 +3464,37 @@
     <span class="n">env</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;ARG&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">):</span> <span class="n">arg</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">arg</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">args</span><span class="p">)}</span>
     <span class="n">env</span><span class="p">[</span><span class="s2">&quot;ARGS&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>  <span class="c1"># make a copy so we don&#39;t interfere with original variable</span>
     <span class="k">return</span> <span class="n">env</span></div>
+
+
+
+<div class="viewcode-block" id="save_origin_env_to_file">
+<a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.save_origin_env_to_file">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">save_origin_env_to_file</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">session_id</span><span class="p">):</span>
+    <span class="n">data_dir</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_DATA_DIR&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">env_file_name</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">data_dir</span><span class="p">)</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;origin-env-</span><span class="si">{</span><span class="n">session_id</span><span class="si">}</span><span class="s2">.json&quot;</span>
+
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">access</span><span class="p">(</span><span class="n">env_file_name</span><span class="o">.</span><span class="n">parent</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">W_OK</span><span class="p">):</span>
+        <span class="n">env_file_name</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="nb">dict</span><span class="p">(</span><span class="n">os_environ</span><span class="p">)))</span>
+        <span class="n">env</span><span class="p">[</span><span class="s2">&quot;XONSH_ORIGIN_ENV_FILE&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">env_file_name</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xonsh: Write access denied for </span><span class="si">{</span><span class="n">data_dir</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="load_origin_env_from_file">
+<a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.load_origin_env_from_file">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_origin_env_from_file</span><span class="p">():</span>
+    <span class="n">e</span> <span class="o">=</span> <span class="n">os_environ</span>
+    <span class="k">if</span> <span class="s2">&quot;XONSH_ORIGIN_ENV_FILE&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;xonsh: No env file to restore&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="n">load_origin_env_file</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">e</span><span class="p">[</span><span class="s2">&quot;XONSH_ORIGIN_ENV_FILE&quot;</span><span class="p">])</span>
+    <span class="k">if</span> <span class="n">load_origin_env_file</span><span class="o">.</span><span class="n">is_file</span><span class="p">()</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">access</span><span class="p">(</span><span class="n">load_origin_env_file</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">R_OK</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">load_origin_env_file</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;utf-8&quot;</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xonsh: Failed to load file </span><span class="si">{</span><span class="n">load_origin_env_file</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span></div>
 
 </pre></div>
         </article>
