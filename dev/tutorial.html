@@ -1914,43 +1914,38 @@ best used in conjunction with the <code class="docutils literal notranslate"><sp
 <p>Note that <code class="docutils literal notranslate"><span class="pre">&#64;()</span></code> is required to pass the python list <code class="docutils literal notranslate"><span class="pre">args</span></code> to a subprocess
 command.</p>
 </section>
-<section id="decorator-aliases">
-<h3>Decorator Aliases<a class="headerlink" href="#decorator-aliases" title="Link to this heading">¶</a></h3>
-<p>Using <code class="docutils literal notranslate"><span class="pre">DecoratorAlias</span></code> and <code class="docutils literal notranslate"><span class="pre">SpecAttrDecoratorAlias</span></code> and callable <code class="docutils literal notranslate"><span class="pre">output_format</span></code> you can
-convert subprocess command output into Python object:</p>
-<div class="highlight-xonshcon notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">json</span><span class="o">,</span><span class="w"> </span><span class="nn">pathlib</span><span class="o">,</span><span class="w"> </span><span class="nn">yaml</span>
-<span class="go">from xonsh.procs.specs import SpecAttrDecoratorAlias</span>
+<section id="command-decorators-decorator-aliases">
+<h3>Command Decorators (Decorator Aliases)<a class="headerlink" href="#command-decorators-decorator-aliases" title="Link to this heading">¶</a></h3>
+<p>In xonsh you can decorate the command to transform output into desired object:</p>
+<div class="highlight-xonshcon notranslate"><div class="highlight"><pre><span></span><span class="gp">@ </span><span class="k">$</span><span class="p">(</span><span class="nb">@lines</span> ls /<span class="p">)</span>
+<span class="go">[&#39;/bin&#39;, &#39;/etc&#39;, &#39;/home&#39;]</span>
 
-<span class="go">aliases[&#39;@lines&#39;] = SpecAttrDecoratorAlias({&quot;output_format&quot;: &#39;list_lines&#39;},</span>
-<span class="go">                                           &quot;Set `list_lines` output format.&quot;)</span>
-<span class="go">aliases[&#39;@json&#39;] = SpecAttrDecoratorAlias({&quot;output_format&quot;: lambda lines: json.loads(&#39;\n&#39;.join(lines))},</span>
-<span class="go">                                           &quot;Set `json` output format.&quot;)</span>
-<span class="go">aliases[&#39;@path&#39;] = SpecAttrDecoratorAlias({&quot;output_format&quot;: lambda lines: pathlib.Path(&#39;:&#39;.join(lines))},</span>
-<span class="go">                                           &quot;Set `path` output format.&quot;)</span>
-<span class="go">aliases[&#39;@yaml&#39;] = SpecAttrDecoratorAlias({&quot;output_format&quot;: lambda lines: yaml.safe_load(&#39;\n&#39;.join(lines))},</span>
-<span class="go">                                           &quot;Set `yaml` output format.&quot;)</span>
-<span class="go">aliases[&#39;@noerr&#39;] = SpecAttrDecoratorAlias({&quot;raise_subproc_error&quot;: False},</span>
-<span class="go">                                           &quot;Set `raise_subproc_error` to False.&quot;)</span>
+<span class="gp">@</span> <span class="k">$</span><span class="p">(</span><span class="nb">@json</span> curl -s https://api.github.com/repos/xonsh/xonsh<span class="p">)[</span><span class="s1">&#39;default_branch&#39;</span><span class="p">]</span>
+<span class="go">main</span>
+
+<span class="gp">@</span> <span class="k">$</span><span class="p">(</span><span class="nb">@jsonl</span> echo <span class="s1">&#39;{&quot;a&quot;:1}\n{&quot;b&quot;:2}&#39;</span><span class="p">)</span>
+<span class="go">[{&#39;a&#39;: 1}, {&#39;b&#39;: 2}]</span>
+
+<span class="gp">@</span> <span class="k">$</span><span class="p">(</span><span class="nb">@yaml</span> echo <span class="s1">&#39;a: 1&#39;</span><span class="p">)</span>
+<span class="go">{&#39;a&#39;: 1}</span>
+</pre></div>
+</div>
+<p>See the full list of command decorators in Aliases article or build the new one.</p>
+<p>Using <code class="docutils literal notranslate"><span class="pre">DecoratorAlias</span></code> and <code class="docutils literal notranslate"><span class="pre">SpecAttrDecoratorAlias</span></code> and callable <code class="docutils literal notranslate"><span class="pre">output_format</span></code> you can
+convert subprocess command output into Python object with your own logic:</p>
+<div class="highlight-xonshcon notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.procs.specs</span><span class="w"> </span><span class="kn">import</span> <span class="n">SpecAttrDecoratorAlias</span>
+
+<span class="go">aliases[&#39;@path&#39;] = SpecAttrDecoratorAlias(</span>
+<span class="go">                    {&quot;output_format&quot;: lambda lines: @.imp.pathlib.Path(&#39;:&#39;.join(lines))},</span>
+<span class="go">                    &quot;Set `path` output format.&quot;)</span>
+<span class="go">aliases[&#39;@noerr&#39;] = SpecAttrDecoratorAlias(</span>
+<span class="go">                      {&quot;raise_subproc_error&quot;: False},</span>
+<span class="go">                      &quot;Set `raise_subproc_error` to False.&quot;)</span>
 </pre></div>
 </div>
 <p>Now you can run:</p>
-<div class="highlight-xonshcon notranslate"><div class="highlight"><pre><span></span><span class="k">$</span><span class="p">(</span><span class="nb">@lines</span> ls /<span class="p">)</span>
-<span class="go"># [&#39;/bin&#39;, &#39;/etc&#39;, &#39;/home&#39;]</span>
-
-<span class="go">$(echo &#39;{}&#39; | @json head -n 1)[&#39;answer&#39;]</span>
-<span class="go"># 42</span>
-
-<span class="go">j = $(@json echo &#39;{&quot;answer&quot;:42}&#39;)</span>
-<span class="go">j[&#39;answer&#39;]</span>
-<span class="go"># 42</span>
-
-<span class="go">$(@path which xonsh)</span>
-<span class="go"># Path(&#39;/path/to/xonsh&#39;)</span>
-
-<span class="go">aliases[&#39;ydig&#39;] = &#39;@yaml dig +yaml&#39;</span>
-<span class="go">y = $(ydig google.com)</span>
-<span class="go">y[0][&#39;type&#39;]</span>
-<span class="go"># &#39;MESSAGE&#39;</span>
+<div class="highlight-xonshcon notranslate"><div class="highlight"><pre><span></span><span class="gp">@ </span><span class="k">$</span><span class="p">(</span><span class="err">@path</span> which xonsh<span class="p">)</span>
+<span class="go">Path(&#39;/path/to/xonsh&#39;)</span>
 </pre></div>
 </div>
 <hr class="docutils" />
@@ -2413,7 +2408,7 @@ On Windows, you can also type <code class="docutils literal notranslate"><span c
 <li><a class="reference internal" href="#anonymous-aliases">Anonymous Aliases</a></li>
 <li><a class="reference internal" href="#unthreadable-aliases">Unthreadable Aliases</a></li>
 <li><a class="reference internal" href="#uncapturable-aliases">Uncapturable Aliases</a></li>
-<li><a class="reference internal" href="#decorator-aliases">Decorator Aliases</a></li>
+<li><a class="reference internal" href="#command-decorators-decorator-aliases">Command Decorators (Decorator Aliases)</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#up-down-tab">Up, Down, Tab</a></li>
