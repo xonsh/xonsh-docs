@@ -467,6 +467,46 @@
 <span class="n">_RL_PREV_CASE_SENSITIVE_COMPLETIONS</span> <span class="o">=</span> <span class="s2">&quot;to-be-set&quot;</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_ensure_newline</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Print a newline if the cursor is not at column 1.</span>
+
+<span class="sd">    Uses the DSR (Device Status Report) escape sequence to query the</span>
+<span class="sd">    terminal for the current cursor position.  If the cursor is past</span>
+<span class="sd">    column 1, a previous command left a partial line (output without a</span>
+<span class="sd">    trailing newline) and we need to move to a fresh line so that the</span>
+<span class="sd">    prompt does not overwrite it.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">termios</span>  <span class="c1"># noqa: E401</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">tty</span>
+
+    <span class="n">fd</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdin</span><span class="o">.</span><span class="n">fileno</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">isatty</span><span class="p">(</span><span class="n">fd</span><span class="p">):</span>
+        <span class="k">return</span>
+    <span class="n">old</span> <span class="o">=</span> <span class="n">termios</span><span class="o">.</span><span class="n">tcgetattr</span><span class="p">(</span><span class="n">fd</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">tty</span><span class="o">.</span><span class="n">setcbreak</span><span class="p">(</span><span class="n">fd</span><span class="p">)</span>
+        <span class="c1"># Ask the terminal: &quot;where is the cursor?&quot;</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\033</span><span class="s2">[6n&quot;</span><span class="p">)</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+        <span class="c1"># Read response: ESC [ row ; col R</span>
+        <span class="n">resp</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="n">ch</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdin</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">resp</span> <span class="o">+=</span> <span class="n">ch</span>
+            <span class="k">if</span> <span class="n">ch</span> <span class="o">==</span> <span class="s2">&quot;R&quot;</span><span class="p">:</span>
+                <span class="k">break</span>
+        <span class="c1"># Parse &quot;;col&quot; from the response  e.g. &quot;\033[42;1R&quot;</span>
+        <span class="n">semi</span> <span class="o">=</span> <span class="n">resp</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">&quot;;&quot;</span><span class="p">)</span>
+        <span class="n">col</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">resp</span><span class="p">[</span><span class="n">semi</span> <span class="o">+</span> <span class="mi">1</span> <span class="p">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">])</span>  <span class="c1"># between &quot;;&quot; and &quot;R&quot;</span>
+        <span class="k">if</span> <span class="n">col</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">IndexError</span><span class="p">,</span> <span class="ne">OSError</span><span class="p">,</span> <span class="n">termios</span><span class="o">.</span><span class="n">error</span><span class="p">):</span>
+        <span class="k">pass</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">termios</span><span class="o">.</span><span class="n">tcsetattr</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">termios</span><span class="o">.</span><span class="n">TCSADRAIN</span><span class="p">,</span> <span class="n">old</span><span class="p">)</span>
+
+
 <div class="viewcode-block" id="setup_readline">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.shells.readline_shell.html#xonsh.shells.readline_shell.setup_readline">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">setup_readline</span><span class="p">():</span>
@@ -828,6 +868,8 @@
                 <span class="n">store_in_history</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="n">pos</span> <span class="o">=</span> <span class="n">readline</span><span class="o">.</span><span class="n">get_current_history_length</span><span class="p">()</span> <span class="o">-</span> <span class="mi">1</span>
         <span class="n">events</span><span class="o">.</span><span class="n">on_pre_prompt_format</span><span class="o">.</span><span class="n">fire</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">ON_POSIX</span><span class="p">:</span>
+            <span class="n">_ensure_newline</span><span class="p">()</span>
         <span class="n">prompt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">prompt</span>
         <span class="n">events</span><span class="o">.</span><span class="n">on_pre_prompt</span><span class="o">.</span><span class="n">fire</span><span class="p">()</span>
         <span class="n">rtn</span> <span class="o">=</span> <span class="nb">input</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span>
