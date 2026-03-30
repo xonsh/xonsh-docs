@@ -1469,12 +1469,34 @@
             <span class="n">old_shlvl</span> <span class="o">=</span> <span class="n">to_shlvl</span><span class="p">(</span><span class="n">denv</span><span class="p">[</span><span class="s2">&quot;SHLVL&quot;</span><span class="p">])</span>
             <span class="n">denv</span><span class="p">[</span><span class="s2">&quot;SHLVL&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">adjust_shlvl</span><span class="p">(</span><span class="n">old_shlvl</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span>
 
+    <span class="c1"># Clear the alias stack so the new process doesn&#39;t falsely detect</span>
+    <span class="c1"># recursion.  exec replaces the process — there is no actual recursion.</span>
+    <span class="c1"># (https://github.com/xonsh/xonsh/pull/6198)</span>
+    <span class="n">denv</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;__ALIAS_STACK&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">denv</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;__ALIAS_NAME&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
     <span class="k">try</span><span class="p">:</span>
         <span class="n">os</span><span class="o">.</span><span class="n">execvpe</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">command</span><span class="p">,</span> <span class="n">denv</span><span class="p">)</span>
-    <span class="k">except</span> <span class="ne">FileNotFoundError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">errno</span> <span class="o">==</span> <span class="mi">8</span><span class="p">:</span>  <span class="c1"># Exec format error — not a binary, try shebang</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.procs.specs</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_script_subproc_command</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">scriptcmd</span> <span class="o">=</span> <span class="n">get_script_subproc_command</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">command</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+            <span class="k">except</span> <span class="ne">PermissionError</span><span class="p">:</span>
+                <span class="n">scriptcmd</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">scriptcmd</span><span class="p">:</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">execvpe</span><span class="p">(</span><span class="n">scriptcmd</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">scriptcmd</span><span class="p">,</span> <span class="n">denv</span><span class="p">)</span>
+            <span class="c1"># fall through to the error return below</span>
+        <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">errno</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>  <span class="c1"># FileNotFoundError</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="kc">None</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">&quot;xonsh: exec: file not found: </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">command</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="mi">1</span><span class="p">,</span>
+            <span class="p">)</span>
         <span class="k">return</span> <span class="p">(</span>
             <span class="kc">None</span><span class="p">,</span>
-            <span class="sa">f</span><span class="s2">&quot;xonsh: exec: file not found: </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">command</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="sa">f</span><span class="s2">&quot;xonsh: exec: </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">command</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span>
             <span class="mi">1</span><span class="p">,</span>
         <span class="p">)</span></div>
 
