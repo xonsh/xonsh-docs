@@ -428,6 +428,13 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">importlib.machinery</span><span class="w"> </span><span class="kn">import</span> <span class="n">ModuleSpec</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.built_ins</span><span class="w"> </span><span class="kn">import</span> <span class="n">XSH</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.codecache</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">compile_code</span><span class="p">,</span>
+    <span class="n">get_cache_filename</span><span class="p">,</span>
+    <span class="n">script_cache_check</span><span class="p">,</span>
+    <span class="n">should_use_cache</span><span class="p">,</span>
+    <span class="n">update_cache</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.events</span><span class="w"> </span><span class="kn">import</span> <span class="n">events</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.execer</span><span class="w"> </span><span class="kn">import</span> <span class="n">Execer</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.lib.lazyasd</span><span class="w"> </span><span class="kn">import</span> <span class="n">lazyobject</span>
@@ -495,7 +502,9 @@
                 <span class="k">continue</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">access</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">R_OK</span><span class="p">):</span>
                 <span class="k">continue</span>
-            <span class="k">if</span> <span class="n">fname</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="n">x</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">scandir</span><span class="p">(</span><span class="n">p</span><span class="p">)}:</span>
+            <span class="k">with</span> <span class="n">os</span><span class="o">.</span><span class="n">scandir</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">as</span> <span class="n">entries</span><span class="p">:</span>
+                <span class="n">found</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="n">fname</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">entries</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">found</span><span class="p">:</span>
                 <span class="k">continue</span>
             <span class="n">spec</span> <span class="o">=</span> <span class="n">ModuleSpec</span><span class="p">(</span><span class="n">fullname</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_filenames</span><span class="p">[</span><span class="n">fullname</span><span class="p">]</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">fname</span><span class="p">))</span>
@@ -521,7 +530,7 @@
 <a class="viewcode-back" href="../../api/_autosummary/lang/xonsh.imphooks.html#xonsh.imphooks.XonshImportHook.get_filename">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_filename</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fullname</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the filename for a module&#39;s fullname.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filenames</span><span class="p">[</span><span class="n">fullname</span><span class="p">]</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filenames</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">fullname</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="XonshImportHook.get_data">
@@ -537,14 +546,20 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Gets the code object for a xonsh file.&quot;&quot;&quot;</span>
         <span class="n">filename</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_filename</span><span class="p">(</span><span class="n">fullname</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">filename</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;xonsh file </span><span class="si">{</span><span class="n">fullname</span><span class="si">!r}</span><span class="s2"> could not be found&quot;</span>
-            <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
-        <span class="n">src</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_source</span><span class="p">(</span><span class="n">fullname</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xonsh file </span><span class="si">{</span><span class="n">fullname</span><span class="si">!r}</span><span class="s2"> could not be found&quot;</span><span class="p">)</span>
         <span class="n">execer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_execer</span>
-        <span class="n">execer</span><span class="o">.</span><span class="n">filename</span> <span class="o">=</span> <span class="n">filename</span>
+        <span class="n">use_cache</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">should_use_cache</span><span class="p">(</span><span class="n">execer</span><span class="p">,</span> <span class="s2">&quot;exec&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">use_cache</span><span class="p">:</span>
+            <span class="n">cachefname</span> <span class="o">=</span> <span class="n">get_cache_filename</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">code</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="n">run_cached</span><span class="p">,</span> <span class="n">ccode</span> <span class="o">=</span> <span class="n">script_cache_check</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">cachefname</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">run_cached</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">ccode</span>
+        <span class="n">src</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_source</span><span class="p">(</span><span class="n">fullname</span><span class="p">)</span>
         <span class="n">ctx</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c1"># dummy for modules</span>
-        <span class="n">code</span> <span class="o">=</span> <span class="n">execer</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="n">glbs</span><span class="o">=</span><span class="n">ctx</span><span class="p">,</span> <span class="n">locs</span><span class="o">=</span><span class="n">ctx</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">code</span></div>
+        <span class="n">ccode</span> <span class="o">=</span> <span class="n">compile_code</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">src</span><span class="p">,</span> <span class="n">execer</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="n">ctx</span><span class="p">,</span> <span class="s2">&quot;exec&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">use_cache</span><span class="p">:</span>
+            <span class="n">update_cache</span><span class="p">(</span><span class="n">ccode</span><span class="p">,</span> <span class="n">cachefname</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">ccode</span></div>
 
 
 <div class="viewcode-block" id="XonshImportHook.get_source">
@@ -633,7 +648,7 @@
 <span class="n">events</span><span class="o">.</span><span class="n">doc</span><span class="p">(</span>
     <span class="s2">&quot;on_import_post_exec_module&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">on_import_post_create_module(module: Module) -&gt; None</span>
+<span class="sd">on_import_post_exec_module(module: Module) -&gt; None</span>
 
 <span class="sd">Fires after a module is executed by its loader but before the loader returns it.</span>
 <span class="sd">The only parameter is the module itself. See importlib for more details.</span>
