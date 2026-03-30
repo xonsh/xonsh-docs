@@ -460,12 +460,27 @@
     <span class="n">q</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_is_in_git_repo</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fast filesystem check for .git — avoids spawning git subprocess.&quot;&quot;&quot;</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
+    <span class="n">cwd</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PWD&quot;</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">())</span> <span class="k">if</span> <span class="n">env</span> <span class="k">else</span> <span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">()</span>
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">cwd</span><span class="p">,</span> <span class="s2">&quot;.git&quot;</span><span class="p">)):</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="n">parent</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">cwd</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">parent</span> <span class="o">==</span> <span class="n">cwd</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="n">cwd</span> <span class="o">=</span> <span class="n">parent</span>
+
+
 <div class="viewcode-block" id="get_git_branch">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.prompt.vc.html#xonsh.prompt.vc.get_git_branch">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">get_git_branch</span><span class="p">():</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Attempts to find the current git branch. If this could not</span>
 <span class="sd">    be determined (timeout, not in a git repo, etc.) then this returns None.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">_is_in_git_repo</span><span class="p">():</span>
+        <span class="k">return</span> <span class="kc">None</span>
     <span class="n">branch</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">timeout</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;VC_BRANCH_TIMEOUT&quot;</span><span class="p">)</span>
     <span class="n">q</span> <span class="o">=</span> <span class="n">queue</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
@@ -592,9 +607,19 @@
     <span class="p">)</span>
 
 
+<span class="n">_vc_has_cache</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_vc_has</span><span class="p">(</span><span class="n">binary</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;This allows us to locate binaries after git only if necessary&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">locate_executable</span><span class="p">(</span><span class="n">binary</span><span class="p">))</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This allows us to locate binaries after git only if necessary.</span>
+
+<span class="sd">    Results are cached for the session — the PATH rarely changes and</span>
+<span class="sd">    scanning it on every prompt is expensive for binaries that are</span>
+<span class="sd">    typically not installed (hg, fossil).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">binary</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_vc_has_cache</span><span class="p">:</span>
+        <span class="n">_vc_has_cache</span><span class="p">[</span><span class="n">binary</span><span class="p">]</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">locate_executable</span><span class="p">(</span><span class="n">binary</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">_vc_has_cache</span><span class="p">[</span><span class="n">binary</span><span class="p">]</span>
 
 
 <div class="viewcode-block" id="current_branch">
