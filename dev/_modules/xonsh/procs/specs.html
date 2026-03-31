@@ -431,7 +431,11 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">xonsh.procs.jobs</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">xj</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">xonsh.tools</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">xt</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.built_ins</span><span class="w"> </span><span class="kn">import</span> <span class="n">XSH</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.procs.executables</span><span class="w"> </span><span class="kn">import</span> <span class="n">locate_executable</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.procs.executables</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">get_possible_names</span><span class="p">,</span>
+    <span class="n">is_file</span><span class="p">,</span>
+    <span class="n">locate_executable</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.procs.pipelines</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">STDOUT_CAPTURE_KINDS</span><span class="p">,</span>
     <span class="n">CommandPipeline</span><span class="p">,</span>
@@ -441,6 +445,18 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.procs.posix</span><span class="w"> </span><span class="kn">import</span> <span class="n">PopenThread</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.procs.proxies</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProcProxy</span><span class="p">,</span> <span class="n">ProcProxyThread</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.procs.readers</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConsoleParallelReader</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_has_path_component</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check if a command name contains any path component (directory separator).</span>
+
+<span class="sd">    Commands with path separators (like ``./script``, ``subdir/script``,</span>
+<span class="sd">    or absolute paths) are explicit path references and may be resolved</span>
+<span class="sd">    relative to CWD.  Bare names (like ``ls`` or ``script.xsh``) must be</span>
+<span class="sd">    found in ``$PATH`` only — matching Linux/POSIX behaviour where CWD is</span>
+<span class="sd">    never searched implicitly.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">sep</span> <span class="ow">in</span> <span class="n">name</span> <span class="ow">or</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">sep</span> <span class="o">!=</span> <span class="s2">&quot;/&quot;</span> <span class="ow">and</span> <span class="s2">&quot;/&quot;</span> <span class="ow">in</span> <span class="n">name</span><span class="p">)</span>
 
 
 <span class="nd">@xl</span><span class="o">.</span><span class="n">lazyobject</span>
@@ -492,7 +508,7 @@
     <span class="k">elif</span> <span class="n">x</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;python&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">x</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;python.exe&quot;</span><span class="p">):</span>
         <span class="n">x</span> <span class="o">=</span> <span class="s2">&quot;python&quot;</span>
     <span class="k">if</span> <span class="n">x</span> <span class="o">==</span> <span class="s2">&quot;xonsh&quot;</span><span class="p">:</span>
-        <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;python&quot;</span><span class="p">,</span> <span class="s2">&quot;-m&quot;</span><span class="p">,</span> <span class="s2">&quot;xonsh.main&quot;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">,</span> <span class="s2">&quot;-m&quot;</span><span class="p">,</span> <span class="s2">&quot;xonsh&quot;</span><span class="p">]</span>
     <span class="k">return</span> <span class="p">[</span><span class="n">x</span><span class="p">]</span>
 
 
@@ -543,12 +559,28 @@
         <span class="c1"># if the file is a binary, we should call it directly</span>
         <span class="k">return</span> <span class="kc">None</span>
     <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
-        <span class="c1"># Windows can execute various filetypes directly</span>
-        <span class="c1"># as given in PATHEXT</span>
         <span class="n">_</span><span class="p">,</span> <span class="n">ext</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">splitext</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">ext</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="ow">in</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PATHEXT&quot;</span><span class="p">):</span>
-            <span class="k">return</span> <span class="p">[</span><span class="n">fname</span><span class="p">]</span> <span class="o">+</span> <span class="n">args</span>
-    <span class="c1"># find interpreter</span>
+        <span class="n">ext_upper</span> <span class="o">=</span> <span class="n">ext</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+        <span class="c1"># 1) .xsh / .py / .pyw — run with the current xonsh interpreter</span>
+        <span class="c1">#    (xonsh compiles .py as pure Python and .xsh as xonsh code</span>
+        <span class="c1">#    via codecache, matching the Linux behaviour)</span>
+        <span class="k">if</span> <span class="n">ext_upper</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;.XSH&quot;</span><span class="p">,</span> <span class="s2">&quot;.PY&quot;</span><span class="p">,</span> <span class="s2">&quot;.PYW&quot;</span><span class="p">}:</span>
+            <span class="k">return</span> <span class="p">[</span><span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">,</span> <span class="s2">&quot;-m&quot;</span><span class="p">,</span> <span class="s2">&quot;xonsh&quot;</span><span class="p">,</span> <span class="n">fname</span><span class="p">]</span> <span class="o">+</span> <span class="n">args</span>
+        <span class="c1"># 3) Other PATHEXT extensions — delegate to OS file associations</span>
+        <span class="k">if</span> <span class="n">ext_upper</span> <span class="ow">in</span> <span class="p">{</span><span class="n">e</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PATHEXT&quot;</span><span class="p">,</span> <span class="p">[])}:</span>
+            <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;cmd&quot;</span><span class="p">,</span> <span class="s2">&quot;/c&quot;</span><span class="p">,</span> <span class="n">fname</span><span class="p">]</span> <span class="o">+</span> <span class="n">args</span>
+        <span class="c1"># 4) Try shebang for any other text file</span>
+        <span class="n">shebang</span> <span class="o">=</span> <span class="n">parse_shebang_from_file</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">RE_SHEBANG</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">shebang</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">m</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">interp</span> <span class="o">=</span> <span class="n">shlex</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+            <span class="n">o</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">interp</span><span class="p">:</span>
+                <span class="n">o</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">_un_shebang</span><span class="p">(</span><span class="n">i</span><span class="p">))</span>
+            <span class="k">return</span> <span class="n">o</span> <span class="o">+</span> <span class="p">[</span><span class="n">fname</span><span class="p">]</span> <span class="o">+</span> <span class="n">args</span>
+        <span class="c1"># 5) Unknown file type — no recognised extension, no shebang</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="c1"># --- POSIX path (unchanged) ---</span>
     <span class="n">shebang</span> <span class="o">=</span> <span class="n">parse_shebang_from_file</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span>
     <span class="n">m</span> <span class="o">=</span> <span class="n">RE_SHEBANG</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">shebang</span><span class="p">)</span>
     <span class="c1"># xonsh is the default interpreter</span>
@@ -560,11 +592,6 @@
             <span class="n">interp</span> <span class="o">=</span> <span class="n">shlex</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">interp</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">interp</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;xonsh&quot;</span><span class="p">]</span>
-    <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
-        <span class="n">o</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">interp</span><span class="p">:</span>
-            <span class="n">o</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">_un_shebang</span><span class="p">(</span><span class="n">i</span><span class="p">))</span>
-        <span class="n">interp</span> <span class="o">=</span> <span class="n">o</span>
     <span class="k">return</span> <span class="n">interp</span> <span class="o">+</span> <span class="p">[</span><span class="n">fname</span><span class="p">]</span> <span class="o">+</span> <span class="n">args</span></div>
 
 
@@ -1000,6 +1027,15 @@
                 <span class="n">cmd</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">binary_loc</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">cmd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span>
+            <span class="c1"># On Windows, CreateProcess searches the current directory for</span>
+            <span class="c1"># executables before PATH.  Block that for bare command names</span>
+            <span class="c1"># (no directory separator) so the behaviour matches POSIX shells</span>
+            <span class="c1"># where CWD is never searched implicitly.</span>
+            <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">binary_loc</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">cmd0</span> <span class="o">=</span> <span class="n">cmd</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">cmd0</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_has_path_component</span><span class="p">(</span><span class="n">cmd0</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">is_file</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">get_possible_names</span><span class="p">(</span><span class="n">cmd0</span><span class="p">)):</span>
+                        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="n">cmd0</span><span class="p">)</span>
             <span class="n">p</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cls</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">bufsize</span><span class="o">=</span><span class="n">bufsize</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">PermissionError</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
             <span class="n">e</span> <span class="o">=</span> <span class="s2">&quot;xonsh: subprocess mode: permission denied: </span><span class="si">{0}</span><span class="s2">&quot;</span>
@@ -1299,12 +1335,38 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span> <span class="o">=</span> <span class="n">alias</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">resolve_redirects</span><span class="p">()</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">binary_loc</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Determine the file to inspect for script detection.</span>
+        <span class="c1"># binary_loc may be None on Windows for files whose extension is not</span>
+        <span class="c1"># in PATHEXT (e.g. .xsh), even though the file exists and is a script.</span>
+        <span class="c1"># Only allow CWD-relative lookup when the command has an explicit path</span>
+        <span class="c1"># component (e.g. ./script.xsh, subdir/script, or an absolute path).</span>
+        <span class="c1"># Bare names like &quot;script.xsh&quot; must come from $PATH, not CWD — this</span>
+        <span class="c1"># matches POSIX shell behaviour and avoids accidental execution of</span>
+        <span class="c1"># files that happen to sit in the current directory.</span>
+        <span class="n">fname</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">binary_loc</span>
+        <span class="k">if</span> <span class="n">fname</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">cmd0</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span> <span class="k">else</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">cmd0</span> <span class="ow">and</span> <span class="n">_has_path_component</span><span class="p">(</span><span class="n">cmd0</span><span class="p">)</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">cmd0</span><span class="p">):</span>
+                <span class="n">fname</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">cmd0</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">fname</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">scriptcmd</span> <span class="o">=</span> <span class="n">get_script_subproc_command</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">binary_loc</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+            <span class="n">scriptcmd</span> <span class="o">=</span> <span class="n">get_script_subproc_command</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
             <span class="k">if</span> <span class="n">scriptcmd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span> <span class="o">=</span> <span class="n">scriptcmd</span>
+                <span class="c1"># Update binary_loc to the interpreter, not the script.</span>
+                <span class="c1"># Otherwise _run_binary() (PR #4077) would launch the script</span>
+                <span class="c1"># directly via CreateProcess, causing WinError 193 on Windows.</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">binary_loc</span> <span class="o">=</span> <span class="n">locate_executable</span><span class="p">(</span><span class="n">scriptcmd</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="k">elif</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_is_binary</span><span class="p">(</span><span class="n">fname</span><span class="p">):</span>
+                <span class="c1"># get_script_subproc_command returned None for a non-binary</span>
+                <span class="c1"># file — it has no recognised extension and no shebang.</span>
+                <span class="c1"># (None for a binary is normal — it runs via CreateProcess.)</span>
+                <span class="n">_</span><span class="p">,</span> <span class="n">ext</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">splitext</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="n">xt</span><span class="o">.</span><span class="n">XonshError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;xonsh: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2">: unknown file type </span><span class="si">{</span><span class="n">ext</span><span class="si">!r}</span><span class="s2"> — &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;not in $PATHEXT.&quot;</span>
+                <span class="p">)</span>
         <span class="k">except</span> <span class="ne">PermissionError</span> <span class="k">as</span> <span class="n">ex</span><span class="p">:</span>
             <span class="n">e</span> <span class="o">=</span> <span class="s2">&quot;xonsh: subprocess mode: permission denied: </span><span class="si">{0}</span><span class="s2">&quot;</span>
             <span class="k">raise</span> <span class="n">xt</span><span class="o">.</span><span class="n">XonshError</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span> <span class="kn">from</span><span class="w"> </span><span class="nn">ex</span></div>

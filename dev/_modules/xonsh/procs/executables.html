@@ -421,6 +421,10 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.lib.itertools</span><span class="w"> </span><span class="kn">import</span> <span class="n">unique_everseen</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.platform</span><span class="w"> </span><span class="kn">import</span> <span class="n">ON_WINDOWS</span>
 
+<span class="c1"># Extensions that xonsh always recognises as executable on Windows,</span>
+<span class="c1"># regardless of the PATHEXT environment variable.</span>
+<span class="n">XONSH_KNOWN_EXTENSIONS</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">&quot;.XSH&quot;</span><span class="p">,</span> <span class="s2">&quot;.PY&quot;</span><span class="p">})</span>
+
 
 <div class="viewcode-block" id="get_possible_names">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.executables.html#xonsh.procs.executables.get_possible_names">[docs]</a>
@@ -430,16 +434,29 @@
 <span class="sd">    PATHEXT is a Windows convention containing extensions to be</span>
 <span class="sd">    considered when searching for an executable file.</span>
 
+<span class="sd">    On Windows, `.xsh` and `.py` are always included in the search</span>
+<span class="sd">    even if they are not listed in PATHEXT.</span>
+
 <span class="sd">    Conserves order of any extensions found and gives precedence</span>
 <span class="sd">    to the bare name.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">env</span> <span class="o">=</span> <span class="n">env</span> <span class="k">if</span> <span class="n">env</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
     <span class="n">env_pathext</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PATHEXT&quot;</span><span class="p">,</span> <span class="p">[])</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">env_pathext</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
+        <span class="c1"># Merge xonsh-native extensions with PATHEXT (deduplicated).</span>
+        <span class="n">merged</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">env_pathext</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">ext</span> <span class="ow">in</span> <span class="n">XONSH_KNOWN_EXTENSIONS</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">ext</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="n">e</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">merged</span><span class="p">}:</span>
+                <span class="n">merged</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ext</span><span class="p">)</span>
+        <span class="n">extensions</span> <span class="o">=</span> <span class="n">merged</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">extensions</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">env_pathext</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">extensions</span><span class="p">:</span>
         <span class="k">return</span> <span class="p">[</span><span class="n">name</span><span class="p">]</span>
     <span class="n">upper</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="o">==</span> <span class="n">name</span>
-    <span class="n">extensions</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">env_pathext</span>
-    <span class="k">return</span> <span class="p">[</span><span class="n">name</span> <span class="o">+</span> <span class="p">(</span><span class="n">ext</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="k">if</span> <span class="n">upper</span> <span class="k">else</span> <span class="n">ext</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span> <span class="k">for</span> <span class="n">ext</span> <span class="ow">in</span> <span class="n">extensions</span><span class="p">]</span></div>
+    <span class="k">return</span> <span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span>
+        <span class="n">name</span> <span class="o">+</span> <span class="p">(</span><span class="n">ext</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="k">if</span> <span class="n">upper</span> <span class="k">else</span> <span class="n">ext</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span> <span class="k">for</span> <span class="n">ext</span> <span class="ow">in</span> <span class="n">extensions</span>
+    <span class="p">]</span></div>
 
 
 
@@ -493,6 +510,9 @@
         <span class="k">if</span> <span class="n">check_file_exist</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_file</span><span class="p">(</span><span class="n">filepath</span><span class="p">):</span>
             <span class="k">return</span> <span class="kc">False</span>
         <span class="n">env</span> <span class="o">=</span> <span class="n">env</span> <span class="k">if</span> <span class="n">env</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
+        <span class="n">suffix</span> <span class="o">=</span> <span class="n">filepath</span><span class="o">.</span><span class="n">suffix</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">suffix</span> <span class="ow">in</span> <span class="n">XONSH_KNOWN_EXTENSIONS</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span>
         <span class="k">return</span> <span class="nb">any</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="n">filepath</span><span class="o">.</span><span class="n">suffix</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PATHEXT&quot;</span><span class="p">,</span> <span class="p">[]))</span>
     <span class="k">except</span> <span class="ne">FileNotFoundError</span><span class="p">:</span>
         <span class="c1"># On Windows, there&#39;s no guarantee for the directory to really</span>
