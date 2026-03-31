@@ -417,6 +417,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">stat</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChainMap</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">MutableMapping</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">keyword</span><span class="w"> </span><span class="kn">import</span> <span class="n">iskeyword</span>
@@ -2059,13 +2060,63 @@
 
 
 <span class="c1"># pygments hooks.</span>
+<span class="c1">#</span>
+<span class="c1"># Command validation uses async model.  Alias and keyword checks</span>
+<span class="c1"># are instant (O(1) dict/set lookups, no I/O).  The expensive part —</span>
+<span class="c1"># locate_executable() — runs in a debounced background thread.  Until the</span>
+<span class="c1"># bg thread reports back, unknown commands appear as invalid (Error token).</span>
+<span class="c1"># Once validated, prompt_toolkit re-renders with the correct colours.</span>
+
+<span class="n">_cmd_valid_cache</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="n">_pending_cmds</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+<span class="n">_debounce_timer</span><span class="p">:</span> <span class="n">threading</span><span class="o">.</span><span class="n">Timer</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="n">_ptk_app</span><span class="p">:</span> <span class="nb">object</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># Captured on the main thread for bg invalidation</span>
+<span class="n">_validation_gen</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c1"># Generation token — incremented on each new input</span>
+
+
+<span class="nd">@events</span><span class="o">.</span><span class="n">on_pre_prompt</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_clear_cmd_caches</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="k">global</span> <span class="n">_validation_gen</span>
+    <span class="n">_cmd_valid_cache</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+    <span class="n">_pending_cmds</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+    <span class="n">_validation_gen</span> <span class="o">+=</span> <span class="mi">1</span>  <span class="c1"># Invalidate any in-flight bg thread</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_command_is_valid</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
-    <span class="k">return</span> <span class="p">(</span><span class="n">cmd</span> <span class="ow">in</span> <span class="n">XSH</span><span class="o">.</span><span class="n">aliases</span> <span class="ow">or</span> <span class="n">locate_executable</span><span class="p">(</span><span class="n">cmd</span><span class="p">))</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">iskeyword</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check command validity with instant alias/keyword checks.</span>
+
+<span class="sd">    Only ``locate_executable`` is deferred to a background thread when a</span>
+<span class="sd">    prompt_toolkit app is running (interactive mode).  Without an app</span>
+<span class="sd">    (tests, scripts, non-interactive) the lookup is synchronous because</span>
+<span class="sd">    there is no way to trigger a re-render later.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">iskeyword</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">if</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="n">_cmd_valid_cache</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_cmd_valid_cache</span><span class="p">[</span><span class="n">cmd</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="n">XSH</span><span class="o">.</span><span class="n">aliases</span><span class="p">:</span>
+        <span class="n">_cmd_valid_cache</span><span class="p">[</span><span class="n">cmd</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="c1"># Need locate_executable — check if we can defer to bg thread</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.application</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_app_or_none</span>
+
+        <span class="n">has_app</span> <span class="o">=</span> <span class="n">get_app_or_none</span><span class="p">()</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="n">has_app</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">if</span> <span class="n">has_app</span><span class="p">:</span>
+        <span class="c1"># Interactive with ptk — defer to bg, pessimistic default</span>
+        <span class="n">_pending_cmds</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
+        <span class="n">_schedule_bg_validation</span><span class="p">()</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="c1"># No ptk app — synchronous fallback (tests, scripts, non-interactive)</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">locate_executable</span><span class="p">(</span><span class="n">cmd</span><span class="p">))</span>
+    <span class="n">_cmd_valid_cache</span><span class="p">[</span><span class="n">cmd</span><span class="p">]</span> <span class="o">=</span> <span class="n">result</span>
+    <span class="k">return</span> <span class="n">result</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_command_is_autocd</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Synchronous — single os.path.isdir() call, acceptable cost.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;AUTO_CD&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
         <span class="k">return</span> <span class="kc">False</span>
     <span class="k">try</span><span class="p">:</span>
@@ -2073,6 +2124,64 @@
     <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
         <span class="k">return</span> <span class="kc">False</span>
     <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">cmd_abspath</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_schedule_bg_validation</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Restart the 10 ms debounce timer on every cache miss.&quot;&quot;&quot;</span>
+    <span class="k">global</span> <span class="n">_debounce_timer</span><span class="p">,</span> <span class="n">_ptk_app</span><span class="p">,</span> <span class="n">_validation_gen</span>
+    <span class="k">if</span> <span class="n">_debounce_timer</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">_debounce_timer</span><span class="o">.</span><span class="n">cancel</span><span class="p">()</span>
+    <span class="n">_validation_gen</span> <span class="o">+=</span> <span class="mi">1</span>  <span class="c1"># Abandon any in-flight bg thread</span>
+    <span class="n">gen</span> <span class="o">=</span> <span class="n">_validation_gen</span>
+    <span class="c1"># Capture the running app reference on the main thread so the bg</span>
+    <span class="c1"># thread can call invalidate() later.</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.application</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_app_or_none</span>
+
+        <span class="n">_ptk_app</span> <span class="o">=</span> <span class="n">get_app_or_none</span><span class="p">()</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="k">pass</span>
+    <span class="n">_debounce_timer</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Timer</span><span class="p">(</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">_run_bg_validation</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">[</span><span class="n">gen</span><span class="p">])</span>
+    <span class="n">_debounce_timer</span><span class="o">.</span><span class="n">daemon</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">_debounce_timer</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_run_bg_validation</span><span class="p">(</span><span class="n">gen</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Background thread: validate pending commands via locate_executable.</span>
+
+<span class="sd">    *gen* is the generation token captured at scheduling time.  Results are</span>
+<span class="sd">    always saved to cache (even if gen is stale) so that later renders can</span>
+<span class="sd">    reuse them.  Only the re-render / invalidate step is gated by gen —</span>
+<span class="sd">    a stale thread must not trigger a repaint for an outdated input.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cmds</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">_pending_cmds</span><span class="p">)</span>
+    <span class="n">_pending_cmds</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">cmds</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="n">changed</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">for</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="n">cmds</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">cmd</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_cmd_valid_cache</span><span class="p">:</span>
+            <span class="n">found</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">locate_executable</span><span class="p">(</span><span class="n">cmd</span><span class="p">))</span>
+            <span class="n">_cmd_valid_cache</span><span class="p">[</span><span class="n">cmd</span><span class="p">]</span> <span class="o">=</span> <span class="n">found</span>
+            <span class="k">if</span> <span class="n">gen</span> <span class="o">==</span> <span class="n">_validation_gen</span><span class="p">:</span>
+                <span class="n">changed</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">if</span> <span class="n">gen</span> <span class="o">==</span> <span class="n">_validation_gen</span> <span class="ow">and</span> <span class="n">changed</span> <span class="ow">and</span> <span class="n">_ptk_app</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># Clear the BufferControl fragment cache so that</span>
+            <span class="c1"># prompt_toolkit re-lexes instead of returning stale tokens.</span>
+            <span class="c1"># Without this, pressing Up / Ctrl-R shows wrong highlights</span>
+            <span class="c1"># because the cache key (document.text, invalidation_hash)</span>
+            <span class="c1"># hasn&#39;t changed — only our internal _cmd_valid_cache has.</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.layout.controls</span><span class="w"> </span><span class="kn">import</span> <span class="n">BufferControl</span>
+
+            <span class="k">for</span> <span class="n">control</span> <span class="ow">in</span> <span class="n">_ptk_app</span><span class="o">.</span><span class="n">layout</span><span class="o">.</span><span class="n">find_all_controls</span><span class="p">():</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">control</span><span class="p">,</span> <span class="n">BufferControl</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span>
+                    <span class="n">control</span><span class="p">,</span> <span class="s2">&quot;_fragment_cache&quot;</span>
+                <span class="p">):</span>
+                    <span class="n">control</span><span class="o">.</span><span class="n">_fragment_cache</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+            <span class="n">_ptk_app</span><span class="o">.</span><span class="n">invalidate</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
 
 
 <div class="viewcode-block" id="subproc_cmd_callback">

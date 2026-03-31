@@ -415,6 +415,7 @@
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">itertools</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.built_ins</span><span class="w"> </span><span class="kn">import</span> <span class="n">XSH</span>
@@ -548,6 +549,70 @@
 <span class="n">is_executable</span> <span class="o">=</span> <span class="n">is_executable_in_windows</span> <span class="k">if</span> <span class="n">ON_WINDOWS</span> <span class="k">else</span> <span class="n">is_executable_in_posix</span>
 
 
+<span class="c1"># --- Stable directory listing cache ---</span>
+<span class="c1"># Directories listed in $XONSH_COMMANDS_CACHE_READ_DIR_ONCE are scanned</span>
+<span class="c1"># once (on first access) and their file listings are cached as frozensets.</span>
+<span class="c1"># Any $PATH entry that is under one of these prefixes gets cached.</span>
+<span class="c1"># This turns per-file stat() calls into O(1) hash lookups.</span>
+
+<span class="n">_stable_dir_cache</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="n">_stable_prefixes</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
+<span class="n">_stable_prefixes_source</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># env snapshot</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_stable_prefixes</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return lowered realpath prefixes from $XONSH_COMMANDS_CACHE_READ_DIR_ONCE.</span>
+
+<span class="sd">    Re-reads the env var when its value changes (e.g. after ``.append()``).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">global</span> <span class="n">_stable_prefixes</span><span class="p">,</span> <span class="n">_stable_prefixes_source</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span> <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">{}</span>
+    <span class="n">raw</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_COMMANDS_CACHE_READ_DIR_ONCE&quot;</span><span class="p">,</span> <span class="p">[])</span>
+    <span class="n">current</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">current</span> <span class="o">!=</span> <span class="n">_stable_prefixes_source</span><span class="p">:</span>
+        <span class="n">_stable_prefixes_source</span> <span class="o">=</span> <span class="n">current</span>
+        <span class="n">_stable_prefixes</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">realpath</span><span class="p">(</span><span class="n">p</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">raw</span> <span class="k">if</span> <span class="n">p</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_stable_prefixes</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_is_stable_dir</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check if *path* is under one of the configured stable prefixes.&quot;&quot;&quot;</span>
+    <span class="n">prefixes</span> <span class="o">=</span> <span class="n">_get_stable_prefixes</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">prefixes</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="n">rp</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">realpath</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">rp</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">prefixes</span><span class="p">)</span>
+
+
+<span class="n">_stable_dir_reported</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>  <span class="c1"># Paths already reported as &quot;populate&quot;</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_cached_dir_contains</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">filename</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;For stable dirs: check *filename* via cached listing.</span>
+
+<span class="sd">    Returns ``(found, populated)`` if the directory is (or was just) cached,</span>
+<span class="sd">    or ``None`` if it is not a stable directory (caller should stat).</span>
+
+<span class="sd">    *populated* is ``True`` on the first **hit** for a freshly-cached path</span>
+<span class="sd">    (so debug output says &quot;populate cache&quot; on the lookup that actually</span>
+<span class="sd">    benefits from the new cache, not on an earlier miss).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">path</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_stable_dir_cache</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">_is_stable_dir</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">files</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="n">path</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">_stable_dir_cache</span><span class="p">[</span><span class="n">path</span><span class="p">]</span> <span class="o">=</span> <span class="n">files</span>
+    <span class="n">found</span> <span class="o">=</span> <span class="n">filename</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">_stable_dir_cache</span><span class="p">[</span><span class="n">path</span><span class="p">]</span>
+    <span class="n">populated</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">if</span> <span class="n">found</span> <span class="ow">and</span> <span class="n">path</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_stable_dir_reported</span><span class="p">:</span>
+        <span class="n">_stable_dir_reported</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+        <span class="n">populated</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">return</span> <span class="n">found</span><span class="p">,</span> <span class="n">populated</span>
+
+
 <div class="viewcode-block" id="locate_executable">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.executables.html#xonsh.procs.executables.locate_executable">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">locate_executable</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
@@ -591,6 +656,23 @@
 
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_cache_debug</span><span class="p">(</span><span class="n">msg</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Print debug message if $XONSH_COMMANDS_CACHE_DEBUG is True.</span>
+
+<span class="sd">    Uses prompt_toolkit&#39;s ``print_formatted_text`` when available so the</span>
+<span class="sd">    message appears above the active prompt without disrupting input.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span> <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">{}</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_COMMANDS_CACHE_DEBUG&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+        <span class="k">return</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.shortcuts</span><span class="w"> </span><span class="kn">import</span> <span class="n">print_formatted_text</span>
+
+        <span class="n">print_formatted_text</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+
 <div class="viewcode-block" id="locate_file_in_path_env">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.executables.html#xonsh.procs.executables.locate_file_in_path_env">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">locate_file_in_path_env</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">check_executable</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">use_pathext</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
@@ -609,17 +691,47 @@
     <span class="n">env_path</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PATH&quot;</span><span class="p">,</span> <span class="p">[])</span>
     <span class="n">paths</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">clear_paths</span><span class="p">(</span><span class="n">env_path</span><span class="p">))</span>
     <span class="n">possible_names</span> <span class="o">=</span> <span class="n">get_possible_names</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">env</span><span class="p">)</span> <span class="k">if</span> <span class="n">use_pathext</span> <span class="k">else</span> <span class="p">[</span><span class="n">name</span><span class="p">]</span>
+    <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
 
     <span class="k">for</span> <span class="n">path</span><span class="p">,</span> <span class="n">possible_name</span> <span class="ow">in</span> <span class="n">itertools</span><span class="o">.</span><span class="n">product</span><span class="p">(</span><span class="n">paths</span><span class="p">,</span> <span class="n">possible_names</span><span class="p">):</span>
+        <span class="c1"># Fast path: stable directory cache (System32 etc.) — O(1) hash lookup</span>
+        <span class="n">cached</span> <span class="o">=</span> <span class="n">_cached_dir_contains</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">possible_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cached</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">pass</span>  <span class="c1"># Not a stable dir — fall through to stat below</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="n">cached</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+            <span class="k">continue</span>  <span class="c1"># Definitely not in this dir — skip without stat</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">found</span><span class="p">,</span> <span class="n">populated</span> <span class="o">=</span> <span class="n">cached</span>
+            <span class="c1"># File exists per cache — only check executable flag (no I/O)</span>
+            <span class="n">filepath</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="o">/</span> <span class="n">possible_name</span>
+            <span class="k">if</span> <span class="n">check_executable</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_executable</span><span class="p">(</span><span class="n">filepath</span><span class="p">,</span> <span class="n">check_file_exist</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">filepath</span><span class="p">)</span>
+            <span class="n">prefix</span> <span class="o">=</span> <span class="s2">&quot;populate cache, get from cache&quot;</span> <span class="k">if</span> <span class="n">populated</span> <span class="k">else</span> <span class="s2">&quot;get from cache&quot;</span>
+            <span class="n">_cache_debug</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;xonsh-commands-cache: </span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2"> `</span><span class="si">{</span><span class="n">result</span><span class="si">}</span><span class="s2">` &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">t0</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> sec)&quot;</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">result</span>
+        <span class="c1"># Not a cached dir — original stat-based check</span>
         <span class="n">filepath</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="o">/</span> <span class="n">possible_name</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">is_file</span><span class="p">(</span><span class="n">filepath</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
                 <span class="n">check_executable</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_executable</span><span class="p">(</span><span class="n">filepath</span><span class="p">,</span> <span class="n">check_file_exist</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
             <span class="p">):</span>
                 <span class="k">continue</span>
-            <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">filepath</span><span class="p">)</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">filepath</span><span class="p">)</span>
+            <span class="n">_cache_debug</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;xonsh-commands-cache: get from disk `</span><span class="si">{</span><span class="n">result</span><span class="si">}</span><span class="s2">` &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">t0</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> sec)&quot;</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">result</span>
         <span class="k">except</span> <span class="ne">PermissionError</span><span class="p">:</span>
-            <span class="k">continue</span></div>
+            <span class="k">continue</span>
+
+    <span class="n">_cache_debug</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;xonsh-commands-cache: not found `</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">` (</span><span class="si">{</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">t0</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> sec)&quot;</span>
+    <span class="p">)</span></div>
 
 </pre></div>
         </article>
