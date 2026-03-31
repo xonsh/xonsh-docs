@@ -6,7 +6,7 @@
         <link rel="prefetch" href="../../../_static/xonsh_terminal_icon_256.png" as="image">
 
     <link rel="shortcut icon" href="../../../_static/magic_conch.ico"><!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
-        <title>xonsh.lib.modules - xonsh 0.22.8 documentation</title>
+        <title>xonsh.procs.pipes - xonsh 0.22.8 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css?v=4ae1632d" />
@@ -411,112 +411,113 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <h1>Source code for xonsh.lib.modules</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">contextlib</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">importlib</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">importlib.util</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">im_util</span>
+          <h1>Source code for xonsh.procs.pipes</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Pipe channel for single-owner fd management.&quot;&quot;&quot;</span>
+
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">OrderedDict</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
 
 
-<div class="viewcode-block" id="ModuleFinder">
-<a class="viewcode-back" href="../../../api/_autosummary/helpers/xonsh.lib.modules.html#xonsh.lib.modules.ModuleFinder">[docs]</a>
-<span class="k">class</span><span class="w"> </span><span class="nc">ModuleFinder</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Reusable module matcher. Can be used by other completers like Python to find matching script completions&quot;&quot;&quot;</span>
+<div class="viewcode-block" id="PipeChannel">
+<a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.pipes.html#xonsh.procs.pipes.PipeChannel">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PipeChannel</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Single-owner pipe fd manager.</span>
+<span class="sd">    Owner creates the pipe and is responsible for closing both ends.</span>
+<span class="sd">    Consumers get non-owning wrappers via open_writer() / open_reader().</span>
+<span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="n">extensions</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;.py&quot;</span><span class="p">,</span> <span class="s2">&quot;.xsh&quot;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">read_fd</span><span class="p">,</span> <span class="n">write_fd</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_read_fd</span> <span class="o">=</span> <span class="n">read_fd</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write_fd</span> <span class="o">=</span> <span class="n">write_fd</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">names</span><span class="p">:</span> <span class="s2">&quot;str&quot;</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Helper class to search and load Python modules</span>
+<div class="viewcode-block" id="PipeChannel.from_pipe">
+<a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.pipes.html#xonsh.procs.pipes.PipeChannel.from_pipe">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_pipe</span><span class="p">(</span><span class="bp">cls</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Create a PipeChannel from os.pipe().&quot;&quot;&quot;</span>
+        <span class="n">r</span><span class="p">,</span> <span class="n">w</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">pipe</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">w</span><span class="p">)</span></div>
 
-<span class="sd">        Parameters</span>
-<span class="sd">        ----------</span>
-<span class="sd">        names</span>
-<span class="sd">            extra search paths/package-names to use if finding module on namespace package fails.</span>
-<span class="sd">            paths should have a path literal to indicate it is a path. Otherwise it is treated as a package name.</span>
+
+<div class="viewcode-block" id="PipeChannel.from_pty">
+<a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.pipes.html#xonsh.procs.pipes.PipeChannel.from_pty">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_pty</span><span class="p">(</span><span class="bp">cls</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Create a PipeChannel from pty.openpty().</span>
+
+<span class="sd">        Falls back to os.pipe() if PTY devices are exhausted.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">xonsh.lib.lazyimps</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">xli</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">contextual</span> <span class="o">=</span> <span class="kc">True</span>
-
-        <span class="c1"># unique but maintain order</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_pkgs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="n">OrderedDict</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_paths</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="n">OrderedDict</span><span class="p">()</span>
-        <span class="k">for</span> <span class="n">pk</span> <span class="ow">in</span> <span class="n">names</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">sep</span> <span class="ow">in</span> <span class="n">pk</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_paths</span><span class="p">[</span><span class="n">pk</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_pkgs</span><span class="p">[</span><span class="n">pk</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">_file_names_cache</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_path_st_mtimes</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_get_new_paths</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_paths</span><span class="p">:</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
-                <span class="k">continue</span>
-            <span class="c1"># check if path is updated</span>
-            <span class="n">old_mtime</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_path_st_mtimes</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
-            <span class="n">new_mtime</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">stat</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">st_mtime</span>
-            <span class="k">if</span> <span class="n">old_mtime</span> <span class="o">&gt;=</span> <span class="n">new_mtime</span><span class="p">:</span>
-                <span class="k">continue</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_path_st_mtimes</span><span class="p">[</span><span class="n">path</span><span class="p">]</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">stat</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">st_mtime</span>
-            <span class="k">yield</span> <span class="n">path</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_find_file_path</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
-        <span class="c1"># `importlib.machinery.FileFinder` wasn&#39;t useful as the findspec handles &#39;.&#39; differently</span>
-        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_file_names_cache</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_file_names_cache</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
-
-        <span class="n">found</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="n">entries</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_new_paths</span><span class="p">():</span>
-            <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.environ</span><span class="w"> </span><span class="kn">import</span> <span class="n">scan_dir_for_source_files</span>
-
-            <span class="k">for</span> <span class="n">file</span><span class="p">,</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">scan_dir_for_source_files</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
-                <span class="n">file_name</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">splitext</span><span class="p">(</span><span class="n">entry</span><span class="o">.</span><span class="n">name</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
-                <span class="k">if</span> <span class="n">file_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">entries</span><span class="p">:</span>
-                    <span class="c1"># do not override. prefer the first one that appears on the path list</span>
-                    <span class="n">entries</span><span class="p">[</span><span class="n">file_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">file</span>
-                <span class="k">if</span> <span class="n">file_name</span> <span class="o">==</span> <span class="n">name</span><span class="p">:</span>
-                    <span class="n">found</span> <span class="o">=</span> <span class="n">file</span>
-            <span class="k">if</span> <span class="n">found</span><span class="p">:</span>
-                <span class="c1"># search a directory completely since we cache path-mtime</span>
-                <span class="k">break</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_file_names_cache</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">entries</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">found</span>
-
-<div class="viewcode-block" id="ModuleFinder.import_module">
-<a class="viewcode-back" href="../../../api/_autosummary/helpers/xonsh.lib.modules.html#xonsh.lib.modules.ModuleFinder.import_module">[docs]</a>
-    <span class="nd">@staticmethod</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">import_module</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;given the file location import as module&quot;&quot;&quot;</span>
-        <span class="n">pkg</span> <span class="o">=</span> <span class="n">path</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">sep</span><span class="p">,</span> <span class="s2">&quot;.&quot;</span><span class="p">)</span>
-        <span class="n">spec</span> <span class="o">=</span> <span class="n">im_util</span><span class="o">.</span><span class="n">spec_from_file_location</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">pkg</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">path</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">spec</span><span class="p">:</span>
-            <span class="k">return</span>
-        <span class="n">module</span> <span class="o">=</span> <span class="n">im_util</span><span class="o">.</span><span class="n">module_from_spec</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">spec</span><span class="o">.</span><span class="n">loader</span><span class="p">:</span>
-            <span class="k">return</span>
-        <span class="n">spec</span><span class="o">.</span><span class="n">loader</span><span class="o">.</span><span class="n">exec_module</span><span class="p">(</span><span class="n">module</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
-        <span class="k">return</span> <span class="n">module</span></div>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">r</span><span class="p">,</span> <span class="n">w</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">pty</span><span class="o">.</span><span class="n">openpty</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+            <span class="n">r</span><span class="p">,</span> <span class="n">w</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">pipe</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">w</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="ModuleFinder.get_module">
-<a class="viewcode-back" href="../../../api/_autosummary/helpers/xonsh.lib.modules.html#xonsh.lib.modules.ModuleFinder.get_module">[docs]</a>
-    <span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>  <span class="c1"># noqa</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_module</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">[</span>
-            <span class="n">module</span><span class="p">,</span>
-            <span class="sa">f</span><span class="s2">&quot;_</span><span class="si">{</span><span class="n">module</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>  <span class="c1"># naming convention to not clash with actual python package</span>
-        <span class="p">]:</span>
-            <span class="k">for</span> <span class="n">base</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pkgs</span><span class="p">:</span>
-                <span class="k">with</span> <span class="n">contextlib</span><span class="o">.</span><span class="n">suppress</span><span class="p">(</span><span class="ne">ModuleNotFoundError</span><span class="p">):</span>
-                    <span class="k">return</span> <span class="n">importlib</span><span class="o">.</span><span class="n">import_module</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="n">file</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_file_path</span><span class="p">(</span><span class="n">module</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">file</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">import_module</span><span class="p">(</span><span class="n">file</span><span class="p">,</span> <span class="n">module</span><span class="p">)</span></div>
-</div>
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_fd</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_write_fd</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">read_fd</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_fd</span>
+
+<div class="viewcode-block" id="PipeChannel.open_writer">
+<a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.pipes.html#xonsh.procs.pipes.PipeChannel.open_writer">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">open_writer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;wb&quot;</span><span class="p">,</span> <span class="n">buffering</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Non-owning file wrapper for the write end.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_write_fd</span><span class="p">,</span> <span class="n">mode</span><span class="p">,</span> <span class="n">buffering</span><span class="o">=</span><span class="n">buffering</span><span class="p">,</span> <span class="n">closefd</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="PipeChannel.open_reader">
+<a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.pipes.html#xonsh.procs.pipes.PipeChannel.open_reader">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">open_reader</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;rb&quot;</span><span class="p">,</span> <span class="n">buffering</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Non-owning file wrapper for the read end.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_read_fd</span><span class="p">,</span> <span class="n">mode</span><span class="p">,</span> <span class="n">buffering</span><span class="o">=</span><span class="n">buffering</span><span class="p">,</span> <span class="n">closefd</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="PipeChannel.close_writer">
+<a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.pipes.html#xonsh.procs.pipes.PipeChannel.close_writer">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">close_writer</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Close the write end fd. Thread-safe and idempotent.&quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+            <span class="n">fd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_write_fd</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_write_fd</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">fd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fd</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+                <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="PipeChannel.close_reader">
+<a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.pipes.html#xonsh.procs.pipes.PipeChannel.close_reader">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">close_reader</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Close the read end fd. Thread-safe and idempotent.&quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lock</span><span class="p">:</span>
+            <span class="n">fd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_fd</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_read_fd</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">fd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fd</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+                <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="PipeChannel.close">
+<a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.pipes.html#xonsh.procs.pipes.PipeChannel.close">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Close both ends.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">close_writer</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">close_reader</span><span class="p">()</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__del__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Safety net: close any fds that were not explicitly closed.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div>
 
 </pre></div>
         </article>

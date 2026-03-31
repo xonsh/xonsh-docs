@@ -247,6 +247,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.executables.html">xonsh.procs.executables</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.jobs.html">xonsh.procs.jobs</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.pipelines.html">xonsh.procs.pipelines</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.pipes.html">xonsh.procs.pipes</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.posix.html">xonsh.procs.posix</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.proxies.html">xonsh.procs.proxies</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.readers.html">xonsh.procs.readers</a></li>
@@ -513,6 +514,18 @@
 
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_read_all</span><span class="p">(</span><span class="n">stdout</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Read all remaining bytes from *stdout*.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">stdout</span><span class="p">,</span> <span class="s2">&quot;iterqueue&quot;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">stdout</span><span class="o">.</span><span class="n">iterqueue</span><span class="p">())</span>
+    <span class="k">return</span> <span class="n">stdout</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_drain_stdout</span><span class="p">(</span><span class="n">stdout</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Read all remaining bytes and yield them as lines.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">_read_all</span><span class="p">(</span><span class="n">stdout</span><span class="p">)</span><span class="o">.</span><span class="n">splitlines</span><span class="p">(</span><span class="n">keepends</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+
 <div class="viewcode-block" id="CommandPipeline">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.pipelines.html#xonsh.procs.pipelines.CommandPipeline">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">CommandPipeline</span><span class="p">:</span>
@@ -605,18 +618,27 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">_return_terminal</span><span class="p">()</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">proc</span> <span class="o">=</span> <span class="kc">None</span>
                 <span class="k">return</span>
-            <span class="k">if</span> <span class="p">(</span>
-                <span class="n">proc</span><span class="o">.</span><span class="n">pid</span>
-                <span class="ow">and</span> <span class="n">pipeline_group</span> <span class="ow">is</span> <span class="kc">None</span>
-                <span class="ow">and</span> <span class="ow">not</span> <span class="n">spec</span><span class="o">.</span><span class="n">is_proxy</span>
-                <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">captured</span> <span class="o">!=</span> <span class="s2">&quot;object&quot;</span>
-            <span class="p">):</span>
+            <span class="k">if</span> <span class="n">proc</span><span class="o">.</span><span class="n">pid</span> <span class="ow">and</span> <span class="n">pipeline_group</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">spec</span><span class="o">.</span><span class="n">is_proxy</span><span class="p">:</span>
+                <span class="c1"># All non-proxy pipeline members must share a single</span>
+                <span class="c1"># process group so that one os.killpg() can reach them</span>
+                <span class="c1"># all on Ctrl+C.  The first subprocess becomes the group</span>
+                <span class="c1"># leader (via os.setpgrp() in its preexec_fn); subsequent</span>
+                <span class="c1"># ones join it (via os.setpgid(0, pipeline_group)).</span>
+                <span class="c1"># Proxy specs (callable aliases) are Python threads inside</span>
+                <span class="c1"># xonsh, not child processes, so they cannot join the</span>
+                <span class="c1"># group — they are skipped here.</span>
                 <span class="n">pipeline_group</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">pid</span>
-                <span class="k">if</span> <span class="n">update_process_group</span><span class="p">(</span><span class="n">pipeline_group</span><span class="p">,</span> <span class="n">background</span><span class="p">):</span>
+                <span class="c1"># Terminal ownership is a separate concern: for</span>
+                <span class="c1"># captured=&quot;object&quot; the pipeline is returned as a live</span>
+                <span class="c1"># Python object, so the terminal must stay with xonsh.</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">captured</span> <span class="o">!=</span> <span class="s2">&quot;object&quot;</span> <span class="ow">and</span> <span class="n">update_process_group</span><span class="p">(</span>
+                    <span class="n">pipeline_group</span><span class="p">,</span> <span class="n">background</span>
+                <span class="p">):</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">term_pgid</span> <span class="o">=</span> <span class="n">pipeline_group</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">_save_term_state</span><span class="p">()</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">procs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">proc</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">proc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">procs</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pgid</span> <span class="o">=</span> <span class="n">pipeline_group</span>  <span class="c1"># process group for interrupt handling</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="n">debug</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_DEBUG&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
@@ -702,15 +724,20 @@
             <span class="k">if</span> <span class="n">task</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">task</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">!=</span> <span class="s2">&quot;stopped&quot;</span><span class="p">:</span>
                 <span class="n">proc</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_endtime</span><span class="p">()</span>
-                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">captured</span> <span class="o">==</span> <span class="s2">&quot;object&quot;</span><span class="p">:</span>
+                <span class="c1"># Close captured pipe write ends to signal EOF to readers.</span>
+                <span class="c1"># For non-threadable procs (plain Popen), the write end stays</span>
+                <span class="c1"># open in the parent after the child exits. PopenThread handles</span>
+                <span class="c1"># this itself, but plain Popen does not.</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">spec</span><span class="o">.</span><span class="n">threadable</span><span class="p">:</span>
+                    <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">spec</span><span class="o">.</span><span class="n">pipe_channels</span><span class="p">:</span>
+                        <span class="n">ch</span><span class="o">.</span><span class="n">close_writer</span><span class="p">()</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">captured</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;object&quot;</span><span class="p">,</span> <span class="s2">&quot;hiddenobject&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">stdout</span><span class="p">:</span>
+                    <span class="k">yield from</span> <span class="n">_drain_stdout</span><span class="p">(</span><span class="n">stdout</span><span class="p">)</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">end</span><span class="p">(</span><span class="n">tee_output</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-                <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">captured</span> <span class="o">==</span> <span class="s2">&quot;hiddenobject&quot;</span> <span class="ow">and</span> <span class="n">stdout</span><span class="p">:</span>
-                    <span class="n">b</span> <span class="o">=</span> <span class="n">stdout</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
-                    <span class="n">lines</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="n">splitlines</span><span class="p">(</span><span class="n">keepends</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-                    <span class="k">yield from</span> <span class="n">lines</span>
+                <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">captured</span> <span class="o">==</span> <span class="s2">&quot;object&quot;</span><span class="p">:</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">end</span><span class="p">(</span><span class="n">tee_output</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
                 <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">captured</span> <span class="o">==</span> <span class="s2">&quot;stdout&quot;</span> <span class="ow">and</span> <span class="n">stdout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="n">b</span> <span class="o">=</span> <span class="n">stdout</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+                    <span class="n">b</span> <span class="o">=</span> <span class="n">_read_all</span><span class="p">(</span><span class="n">stdout</span><span class="p">)</span>
                     <span class="n">s</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_decode_uninew</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">universal_newlines</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">lines</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">splitlines</span><span class="p">(</span><span class="n">keepends</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
             <span class="k">return</span>
@@ -728,7 +755,16 @@
         <span class="n">check_prev_done</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">procs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
         <span class="n">prev_end_time</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="n">i</span> <span class="o">=</span> <span class="n">j</span> <span class="o">=</span> <span class="n">cnt</span> <span class="o">=</span> <span class="mi">1</span>
-        <span class="k">while</span> <span class="n">proc</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+
+        <span class="c1"># In the case of pipelines with more than one command</span>
+        <span class="c1"># we should give the commands a little time</span>
+        <span class="c1"># to start up fully. This is particularly true for</span>
+        <span class="c1"># GNU Parallel, which has a long startup time.</span>
+        <span class="n">first_read</span> <span class="o">=</span> <span class="kc">True</span>
+
+        <span class="n">prev_procs_closed</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">while</span> <span class="n">proc</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">first_read</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_any_proc_running</span><span class="p">():</span>
+            <span class="n">first_read</span> <span class="o">=</span> <span class="kc">False</span>
             <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">proc</span><span class="p">,</span> <span class="s2">&quot;suspended&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_procs_suspended</span><span class="p">()</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">suspended</span> <span class="o">=</span> <span class="kc">True</span>
                 <span class="n">xj</span><span class="o">.</span><span class="n">update_job_attr</span><span class="p">(</span><span class="n">proc</span><span class="o">.</span><span class="n">pid</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">,</span> <span class="s2">&quot;suspended&quot;</span><span class="p">)</span>
@@ -736,16 +772,14 @@
             <span class="k">elif</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">proc</span><span class="p">,</span> <span class="s2">&quot;in_alt_mode&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
                 <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>  <span class="c1"># probably not leaving any time soon</span>
                 <span class="k">continue</span>
-            <span class="k">elif</span> <span class="ow">not</span> <span class="n">check_prev_done</span><span class="p">:</span>
-                <span class="c1"># In the case of pipelines with more than one command</span>
-                <span class="c1"># we should give the commands a little time</span>
-                <span class="c1"># to start up fully. This is particularly true for</span>
-                <span class="c1"># GNU Parallel, which has a long startup time.</span>
-                <span class="k">pass</span>
-            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prev_procs_done</span><span class="p">():</span>
+
+            <span class="c1"># When the last process (e.g. head) has exited but upstream</span>
+            <span class="c1"># processes are still alive, close the inter-process pipe read</span>
+            <span class="c1"># ends so that upstream writers get SIGPIPE instead of blocking</span>
+            <span class="c1"># on a full pipe buffer.</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">prev_procs_closed</span> <span class="ow">and</span> <span class="n">proc</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_close_prev_procs</span><span class="p">()</span>
-                <span class="n">proc</span><span class="o">.</span><span class="n">prevs_are_closed</span> <span class="o">=</span> <span class="kc">True</span>
-                <span class="k">break</span>
+                <span class="n">prev_procs_closed</span> <span class="o">=</span> <span class="kc">True</span>
 
             <span class="n">stdout_lines</span> <span class="o">=</span> <span class="n">safe_readlines</span><span class="p">(</span><span class="n">stdout</span><span class="p">,</span> <span class="mi">1024</span><span class="p">)</span>
             <span class="n">i</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">stdout_lines</span><span class="p">)</span>
@@ -777,6 +811,18 @@
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">cnt</span> <span class="o">=</span> <span class="mi">1</span>
             <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">timeout</span> <span class="o">*</span> <span class="n">cnt</span><span class="p">)</span>
+
+            <span class="c1"># Check if SIGINT was caught but not raised as KeyboardInterrupt.</span>
+            <span class="c1"># ProcProxyThread&#39;s _signal_int sets _interrupted without raising,</span>
+            <span class="c1"># so the while loop keeps spinning.  Detect it and kill everything.</span>
+            <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">proc</span><span class="p">,</span> <span class="s2">&quot;_interrupted&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_signal_pipeline</span><span class="p">()</span>
+                <span class="k">return</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">prev_procs_closed</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_close_prev_procs</span><span class="p">()</span>
+        <span class="n">proc</span><span class="o">.</span><span class="n">prevs_are_closed</span> <span class="o">=</span> <span class="kc">True</span>
+
         <span class="c1"># read from process now that it is over</span>
         <span class="k">yield from</span> <span class="n">safe_readlines</span><span class="p">(</span><span class="n">stdout</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">stream_stderr</span><span class="p">(</span><span class="n">safe_readlines</span><span class="p">(</span><span class="n">stderr</span><span class="p">))</span>
@@ -818,7 +864,17 @@
         <span class="n">stream</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">captured</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">STDOUT_CAPTURE_KINDS</span>
         <span class="k">if</span> <span class="n">stream</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">spec</span><span class="o">.</span><span class="n">stdout</span><span class="p">:</span>
             <span class="n">stream</span> <span class="o">=</span> <span class="kc">False</span>
-        <span class="n">stdout_has_buffer</span> <span class="o">=</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="s2">&quot;buffer&quot;</span><span class="p">)</span>
+        <span class="c1"># Use STDOUT_DISPATCHER.handle directly to get the per-thread stdout.</span>
+        <span class="c1"># sys.stdout is set globally by redirect_stdout(STDOUT_DISPATCHER) in</span>
+        <span class="c1"># ProcProxyThread.run(), but another thread may restore sys.stdout</span>
+        <span class="c1"># before this thread finishes, causing output to leak to the terminal.</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.procs.proxies</span><span class="w"> </span><span class="kn">import</span> <span class="n">STDOUT_DISPATCHER</span>
+
+        <span class="k">if</span> <span class="n">STDOUT_DISPATCHER</span><span class="o">.</span><span class="n">available</span><span class="p">:</span>
+            <span class="n">out_target</span> <span class="o">=</span> <span class="n">STDOUT_DISPATCHER</span><span class="o">.</span><span class="n">handle</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">out_target</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span>
+        <span class="n">stdout_has_buffer</span> <span class="o">=</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">out_target</span><span class="p">,</span> <span class="s2">&quot;buffer&quot;</span><span class="p">)</span>
         <span class="n">nl</span> <span class="o">=</span> <span class="sa">b</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span>
         <span class="n">cr</span> <span class="o">=</span> <span class="sa">b</span><span class="s2">&quot;</span><span class="se">\r</span><span class="s2">&quot;</span>
         <span class="n">crnl</span> <span class="o">=</span> <span class="sa">b</span><span class="s2">&quot;</span><span class="se">\r\n</span><span class="s2">&quot;</span>
@@ -826,10 +882,10 @@
             <span class="c1"># write to stdout line ASAP, if needed</span>
             <span class="k">if</span> <span class="n">stream</span><span class="p">:</span>
                 <span class="k">if</span> <span class="n">stdout_has_buffer</span><span class="p">:</span>
-                    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">buffer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+                    <span class="n">out_target</span><span class="o">.</span><span class="n">buffer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
-                    <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">err</span><span class="p">))</span>
-                <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+                    <span class="n">out_target</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">err</span><span class="p">))</span>
+                <span class="n">out_target</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
             <span class="c1"># save the raw bytes</span>
             <span class="n">raw_out_lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
             <span class="c1"># do some munging of the line before we return it</span>
@@ -861,17 +917,25 @@
             <span class="n">b</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stderr_prefix</span> <span class="o">+</span> <span class="n">b</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">stderr_postfix</span><span class="p">:</span>
             <span class="n">b</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stderr_postfix</span>
-        <span class="n">stderr_has_buffer</span> <span class="o">=</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">,</span> <span class="s2">&quot;buffer&quot;</span><span class="p">)</span>
+        <span class="c1"># Use STDERR_DISPATCHER.handle for per-thread stderr (same race fix</span>
+        <span class="c1"># as tee_stdout — see comment there).</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.procs.proxies</span><span class="w"> </span><span class="kn">import</span> <span class="n">STDERR_DISPATCHER</span>
+
+        <span class="k">if</span> <span class="n">STDERR_DISPATCHER</span><span class="o">.</span><span class="n">available</span><span class="p">:</span>
+            <span class="n">err_target</span> <span class="o">=</span> <span class="n">STDERR_DISPATCHER</span><span class="o">.</span><span class="n">handle</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">err_target</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">stderr</span>
+        <span class="n">stderr_has_buffer</span> <span class="o">=</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">err_target</span><span class="p">,</span> <span class="s2">&quot;buffer&quot;</span><span class="p">)</span>
         <span class="n">show_stderr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">captured</span> <span class="o">!=</span> <span class="s2">&quot;object&quot;</span> <span class="ow">or</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
             <span class="s2">&quot;XONSH_SUBPROC_CAPTURED_PRINT_STDERR&quot;</span><span class="p">,</span> <span class="kc">True</span>
         <span class="p">)</span>
         <span class="k">if</span> <span class="n">show_stderr</span><span class="p">:</span>
             <span class="c1"># write bytes to std stream</span>
             <span class="k">if</span> <span class="n">stderr_has_buffer</span><span class="p">:</span>
-                <span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="o">.</span><span class="n">buffer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>
+                <span class="n">err_target</span><span class="o">.</span><span class="n">buffer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">err</span><span class="p">))</span>
-            <span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+                <span class="n">err_target</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">err</span><span class="p">))</span>
+            <span class="n">err_target</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
         <span class="c1"># save the raw bytes</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_raw_error</span> <span class="o">=</span> <span class="n">b</span>
         <span class="c1"># do some munging of the line before we save it to the attr</span>
@@ -926,18 +990,27 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Waits for the command to complete and then runs any closing and</span>
 <span class="sd">        cleanup procedures that need to be run.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="n">tee_output</span><span class="p">:</span>
-            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">tee_stdout</span><span class="p">():</span>
-                <span class="k">pass</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_endtime</span><span class="p">()</span>
-        <span class="c1"># since we are driven by getting output, input may not be available</span>
-        <span class="c1"># until the command has completed.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_set_input</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_close_prev_procs</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_close_proc</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">tee_output</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">tee_stdout</span><span class="p">():</span>
+                    <span class="k">pass</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_endtime</span><span class="p">()</span>
+            <span class="c1"># since we are driven by getting output, input may not be available</span>
+            <span class="c1"># until the command has completed.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_set_input</span><span class="p">()</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="p">,</span> <span class="s2">&quot;prevs_are_closed&quot;</span><span class="p">)</span>
+                <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">prevs_are_closed</span>
+            <span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_close_prev_procs</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_close_proc</span><span class="p">()</span>
+            <span class="c1"># Mark as ended even if an exception occurred (e.g. KeyboardInterrupt).</span>
+            <span class="c1"># Without this, subsequent access to the pipeline would try to</span>
+            <span class="c1"># re-read from already-closed pipes → ValueError.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ended</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_check_signal</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_apply_to_history</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">ended</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_raise_subproc_error</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_save_term_state</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -989,6 +1062,9 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">endtime</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_safe_close</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">handle</span><span class="p">):</span>
+        <span class="c1"># Skip integer fds — they are owned by PipeChannel and closed there.</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+            <span class="k">return</span>
         <span class="n">safe_fdclose</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="n">cache</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_closed_handle_cache</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_procs_suspended</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -1005,6 +1081,53 @@
                 <span class="p">)</span>
                 <span class="k">return</span> <span class="n">proc</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_any_proc_running</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Boolean for if all previous processes have completed. If there</span>
+<span class="sd">        is only a single process in the pipeline, this returns False.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">procs</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_signal_pipeline</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Send SIGINT to all alive pipeline processes.</span>
+
+<span class="sd">        Two process groups are involved when a pipeline contains a</span>
+<span class="sd">        callable alias (ProcProxyThread):</span>
+
+<span class="sd">        * The *pipeline group* (self._pgid) — holds the non-proxy</span>
+<span class="sd">          subprocesses of the outer pipeline (e.g. ``sleep 100`` and</span>
+<span class="sd">          ``echo 1`` in ``sleep 100 | echo 1 | alias``).  Reached by</span>
+<span class="sd">          os.killpg() below.</span>
+
+<span class="sd">        * *xonsh&#39;s own group* — holds subprocesses spawned *inside*</span>
+<span class="sd">          the callable alias (they run on a non-main thread, so</span>
+<span class="sd">          CommandPipeline.__init__ sets their pipeline_group to</span>
+<span class="sd">          os.getpgid(0)).  These are killed directly by the kernel</span>
+<span class="sd">          when Ctrl+C sends SIGINT to the foreground (xonsh) group;</span>
+<span class="sd">          no action is needed here.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_POSIX</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="c1"># Kill the pipeline process group (covers grouped subprocesses)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pgid</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">killpg</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pgid</span><span class="p">,</span> <span class="n">signal</span><span class="o">.</span><span class="n">SIGINT</span><span class="p">)</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">ProcessLookupError</span><span class="p">,</span> <span class="ne">OSError</span><span class="p">):</span>
+                <span class="k">pass</span>
+        <span class="c1"># Also signal individual procs that may be in other groups</span>
+        <span class="n">my_pid</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getpid</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">procs</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">p</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">p</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">pid</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="s2">&quot;pid&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="c1"># Skip ProcProxyThread whose pid == xonsh&#39;s own pid</span>
+                <span class="k">if</span> <span class="n">pid</span> <span class="ow">and</span> <span class="n">pid</span> <span class="o">!=</span> <span class="n">my_pid</span><span class="p">:</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">os</span><span class="o">.</span><span class="n">kill</span><span class="p">(</span><span class="n">pid</span><span class="p">,</span> <span class="n">signal</span><span class="o">.</span><span class="n">SIGINT</span><span class="p">)</span>
+                    <span class="k">except</span> <span class="p">(</span><span class="ne">ProcessLookupError</span><span class="p">,</span> <span class="ne">OSError</span><span class="p">):</span>
+                        <span class="k">pass</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_prev_procs_done</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Boolean for if all previous processes have completed. If there</span>
 <span class="sd">        is only a single process in the pipeline, this returns False.</span>
@@ -1014,42 +1137,81 @@
             <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">any_running</span> <span class="o">=</span> <span class="kc">True</span>
                 <span class="k">continue</span>
+            <span class="c1"># Ensure thread is fully done - poll() returns non-None</span>
+            <span class="c1"># before run() finishes closing pipe channels.</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="s2">&quot;join&quot;</span><span class="p">):</span>
+                <span class="n">p</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">stdin</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">s</span><span class="o">.</span><span class="n">pipe_channels</span><span class="p">:</span>
+                <span class="n">ch</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
             <span class="k">if</span> <span class="n">p</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">continue</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">stdin</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="s2">&quot;pipe_channels&quot;</span><span class="p">,</span> <span class="p">()):</span>
+                <span class="n">ch</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
         <span class="k">return</span> <span class="kc">False</span> <span class="k">if</span> <span class="n">any_running</span> <span class="k">else</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_close_prev_procs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Closes all but the last proc&#39;s stdout.&quot;&quot;&quot;</span>
         <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">specs</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">procs</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">stdin</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+            <span class="c1"># Close read ends of connection pipes to unblock any blocked writes,</span>
+            <span class="c1"># then wait for the proc thread to finish to prevent fd-reuse races.</span>
+            <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">s</span><span class="o">.</span><span class="n">pipe_channels</span><span class="p">:</span>
+                <span class="n">ch</span><span class="o">.</span><span class="n">close_reader</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">p</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="c1"># Use join for threads (ProcProxyThread.wait ignores timeout)</span>
+                    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="s2">&quot;join&quot;</span><span class="p">):</span>
+                        <span class="n">p</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">p</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">pass</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">s</span><span class="o">.</span><span class="n">pipe_channels</span><span class="p">:</span>
+                <span class="n">ch</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
             <span class="k">if</span> <span class="n">p</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">continue</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">stdin</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="s2">&quot;pipe_channels&quot;</span><span class="p">,</span> <span class="p">()):</span>
+                <span class="n">ch</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_close_proc</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Closes last proc&#39;s stdout.&quot;&quot;&quot;</span>
         <span class="n">s</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">spec</span>
         <span class="n">p</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">proc</span>
+        <span class="c1"># Wait for the last proc thread to finish before closing handles</span>
+        <span class="c1"># it may still be flushing.  Without this, tee.close() in the</span>
+        <span class="c1"># caller can destroy the mem buffer while the thread still uses it.</span>
+        <span class="c1"># Only join threads — ProcProxy.wait() is not idempotent (it re-runs</span>
+        <span class="c1"># parse_proxy_return, duplicating output).</span>
+        <span class="k">if</span> <span class="n">p</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="s2">&quot;join&quot;</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">p</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">pass</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">stdin</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">captured_stdout</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">captured_stderr</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">s</span><span class="o">.</span><span class="n">pipe_channels</span><span class="p">:</span>
+            <span class="n">ch</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">p</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">stdin</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="s2">&quot;pipe_channels&quot;</span><span class="p">,</span> <span class="p">()):</span>
+            <span class="n">ch</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_set_input</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Sets the input variable.&quot;&quot;&quot;</span>

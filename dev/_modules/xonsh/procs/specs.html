@@ -247,6 +247,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.executables.html">xonsh.procs.executables</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.jobs.html">xonsh.procs.jobs</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.pipelines.html">xonsh.procs.pipelines</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.pipes.html">xonsh.procs.pipes</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.posix.html">xonsh.procs.posix</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.proxies.html">xonsh.procs.proxies</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.readers.html">xonsh.procs.readers</a></li>
@@ -442,6 +443,7 @@
     <span class="n">HiddenCommandPipeline</span><span class="p">,</span>
     <span class="n">resume_process</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.procs.pipes</span><span class="w"> </span><span class="kn">import</span> <span class="n">PipeChannel</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.procs.posix</span><span class="w"> </span><span class="kn">import</span> <span class="n">PopenThread</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.procs.proxies</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProcProxy</span><span class="p">,</span> <span class="n">ProcProxyThread</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.procs.readers</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConsoleParallelReader</span>
@@ -914,6 +916,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">captured_stderr</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">stack</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">decorators</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># List of DecoratorAlias objects that applied to spec.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pipe_channels</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># PipeChannel objects owned by this spec</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">output_format</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_SUBPROC_OUTPUT_FORMAT&quot;</span><span class="p">,</span> <span class="s2">&quot;stream_lines&quot;</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">raise_subproc_error</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># Spec-based $RAISE_SUBPROC_ERROR.</span>
 
@@ -1414,7 +1417,11 @@
     <span class="c1"># protocols, like git and ssh, which expect unix line endings.</span>
     <span class="c1"># see https://mail.python.org/pipermail/python-list/2013-June/650460.html</span>
     <span class="c1"># for more details and the following solution.</span>
-    <span class="n">props</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">tcgetattr</span><span class="p">(</span><span class="n">fd</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">props</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">tcgetattr</span><span class="p">(</span><span class="n">fd</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">error</span><span class="p">:</span>
+        <span class="c1"># fd is not a TTY (e.g. PTY exhaustion caused fallback to os.pipe)</span>
+        <span class="k">return</span>
     <span class="n">props</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">props</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&amp;</span> <span class="p">(</span><span class="o">~</span><span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">ONLCR</span><span class="p">)</span> <span class="o">|</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">ONLRET</span>
     <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">tcsetattr</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">xli</span><span class="o">.</span><span class="n">termios</span><span class="o">.</span><span class="n">TCSANOW</span><span class="p">,</span> <span class="n">props</span><span class="p">)</span>
     <span class="c1"># newly created PTYs have a stardard size (24x80), set size to the same size</span>
@@ -1471,7 +1478,9 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">_last_spec_update_captured</span><span class="p">(</span><span class="n">last</span><span class="p">:</span> <span class="n">SubprocSpec</span><span class="p">):</span>
     <span class="n">captured</span> <span class="o">=</span> <span class="p">(</span>
         <span class="p">(</span><span class="n">captured</span> <span class="o">:=</span> <span class="n">last</span><span class="o">.</span><span class="n">captured</span><span class="p">)</span>
-        <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="n">captured</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;object&quot;</span><span class="p">,</span> <span class="s2">&quot;hiddenobject&quot;</span><span class="p">]</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">last</span><span class="o">.</span><span class="n">threadable</span><span class="p">)</span>
+        <span class="c1"># Explicit captures (&quot;object&quot;) must always work</span>
+        <span class="c1"># even when THREAD_SUBPROCS is disabled (e.g. during rc-file loading).</span>
+        <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="n">captured</span> <span class="o">==</span> <span class="s2">&quot;hiddenobject&quot;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">last</span><span class="o">.</span><span class="n">threadable</span><span class="p">)</span>
         <span class="c1"># a ProcProxy run using ![] should not be captured</span>
         <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span>
             <span class="nb">callable</span><span class="p">(</span><span class="n">last</span><span class="o">.</span><span class="n">alias</span><span class="p">)</span>
@@ -1503,45 +1512,53 @@
         <span class="n">last</span><span class="o">.</span><span class="n">universal_newlines</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="k">elif</span> <span class="n">captured</span> <span class="ow">in</span> <span class="n">STDOUT_CAPTURE_KINDS</span><span class="p">:</span>
         <span class="n">last</span><span class="o">.</span><span class="n">universal_newlines</span> <span class="o">=</span> <span class="kc">False</span>
-        <span class="n">r</span><span class="p">,</span> <span class="n">w</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">pipe</span><span class="p">()</span>
-        <span class="n">last</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">safe_open</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span>
-        <span class="n">last</span><span class="o">.</span><span class="n">captured_stdout</span> <span class="o">=</span> <span class="n">safe_open</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span>
+        <span class="n">pipe</span> <span class="o">=</span> <span class="n">PipeChannel</span><span class="o">.</span><span class="n">from_pipe</span><span class="p">()</span>
+        <span class="n">last</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">open_writer</span><span class="p">(</span><span class="s2">&quot;wb&quot;</span><span class="p">)</span>
+        <span class="n">last</span><span class="o">.</span><span class="n">captured_stdout</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">open_reader</span><span class="p">(</span><span class="s2">&quot;rb&quot;</span><span class="p">)</span>
+        <span class="n">last</span><span class="o">.</span><span class="n">pipe_channels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pipe</span><span class="p">)</span>
     <span class="k">elif</span> <span class="n">XSH</span><span class="o">.</span><span class="n">stdout_uncaptured</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">last</span><span class="o">.</span><span class="n">universal_newlines</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="n">last</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">stdout_uncaptured</span>
         <span class="n">last</span><span class="o">.</span><span class="n">captured_stdout</span> <span class="o">=</span> <span class="n">last</span><span class="o">.</span><span class="n">stdout</span>
-    <span class="k">elif</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">callable_alias</span><span class="p">:</span>
+    <span class="k">elif</span> <span class="p">(</span>
+        <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">callable_alias</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_CAPTURE_ALWAYS&quot;</span><span class="p">)</span>
+    <span class="p">):</span>
         <span class="n">last</span><span class="o">.</span><span class="n">universal_newlines</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="n">last</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># must truly stream on windows</span>
         <span class="n">last</span><span class="o">.</span><span class="n">captured_stdout</span> <span class="o">=</span> <span class="n">ConsoleParallelReader</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">last</span><span class="o">.</span><span class="n">universal_newlines</span> <span class="o">=</span> <span class="kc">True</span>
-        <span class="n">r</span><span class="p">,</span> <span class="n">w</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">pty</span><span class="o">.</span><span class="n">openpty</span><span class="p">()</span> <span class="k">if</span> <span class="n">use_tty</span> <span class="k">else</span> <span class="n">os</span><span class="o">.</span><span class="n">pipe</span><span class="p">()</span>
-        <span class="n">_safe_pipe_properties</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="n">use_tty</span><span class="o">=</span><span class="n">use_tty</span><span class="p">)</span>
-        <span class="n">last</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">safe_open</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span>
-        <span class="n">_safe_pipe_properties</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">use_tty</span><span class="o">=</span><span class="n">use_tty</span><span class="p">)</span>
-        <span class="n">last</span><span class="o">.</span><span class="n">captured_stdout</span> <span class="o">=</span> <span class="n">safe_open</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span>
+        <span class="n">pipe</span> <span class="o">=</span> <span class="n">PipeChannel</span><span class="o">.</span><span class="n">from_pty</span><span class="p">()</span> <span class="k">if</span> <span class="n">use_tty</span> <span class="k">else</span> <span class="n">PipeChannel</span><span class="o">.</span><span class="n">from_pipe</span><span class="p">()</span>
+        <span class="n">_safe_pipe_properties</span><span class="p">(</span><span class="n">pipe</span><span class="o">.</span><span class="n">write_fd</span><span class="p">,</span> <span class="n">use_tty</span><span class="o">=</span><span class="n">use_tty</span><span class="p">)</span>
+        <span class="n">last</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">open_writer</span><span class="p">(</span><span class="s2">&quot;w&quot;</span><span class="p">)</span>
+        <span class="n">_safe_pipe_properties</span><span class="p">(</span><span class="n">pipe</span><span class="o">.</span><span class="n">read_fd</span><span class="p">,</span> <span class="n">use_tty</span><span class="o">=</span><span class="n">use_tty</span><span class="p">)</span>
+        <span class="n">last</span><span class="o">.</span><span class="n">captured_stdout</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">open_reader</span><span class="p">(</span><span class="s2">&quot;r&quot;</span><span class="p">)</span>
+        <span class="n">last</span><span class="o">.</span><span class="n">pipe_channels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pipe</span><span class="p">)</span>
     <span class="c1"># set standard error</span>
     <span class="k">if</span> <span class="n">last</span><span class="o">.</span><span class="n">stderr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">pass</span>
     <span class="k">elif</span> <span class="n">captured</span> <span class="o">==</span> <span class="s2">&quot;stdout&quot;</span><span class="p">:</span>
         <span class="k">pass</span>
     <span class="k">elif</span> <span class="n">captured</span> <span class="o">==</span> <span class="s2">&quot;object&quot;</span><span class="p">:</span>
-        <span class="n">r</span><span class="p">,</span> <span class="n">w</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">pipe</span><span class="p">()</span>
-        <span class="n">last</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="n">safe_open</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span>
-        <span class="n">last</span><span class="o">.</span><span class="n">captured_stderr</span> <span class="o">=</span> <span class="n">safe_open</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span>
+        <span class="n">pipe</span> <span class="o">=</span> <span class="n">PipeChannel</span><span class="o">.</span><span class="n">from_pipe</span><span class="p">()</span>
+        <span class="n">last</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">open_writer</span><span class="p">(</span><span class="s2">&quot;w&quot;</span><span class="p">)</span>
+        <span class="n">last</span><span class="o">.</span><span class="n">captured_stderr</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">open_reader</span><span class="p">(</span><span class="s2">&quot;r&quot;</span><span class="p">)</span>
+        <span class="n">last</span><span class="o">.</span><span class="n">pipe_channels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pipe</span><span class="p">)</span>
     <span class="k">elif</span> <span class="n">XSH</span><span class="o">.</span><span class="n">stderr_uncaptured</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">last</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">stderr_uncaptured</span>
         <span class="n">last</span><span class="o">.</span><span class="n">captured_stderr</span> <span class="o">=</span> <span class="n">last</span><span class="o">.</span><span class="n">stderr</span>
-    <span class="k">elif</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">callable_alias</span><span class="p">:</span>
+    <span class="k">elif</span> <span class="p">(</span>
+        <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">callable_alias</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_CAPTURE_ALWAYS&quot;</span><span class="p">)</span>
+    <span class="p">):</span>
         <span class="n">last</span><span class="o">.</span><span class="n">universal_newlines</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="n">last</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># must truly stream on windows</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="n">r</span><span class="p">,</span> <span class="n">w</span> <span class="o">=</span> <span class="n">xli</span><span class="o">.</span><span class="n">pty</span><span class="o">.</span><span class="n">openpty</span><span class="p">()</span> <span class="k">if</span> <span class="n">use_tty</span> <span class="k">else</span> <span class="n">os</span><span class="o">.</span><span class="n">pipe</span><span class="p">()</span>
-        <span class="n">_safe_pipe_properties</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="n">use_tty</span><span class="o">=</span><span class="n">use_tty</span><span class="p">)</span>
-        <span class="n">last</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="n">safe_open</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span>
-        <span class="n">_safe_pipe_properties</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">use_tty</span><span class="o">=</span><span class="n">use_tty</span><span class="p">)</span>
-        <span class="n">last</span><span class="o">.</span><span class="n">captured_stderr</span> <span class="o">=</span> <span class="n">safe_open</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span>
+        <span class="n">pipe</span> <span class="o">=</span> <span class="n">PipeChannel</span><span class="o">.</span><span class="n">from_pty</span><span class="p">()</span> <span class="k">if</span> <span class="n">use_tty</span> <span class="k">else</span> <span class="n">PipeChannel</span><span class="o">.</span><span class="n">from_pipe</span><span class="p">()</span>
+        <span class="n">_safe_pipe_properties</span><span class="p">(</span><span class="n">pipe</span><span class="o">.</span><span class="n">write_fd</span><span class="p">,</span> <span class="n">use_tty</span><span class="o">=</span><span class="n">use_tty</span><span class="p">)</span>
+        <span class="n">last</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">open_writer</span><span class="p">(</span><span class="s2">&quot;w&quot;</span><span class="p">)</span>
+        <span class="n">_safe_pipe_properties</span><span class="p">(</span><span class="n">pipe</span><span class="o">.</span><span class="n">read_fd</span><span class="p">,</span> <span class="n">use_tty</span><span class="o">=</span><span class="n">use_tty</span><span class="p">)</span>
+        <span class="n">last</span><span class="o">.</span><span class="n">captured_stderr</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">open_reader</span><span class="p">(</span><span class="s2">&quot;r&quot;</span><span class="p">)</span>
+        <span class="n">last</span><span class="o">.</span><span class="n">pipe_channels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pipe</span><span class="p">)</span>
     <span class="c1"># redirect stdout to stderr, if we should</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">last</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">and</span> <span class="n">last</span><span class="o">.</span><span class="n">stdout</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
         <span class="c1"># need to use private interface to avoid duplication.</span>
@@ -1549,7 +1566,7 @@
     <span class="c1"># redirect stderr to stdout, if we should</span>
     <span class="k">if</span> <span class="n">callable_alias</span> <span class="ow">and</span> <span class="n">last</span><span class="o">.</span><span class="n">stderr</span> <span class="o">==</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">STDOUT</span><span class="p">:</span>
         <span class="n">last</span><span class="o">.</span><span class="n">_stderr</span> <span class="o">=</span> <span class="n">last</span><span class="o">.</span><span class="n">stdout</span>
-        <span class="n">last</span><span class="o">.</span><span class="n">captured_stderr</span> <span class="o">=</span> <span class="n">last</span><span class="o">.</span><span class="n">captured_stdout</span>
+        <span class="n">last</span><span class="o">.</span><span class="n">captured_stderr</span> <span class="o">=</span> <span class="kc">None</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_update_proc_alias_threadable</span><span class="p">(</span><span class="n">proc</span><span class="p">):</span>
@@ -1634,9 +1651,10 @@
         <span class="k">if</span> <span class="n">redirect</span> <span class="o">==</span> <span class="s2">&quot;|&quot;</span><span class="p">:</span>
             <span class="c1"># these should remain integer file descriptors, and not Python</span>
             <span class="c1"># file objects since they connect processes.</span>
-            <span class="n">r</span><span class="p">,</span> <span class="n">w</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">pipe</span><span class="p">()</span>
-            <span class="n">specs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">w</span>
-            <span class="n">specs</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">stdin</span> <span class="o">=</span> <span class="n">r</span>
+            <span class="n">pipe</span> <span class="o">=</span> <span class="n">PipeChannel</span><span class="o">.</span><span class="n">from_pipe</span><span class="p">()</span>
+            <span class="n">specs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">write_fd</span>
+            <span class="n">specs</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">stdin</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">read_fd</span>
+            <span class="n">specs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">pipe_channels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pipe</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">redirect</span> <span class="o">==</span> <span class="s2">&quot;&amp;&quot;</span> <span class="ow">and</span> <span class="n">i</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">redirects</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
             <span class="n">specs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">background</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="k">else</span><span class="p">:</span>

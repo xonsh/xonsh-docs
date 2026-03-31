@@ -247,6 +247,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.executables.html">xonsh.procs.executables</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.jobs.html">xonsh.procs.jobs</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.pipelines.html">xonsh.procs.pipelines</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.pipes.html">xonsh.procs.pipes</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.posix.html">xonsh.procs.posix</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.proxies.html">xonsh.procs.proxies</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../api/_autosummary/cmd/xonsh.procs.readers.html">xonsh.procs.readers</a></li>
@@ -541,6 +542,7 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">suspended</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">prevs_are_closed</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_interrupted</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="c1"># This is so the thread will use the same swapped values as the origin one.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">original_swapped_values</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get_swapped_values</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
@@ -626,6 +628,10 @@
         <span class="c1"># with orig_* needed to be closed before cap*</span>
         <span class="n">safe_fdclose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">orig_stdout</span><span class="p">)</span>
         <span class="n">safe_fdclose</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">orig_stderr</span><span class="p">)</span>
+        <span class="c1"># Close pipe channel write ends (the wrappers above have closefd=False,</span>
+        <span class="c1"># so we must close the actual fds via PipeChannel to send EOF).</span>
+        <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">spec</span><span class="o">.</span><span class="n">pipe_channels</span><span class="p">:</span>
+            <span class="n">ch</span><span class="o">.</span><span class="n">close_writer</span><span class="p">()</span>
         <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
             <span class="n">safe_fdclose</span><span class="p">(</span><span class="n">capout</span><span class="p">)</span>
             <span class="n">safe_fdclose</span><span class="p">(</span><span class="n">caperr</span><span class="p">)</span>
@@ -657,7 +663,12 @@
         <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">chunk</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">reader</span><span class="o">.</span><span class="n">read_queue</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="p">)):</span>  <span class="c1"># noqa</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_alt_mode_switch</span><span class="p">(</span><span class="n">chunk</span><span class="p">,</span> <span class="n">writer</span><span class="p">,</span> <span class="n">stdbuf</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">i</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="n">writer</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">writer</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">OSError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+                <span class="c1"># Avoid race with the main thread closing PipeChannel fds</span>
+                <span class="c1"># before this background thread finishes flushing.</span>
+                <span class="k">pass</span>
             <span class="n">stdbuf</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
         <span class="k">return</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span>
 
@@ -741,7 +752,19 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_signal_int</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">signum</span><span class="p">,</span> <span class="n">frame</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Signal handler for SIGINT - Ctrl+C may have been pressed.&quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">send_signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">CTRL_C_EVENT</span> <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="k">else</span> <span class="n">signum</span><span class="p">)</span>
+        <span class="c1"># Check if we have already been interrupted. This should prevent</span>
+        <span class="c1"># the possibility of infinite recursion via pthread_kill.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interrupted</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_interrupted</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_POSIX</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">pgid</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getpgid</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">pid</span><span class="p">)</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">killpg</span><span class="p">(</span><span class="n">pgid</span><span class="p">,</span> <span class="n">signum</span><span class="p">)</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">ProcessLookupError</span><span class="p">,</span> <span class="ne">OSError</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">send_signal</span><span class="p">(</span><span class="n">signum</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">send_signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">CTRL_C_EVENT</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">proc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigint</span><span class="p">(</span><span class="n">frame</span><span class="o">=</span><span class="n">frame</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">xt</span><span class="o">.</span><span class="n">on_main_thread</span><span class="p">()</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
