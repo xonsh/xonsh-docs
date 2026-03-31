@@ -490,7 +490,13 @@
     <span class="k">try</span><span class="p">:</span>
         <span class="n">val</span> <span class="o">=</span> <span class="n">ast</span><span class="o">.</span><span class="n">literal_eval</span><span class="p">(</span><span class="n">_string</span><span class="p">)</span>
     <span class="k">except</span> <span class="p">(</span><span class="ne">SyntaxError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
-        <span class="k">return</span> <span class="kc">None</span>
+        <span class="c1"># Raw strings can&#39;t end with an odd number of backslashes</span>
+        <span class="c1"># (e.g. r&quot;C:\App\&quot; is a SyntaxError). Extract the path directly.</span>
+        <span class="n">raw_prefix</span> <span class="o">=</span> <span class="n">xt</span><span class="o">.</span><span class="n">RE_STRING_START</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">string</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">raw_prefix</span> <span class="ow">and</span> <span class="s2">&quot;r&quot;</span> <span class="ow">in</span> <span class="n">raw_prefix</span><span class="o">.</span><span class="n">group</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
+            <span class="n">val</span> <span class="o">=</span> <span class="n">string</span><span class="p">[</span><span class="n">raw_prefix</span><span class="o">.</span><span class="n">end</span><span class="p">()</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">end</span><span class="p">)</span> <span class="p">:]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">):</span>
         <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
         <span class="n">val</span> <span class="o">=</span> <span class="n">val</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span>
@@ -605,9 +611,13 @@
             <span class="n">_tail</span> <span class="o">=</span> <span class="n">space</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">_tail</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
-        <span class="k">if</span> <span class="n">start</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span> <span class="ow">and</span> <span class="s2">&quot;r&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">start</span> <span class="ow">and</span> <span class="n">backslash</span> <span class="ow">in</span> <span class="n">s</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">start</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span> <span class="ow">and</span> <span class="s2">&quot;r&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">start</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">and</span> <span class="n">backslash</span> <span class="ow">in</span> <span class="n">s</span><span class="p">:</span>
             <span class="n">start</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;r</span><span class="si">{</span><span class="n">start</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="n">s</span> <span class="o">=</span> <span class="n">s</span> <span class="o">+</span> <span class="n">_tail</span>
+        <span class="c1"># Raw strings can&#39;t end with \ before closing quote (e.g. r&quot;path\&quot; is</span>
+        <span class="c1"># a SyntaxError). Double the trailing backslash so it&#39;s valid (r&quot;path\\&quot;).</span>
+        <span class="k">if</span> <span class="s2">&quot;r&quot;</span> <span class="ow">in</span> <span class="n">start</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">and</span> <span class="n">end</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span> <span class="ow">and</span> <span class="n">s</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">backslash</span><span class="p">):</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="n">s</span> <span class="o">+</span> <span class="n">backslash</span>
         <span class="k">if</span> <span class="n">end</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
             <span class="k">if</span> <span class="s2">&quot;r&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">start</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
                 <span class="n">s</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">backslash</span><span class="p">,</span> <span class="n">double_backslash</span><span class="p">)</span>
@@ -725,7 +735,18 @@
     <span class="n">prefix</span> <span class="o">=</span> <span class="n">glob</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">xt</span><span class="o">.</span><span class="n">iglobpath</span><span class="p">(</span><span class="n">prefix</span> <span class="o">+</span> <span class="s2">&quot;*&quot;</span><span class="p">,</span> <span class="n">ignore_case</span><span class="o">=</span><span class="p">(</span><span class="ow">not</span> <span class="n">csc</span><span class="p">),</span> <span class="n">sort_result</span><span class="o">=</span><span class="n">glob_sorted</span><span class="p">):</span>
         <span class="n">paths</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
-    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">paths</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;SUBSEQUENCE_PATH_COMPLETION&quot;</span><span class="p">):</span>
+    <span class="c1"># When the prefix ends with a path separator we are listing directory</span>
+    <span class="c1"># contents, not matching a partial name.  If the glob above found nothing</span>
+    <span class="c1"># the directory is simply empty — skip subsequence and fuzzy matching</span>
+    <span class="c1"># which would incorrectly match unrelated paths.</span>
+    <span class="n">_prefix_is_dir_listing</span> <span class="o">=</span> <span class="n">prefix</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">sep</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">altsep</span> <span class="ow">and</span> <span class="n">prefix</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">altsep</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="p">(</span>
+        <span class="nb">len</span><span class="p">(</span><span class="n">paths</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
+        <span class="ow">and</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;SUBSEQUENCE_PATH_COMPLETION&quot;</span><span class="p">)</span>
+        <span class="ow">and</span> <span class="ow">not</span> <span class="n">_prefix_is_dir_listing</span>
+    <span class="p">):</span>
         <span class="c1"># this block implements &#39;subsequence&#39; matching, similar to fish and zsh.</span>
         <span class="c1"># matches are based on subsequences, not substrings.</span>
         <span class="c1"># e.g., ~/u/ro completes to ~/lou/carcolh</span>
@@ -746,7 +767,11 @@
             <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">p</span><span class="p">:</span>
                 <span class="n">matches_so_far</span> <span class="o">=</span> <span class="n">_expand_one</span><span class="p">(</span><span class="n">matches_so_far</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">csc</span><span class="p">)</span>
             <span class="n">paths</span> <span class="o">|=</span> <span class="p">{</span><span class="n">_joinpath</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">matches_so_far</span><span class="p">}</span>
-    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">paths</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;FUZZY_PATH_COMPLETION&quot;</span><span class="p">):</span>
+    <span class="k">if</span> <span class="p">(</span>
+        <span class="nb">len</span><span class="p">(</span><span class="n">paths</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
+        <span class="ow">and</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;FUZZY_PATH_COMPLETION&quot;</span><span class="p">)</span>
+        <span class="ow">and</span> <span class="ow">not</span> <span class="n">_prefix_is_dir_listing</span>
+    <span class="p">):</span>
         <span class="n">threshold</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;SUGGEST_THRESHOLD&quot;</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">xt</span><span class="o">.</span><span class="n">iglobpath</span><span class="p">(</span>
             <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;*&quot;</span><span class="p">,</span>
