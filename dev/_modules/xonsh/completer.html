@@ -720,6 +720,19 @@
                     <span class="p">)</span>
                 <span class="k">break</span>
 
+        <span class="c1"># Deduplicate completions that differ only by a trailing space.</span>
+        <span class="c1"># For example, ``_cd`` (from Python name completions) and ``_cd ``</span>
+        <span class="c1"># (from command completions with append_space=True) should appear</span>
+        <span class="c1"># only once.  We keep the spaced variant because it carries the</span>
+        <span class="c1"># richer completion metadata.</span>
+        <span class="n">spaced</span> <span class="o">=</span> <span class="p">{</span><span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">completions</span> <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="p">)</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">)}</span>
+        <span class="k">if</span> <span class="n">spaced</span><span class="p">:</span>
+            <span class="n">completions</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">c</span><span class="p">:</span> <span class="kc">None</span>
+                <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">completions</span>
+                <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="p">)</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot; &quot;</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">spaced</span>
+            <span class="p">}</span>
+
         <span class="k">if</span> <span class="n">completion_context</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">completion_context</span><span class="o">.</span><span class="n">python</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">prefix</span> <span class="o">=</span> <span class="n">completion_context</span><span class="o">.</span><span class="n">python</span><span class="o">.</span><span class="n">prefix</span>
@@ -731,9 +744,41 @@
             <span class="k">if</span> <span class="n">prefix</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;$&quot;</span><span class="p">):</span>
                 <span class="n">prefix</span> <span class="o">=</span> <span class="n">prefix</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
 
+            <span class="n">lower_prefix</span> <span class="o">=</span> <span class="n">prefix</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+
             <span class="k">def</span><span class="w"> </span><span class="nf">sortkey</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
-<span class="w">                </span><span class="sd">&quot;&quot;&quot;Sort values by prefix position and then alphabetically.&quot;&quot;&quot;</span>
-                <span class="k">return</span> <span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">prefix</span><span class="o">.</span><span class="n">lower</span><span class="p">()),</span> <span class="n">s</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+<span class="w">                </span><span class="sd">&quot;&quot;&quot;Sort completions by match quality tier, then by underscore prefix, match position, and name.</span>
+
+<span class="sd">                Tiers:</span>
+<span class="sd">                  0 - case-sensitive prefix match</span>
+<span class="sd">                  1 - case-insensitive prefix match</span>
+<span class="sd">                  2 - case-sensitive substring match</span>
+<span class="sd">                  3 - case-insensitive substring match</span>
+<span class="sd">                  4 - no match (sorted last)</span>
+
+<span class="sd">                Within each tier, completions whose last component starts</span>
+<span class="sd">                with &#39;_&#39; are sorted last (handles both bare names like</span>
+<span class="sd">                ``_codecs`` and dotted names like ``json._default_decoder``),</span>
+<span class="sd">                then by position of the match, then alphabetically.</span>
+<span class="sd">                &quot;&quot;&quot;</span>
+                <span class="n">text</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+                <span class="n">ltext</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">text</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">prefix</span><span class="p">):</span>
+                    <span class="n">tier</span> <span class="o">=</span> <span class="mi">0</span>
+                <span class="k">elif</span> <span class="n">ltext</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">lower_prefix</span><span class="p">):</span>
+                    <span class="n">tier</span> <span class="o">=</span> <span class="mi">1</span>
+                <span class="k">elif</span> <span class="n">prefix</span> <span class="ow">in</span> <span class="n">text</span><span class="p">:</span>
+                    <span class="n">tier</span> <span class="o">=</span> <span class="mi">2</span>
+                <span class="k">elif</span> <span class="n">lower_prefix</span> <span class="ow">in</span> <span class="n">ltext</span><span class="p">:</span>
+                    <span class="n">tier</span> <span class="o">=</span> <span class="mi">3</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">tier</span> <span class="o">=</span> <span class="mi">4</span>
+                <span class="n">last_part</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+                <span class="n">has_leading_underscore</span> <span class="o">=</span> <span class="n">last_part</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">)</span>
+                <span class="n">pos</span> <span class="o">=</span> <span class="n">ltext</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">lower_prefix</span><span class="p">)</span> <span class="k">if</span> <span class="n">lower_prefix</span> <span class="k">else</span> <span class="mi">0</span>
+                <span class="k">if</span> <span class="n">pos</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">pos</span> <span class="o">=</span> <span class="mi">0</span>
+                <span class="k">return</span> <span class="p">(</span><span class="n">tier</span><span class="p">,</span> <span class="n">has_leading_underscore</span><span class="p">,</span> <span class="n">pos</span><span class="p">,</span> <span class="n">ltext</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="c1"># Fallback sort.</span>
             <span class="n">sortkey</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">lstrip</span><span class="p">(</span><span class="s1">&#39;&#39;&#39;&#39;&quot;&#39;&#39;&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
