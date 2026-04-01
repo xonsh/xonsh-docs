@@ -654,6 +654,22 @@
     <span class="n">has_selection</span> <span class="o">=</span> <span class="n">HasSelection</span><span class="p">()</span>
     <span class="n">insert_mode</span> <span class="o">=</span> <span class="n">ViInsertMode</span><span class="p">()</span> <span class="o">|</span> <span class="n">EmacsInsertMode</span><span class="p">()</span>
 
+    <span class="c1"># Register Shift+Enter as a distinct key that always inserts a newline.</span>
+    <span class="c1"># Terminals must support xterm modifyOtherKeys or Kitty keyboard protocol</span>
+    <span class="c1"># to send a distinguishable sequence for Shift+Enter.</span>
+    <span class="c1"># We enable modifyOtherKeys mode in ptk_shell/__init__.py.</span>
+    <span class="n">SHIFT_ENTER</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\x80</span><span class="s2">&quot;</span>  <span class="c1"># single-char key slot (PTK requires single chars)</span>
+    <span class="c1"># xterm modifyOtherKeys format</span>
+    <span class="n">ansi_escape_sequences</span><span class="o">.</span><span class="n">ANSI_SEQUENCES</span><span class="p">[</span><span class="s2">&quot;</span><span class="se">\x1b</span><span class="s2">[27;2;13~&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">SHIFT_ENTER</span>  <span class="c1"># type: ignore</span>
+    <span class="c1"># Kitty keyboard protocol format</span>
+    <span class="n">ansi_escape_sequences</span><span class="o">.</span><span class="n">ANSI_SEQUENCES</span><span class="p">[</span><span class="s2">&quot;</span><span class="se">\x1b</span><span class="s2">[13;2u&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">SHIFT_ENTER</span>  <span class="c1"># type: ignore</span>
+    <span class="n">ansi_escape_sequences</span><span class="o">.</span><span class="n">REVERSE_ANSI_SEQUENCES</span><span class="p">[</span><span class="n">SHIFT_ENTER</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\x1b</span><span class="s2">[27;2;13~&quot;</span>  <span class="c1"># type: ignore</span>
+
+    <span class="nd">@handle</span><span class="p">(</span><span class="n">SHIFT_ENTER</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=</span><span class="n">insert_mode</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">shift_enter_newline</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Shift+Enter always inserts a newline with auto-indent.&quot;&quot;&quot;</span>
+        <span class="n">event</span><span class="o">.</span><span class="n">current_buffer</span><span class="o">.</span><span class="n">newline</span><span class="p">(</span><span class="n">copy_margin</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
     <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;XONSH_CTRL_BKSP_DELETION&quot;</span><span class="p">]:</span>
         <span class="c1"># Not all terminal emulators emit the same keys for backspace, therefore</span>
         <span class="c1"># ptk always maps backspace (&quot;\x7f&quot;) to ^H (&quot;\x08&quot;), and all the backspace bindings are registered for ^H.</span>
@@ -680,7 +696,55 @@
 <span class="w">            </span><span class="sd">&quot;&quot;&quot;Delete a single word (like ALT-backspace)&quot;&quot;&quot;</span>
             <span class="n">get_by_name</span><span class="p">(</span><span class="s2">&quot;backward-kill-word&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
 
-    <span class="nd">@handle</span><span class="p">(</span><span class="n">Keys</span><span class="o">.</span><span class="n">Tab</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=</span><span class="n">tab_insert_indent</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_indent_lines</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Indent or dedent selected lines, preserving selection.&quot;&quot;&quot;</span>
+        <span class="n">ind</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;INDENT&quot;</span><span class="p">,</span> <span class="s2">&quot; &quot;</span> <span class="o">*</span> <span class="mi">4</span><span class="p">)</span>
+        <span class="n">ind_len</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">ind</span><span class="p">)</span>
+        <span class="n">doc</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="n">document</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">text</span>
+        <span class="n">sel_ranges</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">selection_ranges</span><span class="p">())</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">sel_ranges</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="n">sel_ranges</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="c1"># expand to full lines</span>
+        <span class="n">line_start</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">rfind</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">start</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">line_end</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">end</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">line_end</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+            <span class="n">line_end</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+
+        <span class="n">selection_state</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="n">selection_state</span>
+        <span class="n">region</span> <span class="o">=</span> <span class="n">text</span><span class="p">[</span><span class="n">line_start</span><span class="p">:</span><span class="n">line_end</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">indent</span><span class="p">:</span>
+            <span class="n">new_region</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ind</span> <span class="o">+</span> <span class="n">line</span> <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">region</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">lines</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">region</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">line</span><span class="p">[:</span><span class="n">ind_len</span><span class="p">]</span> <span class="o">==</span> <span class="n">ind</span><span class="p">:</span>
+                    <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">[</span><span class="n">ind_len</span><span class="p">:])</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">lstrip</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">))</span>
+            <span class="n">new_region</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span>
+
+        <span class="n">b</span><span class="o">.</span><span class="n">transform_region</span><span class="p">(</span><span class="n">line_start</span><span class="p">,</span> <span class="n">line_end</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">_</span><span class="p">:</span> <span class="n">new_region</span><span class="p">)</span>
+
+        <span class="c1"># restore selection over the full line range</span>
+        <span class="n">delta</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">new_region</span><span class="p">)</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">region</span><span class="p">)</span>
+        <span class="n">selection_state</span><span class="o">.</span><span class="n">original_cursor_position</span> <span class="o">=</span> <span class="n">line_start</span>
+        <span class="n">b</span><span class="o">.</span><span class="n">cursor_position</span> <span class="o">=</span> <span class="n">line_end</span> <span class="o">+</span> <span class="n">delta</span>
+        <span class="n">b</span><span class="o">.</span><span class="n">selection_state</span> <span class="o">=</span> <span class="n">selection_state</span>
+
+    <span class="nd">@handle</span><span class="p">(</span><span class="n">Keys</span><span class="o">.</span><span class="n">Tab</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=</span><span class="n">has_selection</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">indent_selection</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Indent selected lines by INDENT.&quot;&quot;&quot;</span>
+        <span class="n">_indent_lines</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">current_buffer</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="nd">@handle</span><span class="p">(</span><span class="n">Keys</span><span class="o">.</span><span class="n">BackTab</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=</span><span class="n">has_selection</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">dedent_selection</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Dedent selected lines by INDENT.&quot;&quot;&quot;</span>
+        <span class="n">_indent_lines</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">current_buffer</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+    <span class="nd">@handle</span><span class="p">(</span><span class="n">Keys</span><span class="o">.</span><span class="n">Tab</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=</span><span class="n">tab_insert_indent</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">has_selection</span><span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">insert_indent</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        If there are only whitespaces before current cursor position insert</span>
@@ -689,7 +753,7 @@
         <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
         <span class="n">event</span><span class="o">.</span><span class="n">cli</span><span class="o">.</span><span class="n">current_buffer</span><span class="o">.</span><span class="n">insert_text</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;INDENT&quot;</span><span class="p">))</span>
 
-    <span class="nd">@handle</span><span class="p">(</span><span class="n">Keys</span><span class="o">.</span><span class="n">Tab</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=~</span><span class="n">tab_insert_indent</span> <span class="o">&amp;</span> <span class="n">tab_menu_complete</span><span class="p">)</span>
+    <span class="nd">@handle</span><span class="p">(</span><span class="n">Keys</span><span class="o">.</span><span class="n">Tab</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=~</span><span class="n">tab_insert_indent</span> <span class="o">&amp;</span> <span class="n">tab_menu_complete</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">has_selection</span><span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">menu_complete_select</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Start completion in menu-complete mode, or tab to next completion&quot;&quot;&quot;</span>
         <span class="n">b</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">current_buffer</span>
@@ -704,15 +768,24 @@
         <span class="n">event</span><span class="o">.</span><span class="n">current_buffer</span><span class="o">.</span><span class="n">tempfile_suffix</span> <span class="o">=</span> <span class="s2">&quot;.xsh&quot;</span>
         <span class="n">event</span><span class="o">.</span><span class="n">current_buffer</span><span class="o">.</span><span class="n">open_in_editor</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">cli</span><span class="p">)</span>
 
-    <span class="nd">@handle</span><span class="p">(</span><span class="n">Keys</span><span class="o">.</span><span class="n">BackTab</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=</span><span class="n">insert_mode</span><span class="p">)</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">insert_literal_tab</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Insert literal tab on Shift+Tab instead of autocompleting&quot;&quot;&quot;</span>
+    <span class="nd">@handle</span><span class="p">(</span><span class="n">Keys</span><span class="o">.</span><span class="n">BackTab</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=</span><span class="n">insert_mode</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">has_selection</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">dedent_current_line</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Dedent current line or navigate completions backward.&quot;&quot;&quot;</span>
         <span class="n">b</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">current_buffer</span>
         <span class="k">if</span> <span class="n">b</span><span class="o">.</span><span class="n">complete_state</span><span class="p">:</span>
             <span class="n">b</span><span class="o">.</span><span class="n">complete_previous</span><span class="p">()</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
-            <span class="n">event</span><span class="o">.</span><span class="n">cli</span><span class="o">.</span><span class="n">current_buffer</span><span class="o">.</span><span class="n">insert_text</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;INDENT&quot;</span><span class="p">))</span>
+            <span class="k">return</span>
+        <span class="n">indent</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;INDENT&quot;</span><span class="p">,</span> <span class="s2">&quot; &quot;</span> <span class="o">*</span> <span class="mi">4</span><span class="p">)</span>
+        <span class="n">indent_len</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">indent</span><span class="p">)</span>
+        <span class="n">doc</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="n">document</span>
+        <span class="n">line</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">current_line</span>
+        <span class="k">if</span> <span class="n">line</span><span class="p">[:</span><span class="n">indent_len</span><span class="p">]</span> <span class="o">==</span> <span class="n">indent</span><span class="p">:</span>
+            <span class="c1"># remove one indent level from line start</span>
+            <span class="n">cursor_col</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">cursor_position_col</span>
+            <span class="n">line_start</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">cursor_position</span> <span class="o">-</span> <span class="n">cursor_col</span>
+            <span class="n">b</span><span class="o">.</span><span class="n">transform_region</span><span class="p">(</span><span class="n">line_start</span><span class="p">,</span> <span class="n">line_start</span> <span class="o">+</span> <span class="n">indent_len</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">_</span><span class="p">:</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+            <span class="c1"># keep cursor in place (shifted left, but not before col 0)</span>
+            <span class="n">b</span><span class="o">.</span><span class="n">cursor_position</span> <span class="o">=</span> <span class="n">line_start</span> <span class="o">+</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">cursor_col</span> <span class="o">-</span> <span class="n">indent_len</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">generate_parens_handlers</span><span class="p">(</span><span class="n">left</span><span class="p">,</span> <span class="n">right</span><span class="p">):</span>
         <span class="nd">@handle</span><span class="p">(</span><span class="n">left</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=</span><span class="n">autopair_condition</span><span class="p">)</span>
