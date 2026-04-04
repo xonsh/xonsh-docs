@@ -661,6 +661,84 @@ To prevent this behavior, a completer can return a different lprefix or specify 
 </div>
 </section>
 </section>
+<section id="command-completers-xompletions">
+<h2>Command Completers (xompletions)<a class="headerlink" href="#command-completers-xompletions" title="Link to this heading">¶</a></h2>
+<p>xonsh includes a package called <code class="docutils literal notranslate"><span class="pre">xompletions</span></code> that provides tab-completions for
+specific commands like <code class="docutils literal notranslate"><span class="pre">pip</span></code>, <code class="docutils literal notranslate"><span class="pre">gh</span></code>, <code class="docutils literal notranslate"><span class="pre">cd</span></code>, etc. Each command gets its own Python
+module inside the <code class="docutils literal notranslate"><span class="pre">xompletions/</span></code> directory.</p>
+<p>How it works:</p>
+<ol class="arabic simple">
+<li><p>When the user presses TAB, the <code class="docutils literal notranslate"><span class="pre">xompleter</span></code> completer (registered as <code class="docutils literal notranslate"><span class="pre">complete_xompletions</span></code>)
+extracts the command name from <code class="docutils literal notranslate"><span class="pre">args[0]</span></code>.</p></li>
+<li><p>It looks for a matching module in <code class="docutils literal notranslate"><span class="pre">xompletions/</span></code> — first by exact name, then by regex patterns.</p></li>
+<li><p>If found, it calls the module’s <code class="docutils literal notranslate"><span class="pre">xonsh_complete(ctx)</span></code> function.</p></li>
+<li><p>The function returns completions or <code class="docutils literal notranslate"><span class="pre">None</span></code> (to let the next completer handle it).</p></li>
+</ol>
+<section id="creating-a-command-completer">
+<h3>Creating a command completer<a class="headerlink" href="#creating-a-command-completer" title="Link to this heading">¶</a></h3>
+<p>To create a completer for a command, place a Python file named after the command
+in any directory listed in <code class="docutils literal notranslate"><span class="pre">$XONSH_COMPLETER_DIRS</span></code>. The file must contain
+a <code class="docutils literal notranslate"><span class="pre">xonsh_complete</span></code> function:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># ~/.config/xonsh/completers/mycmd.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.parsers.completion_context</span><span class="w"> </span><span class="kn">import</span> <span class="n">CommandContext</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">xonsh_complete</span><span class="p">(</span><span class="n">ctx</span><span class="p">:</span> <span class="n">CommandContext</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Completes mycmd subcommands.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">ctx</span><span class="o">.</span><span class="n">arg_index</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s1">&#39;start&#39;</span><span class="p">,</span> <span class="s1">&#39;stop&#39;</span><span class="p">,</span> <span class="s1">&#39;status&#39;</span><span class="p">}</span>
+</pre></div>
+</div>
+<div class="highlight-xonsh notranslate"><div class="highlight"><pre><span></span><span class="nv">$XONSH_COMPLETER_DIRS</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;~/.config/xonsh/completers&quot;</span><span class="p">]</span>
+</pre></div>
+</div>
+<p>Now <code class="docutils literal notranslate"><span class="pre">mycmd</span> <span class="pre">&lt;TAB&gt;</span></code> will suggest <code class="docutils literal notranslate"><span class="pre">start</span></code>, <code class="docutils literal notranslate"><span class="pre">stop</span></code>, and <code class="docutils literal notranslate"><span class="pre">status</span></code>.</p>
+<p>xonsh also ships built-in completers in the <code class="docutils literal notranslate"><span class="pre">xompletions/</span></code> package (for <code class="docutils literal notranslate"><span class="pre">pip</span></code>, <code class="docutils literal notranslate"><span class="pre">gh</span></code>, <code class="docutils literal notranslate"><span class="pre">cd</span></code>, etc.).</p>
+</section>
+<section id="handling-command-name-variants-with-wrap">
+<h3>Handling command name variants with <code class="docutils literal notranslate"><span class="pre">wrap</span></code><a class="headerlink" href="#handling-command-name-variants-with-wrap" title="Link to this heading">¶</a></h3>
+<p>The file name must match the command name exactly (<code class="docutils literal notranslate"><span class="pre">gh.py</span></code> for <code class="docutils literal notranslate"><span class="pre">gh</span></code>).
+On Windows, extensions like <code class="docutils literal notranslate"><span class="pre">.exe</span></code> are stripped automatically via <code class="docutils literal notranslate"><span class="pre">$PATHEXT</span></code>,
+so <code class="docutils literal notranslate"><span class="pre">gh.exe</span></code> will find <code class="docutils literal notranslate"><span class="pre">gh.py</span></code>.</p>
+<p>However, if a command has other name variants (e.g. <code class="docutils literal notranslate"><span class="pre">pip3.11</span></code>, <code class="docutils literal notranslate"><span class="pre">python3.12</span></code>),
+the exact file name won’t match. For these cases, you can register regex patterns
+from your <code class="docutils literal notranslate"><span class="pre">xonshrc</span></code> or xontrib:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.completers.commands</span><span class="w"> </span><span class="kn">import</span> <span class="n">complete_xompletions</span> <span class="k">as</span> <span class="n">xmp</span>
+<span class="n">xmp</span><span class="o">.</span><span class="n">wrap</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\bmycmd(?:\d)*$&quot;</span><span class="p">,</span> <span class="s2">&quot;mycmd&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>This maps <code class="docutils literal notranslate"><span class="pre">mycmd</span></code>, <code class="docutils literal notranslate"><span class="pre">mycmd2</span></code>, <code class="docutils literal notranslate"><span class="pre">mycmd3</span></code> etc. to the <code class="docutils literal notranslate"><span class="pre">mycmd</span></code> completer module.</p>
+<p>xonsh ships with built-in patterns for <code class="docutils literal notranslate"><span class="pre">pip</span></code> (covers <code class="docutils literal notranslate"><span class="pre">xpip</span></code>, <code class="docutils literal notranslate"><span class="pre">pip3.11</span></code>, <code class="docutils literal notranslate"><span class="pre">pip.exe</span></code>)
+and <code class="docutils literal notranslate"><span class="pre">python</span></code> (covers <code class="docutils literal notranslate"><span class="pre">python3</span></code>, <code class="docutils literal notranslate"><span class="pre">python3.12</span></code>, <code class="docutils literal notranslate"><span class="pre">python.exe</span></code>).</p>
+</section>
+<section id="completing-python-m-module">
+<h3>Completing <code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">-m</span> <span class="pre">&lt;module&gt;</span></code><a class="headerlink" href="#completing-python-m-module" title="Link to this heading">¶</a></h3>
+<p>When an alias resolves to <code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">-m</span> <span class="pre">&lt;module&gt;</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">xpip</span></code> → <code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">-m</span> <span class="pre">pip</span></code>),
+xonsh uses the <code class="docutils literal notranslate"><span class="pre">xompletions/python.py</span></code> completer to delegate to the module’s completer.</p>
+<p>The mapping is stored in <code class="docutils literal notranslate"><span class="pre">PYTHON_MODULE_COMPLETERS</span></code> and can be extended from xonshrc:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">xompletions.python</span><span class="w"> </span><span class="kn">import</span> <span class="n">PYTHON_MODULE_COMPLETERS</span>
+
+<span class="c1"># Simple completer with static options</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_complete_mytool</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">module_arg_index</span><span class="p">):</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s1">&#39;start&#39;</span><span class="p">,</span> <span class="s1">&#39;stop&#39;</span><span class="p">,</span> <span class="s1">&#39;status&#39;</span><span class="p">}</span>
+
+<span class="n">PYTHON_MODULE_COMPLETERS</span><span class="p">[</span><span class="s1">&#39;mytool&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_complete_mytool</span>
+</pre></div>
+</div>
+<p>Now <code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">-m</span> <span class="pre">mytool</span> <span class="pre">&lt;TAB&gt;</span></code> will suggest <code class="docutils literal notranslate"><span class="pre">start</span></code>, <code class="docutils literal notranslate"><span class="pre">stop</span></code>, and <code class="docutils literal notranslate"><span class="pre">status</span></code>.
+This also works through aliases:</p>
+<div class="highlight-xonsh notranslate"><div class="highlight"><pre><span></span><span class="n">aliases</span><span class="p">[</span><span class="s1">&#39;mt&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;python&#39;</span><span class="p">,</span> <span class="s1">&#39;-m&#39;</span><span class="p">,</span> <span class="s1">&#39;mytool&#39;</span><span class="p">]</span>
+<span class="n">mt</span> <span class="o">&lt;</span><span class="n">TAB</span><span class="o">&gt;</span>  <span class="c1"># completes with start, stop, status</span>
+</pre></div>
+</div>
+<p>For modules that use the <a class="reference external" href="https://github.com/kislyuk/argcomplete">argcomplete</a> protocol,
+a ready-made helper is available:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">xompletions.python</span><span class="w"> </span><span class="kn">import</span> <span class="n">PYTHON_MODULE_COMPLETERS</span><span class="p">,</span> <span class="n">_complete_argcomplete</span>
+
+<span class="n">PYTHON_MODULE_COMPLETERS</span><span class="p">[</span><span class="s1">&#39;my_argcomplete_tool&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_complete_argcomplete</span>
+</pre></div>
+</div>
+</section>
+</section>
 <section id="legacy-completers-support">
 <h2>Legacy Completers Support<a class="headerlink" href="#legacy-completers-support" title="Link to this heading">¶</a></h2>
 <p>Before completion context was introduced, xonsh had a different readline-like completion API.
@@ -750,6 +828,12 @@ While this legacy API is not recommended, xonsh still supports it.</p>
 <li><a class="reference internal" href="#removing-a-completer">Removing a Completer</a></li>
 <li><a class="reference internal" href="#advanced-completions">Advanced Completions</a><ul>
 <li><a class="reference internal" href="#completing-closed-string-literals">Completing Closed String Literals</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#command-completers-xompletions">Command Completers (xompletions)</a><ul>
+<li><a class="reference internal" href="#creating-a-command-completer">Creating a command completer</a></li>
+<li><a class="reference internal" href="#handling-command-name-variants-with-wrap">Handling command name variants with <code class="docutils literal notranslate"><span class="pre">wrap</span></code></a></li>
+<li><a class="reference internal" href="#completing-python-m-module">Completing <code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">-m</span> <span class="pre">&lt;module&gt;</span></code></a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#legacy-completers-support">Legacy Completers Support</a></li>
