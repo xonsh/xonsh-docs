@@ -442,11 +442,18 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">_get_man_page</span><span class="p">(</span><span class="n">cmd</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;without control characters&quot;&quot;&quot;</span>
     <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">detype</span><span class="p">()</span>
-    <span class="n">manpage</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">(</span>
+    <span class="c1"># Use context manager to ensure man&#39;s Popen is waited on and its</span>
+    <span class="c1"># stdout fd is closed. Without this, the man process becomes a</span>
+    <span class="c1"># zombie (never reaped) and the pipe fd leaks.</span>
+    <span class="k">with</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">(</span>
         <span class="p">[</span><span class="s2">&quot;man&quot;</span><span class="p">,</span> <span class="n">cmd</span><span class="p">],</span> <span class="n">stdout</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span> <span class="n">stderr</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">env</span>
-    <span class="p">)</span>
-    <span class="c1"># This is a trick to get rid of reverse line feeds</span>
-    <span class="k">return</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">([</span><span class="s2">&quot;col&quot;</span><span class="p">,</span> <span class="s2">&quot;-b&quot;</span><span class="p">],</span> <span class="n">stdin</span><span class="o">=</span><span class="n">manpage</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">env</span><span class="p">)</span>
+    <span class="p">)</span> <span class="k">as</span> <span class="n">manpage</span><span class="p">:</span>
+        <span class="c1"># This is a trick to get rid of reverse line feeds</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">check_output</span><span class="p">([</span><span class="s2">&quot;col&quot;</span><span class="p">,</span> <span class="s2">&quot;-b&quot;</span><span class="p">],</span> <span class="n">stdin</span><span class="o">=</span><span class="n">manpage</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">env</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">manpage</span><span class="o">.</span><span class="n">stdout</span><span class="p">:</span>
+            <span class="n">manpage</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="n">manpage</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">result</span>
 
 
 <span class="nd">@functools</span><span class="o">.</span><span class="n">cache</span>

@@ -2906,7 +2906,10 @@
             <span class="k">if</span> <span class="n">detyper</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="c1"># cannot be detyped</span>
                 <span class="k">continue</span>
-            <span class="n">deval</span> <span class="o">=</span> <span class="n">detyper</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">deval</span> <span class="o">=</span> <span class="n">detyper</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error during detyping $</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
             <span class="k">if</span> <span class="n">deval</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="c1"># cannot be detyped</span>
                 <span class="k">continue</span>
@@ -2945,10 +2948,11 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Replaces the contents of os_environ with a detyped version</span>
 <span class="sd">        of the xonsh environment.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">new_env</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">detype</span><span class="p">()</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_orig_env</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_orig_env</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">os_environ</span><span class="p">)</span>
         <span class="n">os_environ</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
-        <span class="n">os_environ</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">detype</span><span class="p">())</span></div>
+        <span class="n">os_environ</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">new_env</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="Env.undo_replace_env">
@@ -3266,7 +3270,16 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;UPDATE_OS_ENVIRON&quot;</span><span class="p">):</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_orig_env</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">replace_env</span><span class="p">()</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">replace_env</span><span class="p">()</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="c1"># Rollback to keep xonsh env and os.environ in sync.</span>
+                    <span class="k">if</span> <span class="n">old_value</span> <span class="ow">is</span> <span class="bp">self</span><span class="o">.</span><span class="n">_no_value</span><span class="p">:</span>
+                        <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">old_value</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="kc">None</span>
+                    <span class="k">raise</span>
             <span class="k">elif</span> <span class="n">detyper</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">pass</span>
             <span class="k">else</span><span class="p">:</span>

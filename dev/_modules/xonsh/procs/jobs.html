@@ -835,13 +835,22 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">_clear_dead_jobs</span><span class="p">():</span>
     <span class="n">to_remove</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
     <span class="n">tasks</span> <span class="o">=</span> <span class="n">get_tasks</span><span class="p">()</span>
-    <span class="k">for</span> <span class="n">tid</span> <span class="ow">in</span> <span class="n">tasks</span><span class="p">:</span>
-        <span class="n">proc</span> <span class="o">=</span> <span class="n">get_task</span><span class="p">(</span><span class="n">tid</span><span class="p">)[</span><span class="s2">&quot;obj&quot;</span><span class="p">]</span>
+    <span class="c1"># list() creates a copy so we iterate over a static list, not the</span>
+    <span class="c1"># live deque. This function may be called from the SIGHUP signal</span>
+    <span class="c1"># handler which runs between bytecodes on the main thread. Without</span>
+    <span class="c1"># the copy, modifying the deque/dict while the main thread iterates</span>
+    <span class="c1"># them causes RuntimeError.</span>
+    <span class="k">for</span> <span class="n">tid</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">tasks</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">proc</span> <span class="o">=</span> <span class="n">get_task</span><span class="p">(</span><span class="n">tid</span><span class="p">)[</span><span class="s2">&quot;obj&quot;</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">to_remove</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
+            <span class="k">continue</span>
         <span class="k">if</span> <span class="n">proc</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">proc</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">to_remove</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">job</span> <span class="ow">in</span> <span class="n">to_remove</span><span class="p">:</span>
         <span class="n">tasks</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">job</span><span class="p">)</span>
-        <span class="k">del</span> <span class="n">get_jobs</span><span class="p">()[</span><span class="n">job</span><span class="p">]</span>
+        <span class="n">get_jobs</span><span class="p">()</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">job</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
 
 
 <div class="viewcode-block" id="format_job_string">
@@ -990,7 +999,12 @@
 <span class="sd">    Send SIGHUP to all child processes (called when exiting xonsh).</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">_clear_dead_jobs</span><span class="p">()</span>
-    <span class="k">for</span> <span class="n">job</span> <span class="ow">in</span> <span class="n">get_jobs</span><span class="p">()</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+    <span class="c1"># list() creates a copy so we iterate over a static list, not the</span>
+    <span class="c1"># live dict. This is called from the SIGHUP signal handler which</span>
+    <span class="c1"># runs between bytecodes on the main thread. If the main thread is</span>
+    <span class="c1"># iterating get_jobs() at that moment, modifying the live dict would</span>
+    <span class="c1"># cause RuntimeError.</span>
+    <span class="k">for</span> <span class="n">job</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">get_jobs</span><span class="p">()</span><span class="o">.</span><span class="n">values</span><span class="p">()):</span>
         <span class="n">_hup</span><span class="p">(</span><span class="n">job</span><span class="p">)</span></div>
 
 
