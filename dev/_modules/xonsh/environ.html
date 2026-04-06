@@ -225,6 +225,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../editors.html">Editor and IDE Support</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../python_virtual_environments.html">Python Virtual Environments</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../xonsh_projects.html">Xonsh Projects</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../callable_aliases.html">Callable Aliases</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../events_tutorial.html">Events</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../env.html">Environment</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../completers.html">Programmable Tab-Completion</a></li>
@@ -2865,6 +2866,10 @@
         <span class="c1"># sentinel value for non existing envvars</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_no_value</span> <span class="o">=</span> <span class="nb">object</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_orig_env</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="c1"># Thread-local storage for overlay stacks. Used by callable aliases</span>
+        <span class="c1"># to provide scoped env variables that shadow the global env</span>
+        <span class="c1"># during alias execution. See push_overlay()/pop_overlay().</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_overlay_local</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">local</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">DEFAULT_VARS</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
 
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
@@ -2896,10 +2901,14 @@
 <span class="sd">        Note! If env variable wasn&#39;t explicitly set (e.g. the value has default value in ``Xettings``)</span>
 <span class="sd">        it will be not in this list.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_overlay_stack</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span>
         <span class="n">ctx</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">items</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">)</span>
+        <span class="c1"># Apply overlay values on top (most recent overlay wins)</span>
+        <span class="k">for</span> <span class="n">overlay</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_overlay_stack</span><span class="p">:</span>
+            <span class="n">items</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">overlay</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">items</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
                 <span class="n">key</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
             <span class="n">detyper</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_detyper</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
@@ -2914,7 +2923,8 @@
                 <span class="c1"># cannot be detyped</span>
                 <span class="k">continue</span>
             <span class="n">ctx</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">deval</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="n">ctx</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_overlay_stack</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="n">ctx</span>
         <span class="k">return</span> <span class="n">ctx</span></div>
 
 
@@ -3138,12 +3148,16 @@
 <div class="viewcode-block" id="Env.swap">
 <a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.environ.html#xonsh.environ.Env.swap">[docs]</a>
     <span class="nd">@contextlib</span><span class="o">.</span><span class="n">contextmanager</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">swap</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">swap</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">overlay</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Provides a context manager for temporarily swapping out certain</span>
 <span class="sd">        environment variables with other values. On exit from the context</span>
 <span class="sd">        manager, the original values are restored.</span>
 <span class="sd">        The changes are only applied to the current thread, so that they don&#39;t leak between threads.</span>
 <span class="sd">        To get the thread-local overrides use `get_swapped_values` and `set_swapped_values`.</span>
+
+<span class="sd">        If ``overlay`` is provided (a dict), it is pushed as a thread-local</span>
+<span class="sd">        overlay that shadows both swapped and global values on reads.</span>
+<span class="sd">        Callable aliases use this to provide scoped ``env`` variables.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">old</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="c1"># single positional argument should be a dict-like object</span>
@@ -3156,12 +3170,16 @@
             <span class="n">old</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="bp">NotImplemented</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_set_item</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">thread_local</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
+        <span class="k">if</span> <span class="n">overlay</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_overlay_stack</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">overlay</span><span class="p">)</span>
         <span class="n">exception</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="k">yield</span> <span class="bp">self</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
             <span class="n">exception</span> <span class="o">=</span> <span class="n">e</span>
         <span class="k">finally</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">overlay</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_overlay_stack</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
             <span class="c1"># restore the values</span>
             <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">old</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
                 <span class="k">if</span> <span class="n">v</span> <span class="ow">is</span> <span class="bp">NotImplemented</span><span class="p">:</span>
@@ -3188,10 +3206,21 @@
     <span class="c1"># Mutable mapping interface</span>
     <span class="c1">#</span>
 
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_overlay_stack</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">stacks</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_overlay_local</span><span class="o">.</span><span class="vm">__dict__</span>
+        <span class="k">if</span> <span class="s2">&quot;stack&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">stacks</span><span class="p">:</span>
+            <span class="n">stacks</span><span class="p">[</span><span class="s2">&quot;stack&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">return</span> <span class="n">stacks</span><span class="p">[</span><span class="s2">&quot;stack&quot;</span><span class="p">]</span>
+
     <span class="k">def</span><span class="w"> </span><span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">key</span> <span class="ow">is</span> <span class="bp">Ellipsis</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span>
-        <span class="k">elif</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">:</span>
+        <span class="c1"># Check overlay stack top-down (most recent first)</span>
+        <span class="k">for</span> <span class="n">overlay</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_overlay_stack</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">overlay</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">overlay</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">:</span>
             <span class="n">val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
         <span class="k">elif</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="o">.</span><span class="n">default</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">DefaultNotGiven</span><span class="p">:</span>
             <span class="n">val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_default</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
@@ -3351,6 +3380,9 @@
                 <span class="k">yield</span> <span class="n">key</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__contains__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">overlay</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_overlay_stack</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">overlay</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">True</span>
         <span class="k">return</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span> <span class="ow">or</span> <span class="p">(</span>
             <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span><span class="p">[</span><span class="n">item</span><span class="p">]</span><span class="o">.</span><span class="n">default</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">DefaultNotGiven</span>
         <span class="p">)</span>
