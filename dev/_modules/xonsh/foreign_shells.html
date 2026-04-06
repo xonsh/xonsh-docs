@@ -480,7 +480,14 @@
 
 <span class="nd">@lazyobject</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">DEFAULT_ENVCMDS</span><span class="p">():</span>
-    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;bash&quot;</span><span class="p">:</span> <span class="s2">&quot;env&quot;</span><span class="p">,</span> <span class="s2">&quot;zsh&quot;</span><span class="p">:</span> <span class="s2">&quot;env&quot;</span><span class="p">,</span> <span class="s2">&quot;cmd&quot;</span><span class="p">:</span> <span class="s2">&quot;set&quot;</span><span class="p">}</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="c1"># env -0 uses null bytes as separators, which correctly handles</span>
+        <span class="c1"># multi-line values (e.g. BASH_FUNC_* exported functions).</span>
+        <span class="c1"># Falls back to plain env if -0 is not supported.</span>
+        <span class="s2">&quot;bash&quot;</span><span class="p">:</span> <span class="s2">&quot;env -0 2&gt;/dev/null || env&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;zsh&quot;</span><span class="p">:</span> <span class="s2">&quot;env -0 2&gt;/dev/null || env&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;cmd&quot;</span><span class="p">:</span> <span class="s2">&quot;set&quot;</span><span class="p">,</span>
+    <span class="p">}</span>
 
 
 <span class="nd">@lazyobject</span>
@@ -709,8 +716,13 @@
 
 
 <span class="nd">@lazyobject</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">ENV_SPLIT_RE</span><span class="p">():</span>
-    <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s2">&quot;^([^=]+)=([^=]*|[^</span><span class="se">\n</span><span class="s2">]*)$&quot;</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">DOTALL</span> <span class="o">|</span> <span class="n">re</span><span class="o">.</span><span class="n">MULTILINE</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_ENV_LINE_KEY_RE</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Matches the start of a KEY=VALUE line in env output.</span>
+
+<span class="sd">    A valid env var name starts with a letter or underscore, followed by</span>
+<span class="sd">    letters, digits, underscores, or percent signs (for BASH_FUNC_xxx%%).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;^([A-Za-z_][A-Za-z0-9_%]*)=(.*)&quot;</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">DOTALL</span><span class="p">)</span>
 
 
 <div class="viewcode-block" id="parse_env">
@@ -722,7 +734,33 @@
         <span class="k">return</span> <span class="p">{}</span>
     <span class="n">g1</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
     <span class="n">g1</span> <span class="o">=</span> <span class="n">g1</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="n">g1</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="n">g1</span>
-    <span class="n">env</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">ENV_SPLIT_RE</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="n">g1</span><span class="p">))</span>
+    <span class="k">if</span> <span class="s2">&quot;</span><span class="se">\0</span><span class="s2">&quot;</span> <span class="ow">in</span> <span class="n">g1</span><span class="p">:</span>
+        <span class="c1"># Null-separated output from env -0.</span>
+        <span class="c1"># Correctly handles multi-line values (e.g. exported bash functions).</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">g1</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\0</span><span class="s2">&quot;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="s2">&quot;=&quot;</span> <span class="ow">in</span> <span class="n">entry</span><span class="p">:</span>
+                <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="o">=</span> <span class="n">entry</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="n">env</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+        <span class="k">return</span> <span class="n">env</span>
+    <span class="c1"># Fallback for systems where env -0 is not available.</span>
+    <span class="c1"># Detect new KEY=VALUE pairs by matching lines that start with a</span>
+    <span class="c1"># valid variable name followed by &#39;=&#39;. Lines that don&#39;t match are</span>
+    <span class="c1"># treated as continuation of the previous value.</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">key</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">value_lines</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">g1</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">):</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">_ENV_LINE_KEY_RE</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">m</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">key</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">env</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">value_lines</span><span class="p">)</span>
+            <span class="n">key</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">value_lines</span> <span class="o">=</span> <span class="p">[</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">2</span><span class="p">)]</span>
+        <span class="k">elif</span> <span class="n">key</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">value_lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">key</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">env</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">value_lines</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">env</span></div>
 
 
