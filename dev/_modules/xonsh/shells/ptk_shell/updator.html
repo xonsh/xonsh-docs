@@ -515,18 +515,21 @@
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">tokens</span><span class="p">:</span>
             <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Warn: AsyncPrompt is created without tokens - </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
             <span class="k">return</span>
-        <span class="k">for</span> <span class="n">fut</span> <span class="ow">in</span> <span class="n">concurrent</span><span class="o">.</span><span class="n">futures</span><span class="o">.</span><span class="n">as_completed</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">futures</span><span class="p">):</span>
+        <span class="c1"># Snapshot to avoid RuntimeError if stop() clears self.futures</span>
+        <span class="c1"># from the main thread while we iterate here.</span>
+        <span class="n">futures</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">futures</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">fut</span> <span class="ow">in</span> <span class="n">concurrent</span><span class="o">.</span><span class="n">futures</span><span class="o">.</span><span class="n">as_completed</span><span class="p">(</span><span class="n">futures</span><span class="p">):</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="n">val</span> <span class="o">=</span> <span class="n">fut</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
             <span class="k">except</span> <span class="n">concurrent</span><span class="o">.</span><span class="n">futures</span><span class="o">.</span><span class="n">CancelledError</span><span class="p">:</span>
                 <span class="k">continue</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.tools</span><span class="w"> </span><span class="kn">import</span> <span class="n">print_exception</span>
 
-            <span class="k">if</span> <span class="n">fut</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">futures</span><span class="p">:</span>
-                <span class="c1"># rare case where the future is completed but the container is already cleared</span>
-                <span class="c1"># because new prompt is called</span>
+                <span class="n">print_exception</span><span class="p">(</span><span class="s2">&quot;Exception in async prompt field callback; ignored.&quot;</span><span class="p">)</span>
                 <span class="k">continue</span>
 
-            <span class="n">placeholder</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">conv</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">futures</span><span class="p">[</span><span class="n">fut</span><span class="p">]</span>
+            <span class="n">placeholder</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">conv</span> <span class="o">=</span> <span class="n">futures</span><span class="p">[</span><span class="n">fut</span><span class="p">]</span>
             <span class="c1"># example: placeholder=&quot;{field}&quot;, idx=10, spec=&quot;env: {}&quot;</span>
 
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
@@ -559,8 +562,16 @@
             <span class="n">formatted_tokens</span> <span class="o">=</span> <span class="n">tokenize_ansi</span><span class="p">(</span>
                 <span class="n">PygmentsTokens</span><span class="p">(</span><span class="n">partial_color_tokenize</span><span class="p">(</span><span class="n">new_prompt</span><span class="p">))</span>
             <span class="p">)</span>
-            <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">session</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">formatted_tokens</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">session</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">invalidate</span><span class="p">()</span>
+            <span class="n">app</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">session</span><span class="o">.</span><span class="n">app</span>
+
+            <span class="k">def</span><span class="w"> </span><span class="nf">_update_in_main</span><span class="p">():</span>
+                <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">session</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">formatted_tokens</span><span class="p">)</span>
+                <span class="n">app</span><span class="o">.</span><span class="n">invalidate</span><span class="p">()</span>
+
+            <span class="k">if</span> <span class="n">app</span><span class="o">.</span><span class="n">loop</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">app</span><span class="o">.</span><span class="n">loop</span><span class="o">.</span><span class="n">call_soon_threadsafe</span><span class="p">(</span><span class="n">_update_in_main</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">_update_in_main</span><span class="p">()</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">timer</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Timer</span><span class="p">(</span><span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="p">[</span><span class="s2">&quot;ASYNC_INVALIDATE_INTERVAL&quot;</span><span class="p">],</span> <span class="n">_invalidate</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">timer</span><span class="o">.</span><span class="n">start</span><span class="p">()</span></div>
@@ -570,6 +581,8 @@
 <a class="viewcode-back" href="../../../../api/_autosummary/cmd/xonsh.shells.ptk_shell.updator.html#xonsh.shells.ptk_shell.updator.AsyncPrompt.stop">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">stop</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Stop any running threads&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">timer</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">timer</span><span class="o">.</span><span class="n">cancel</span><span class="p">()</span>
         <span class="k">for</span> <span class="n">fut</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">futures</span><span class="p">:</span>
             <span class="n">fut</span><span class="o">.</span><span class="n">cancel</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">futures</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span></div>
@@ -624,9 +637,18 @@
 <div class="viewcode-block" id="PromptUpdator.add_attrs">
 <a class="viewcode-back" href="../../../../api/_autosummary/cmd/xonsh.shells.ptk_shell.updator.html#xonsh.shells.ptk_shell.updator.PromptUpdator.add_attrs">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">add_attrs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">for</span> <span class="n">attr</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">get_lazy_ptk_kwargs</span><span class="p">():</span>
-            <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">prompter</span><span class="p">,</span> <span class="n">attr</span><span class="p">,</span> <span class="n">val</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">prompter</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">invalidate</span><span class="p">()</span></div>
+        <span class="n">attrs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">get_lazy_ptk_kwargs</span><span class="p">())</span>
+        <span class="n">app</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">prompter</span><span class="o">.</span><span class="n">app</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_update_in_main</span><span class="p">():</span>
+            <span class="k">for</span> <span class="n">attr</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">attrs</span><span class="p">:</span>
+                <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shell</span><span class="o">.</span><span class="n">prompter</span><span class="p">,</span> <span class="n">attr</span><span class="p">,</span> <span class="n">val</span><span class="p">)</span>
+            <span class="n">app</span><span class="o">.</span><span class="n">invalidate</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">app</span><span class="o">.</span><span class="n">loop</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">app</span><span class="o">.</span><span class="n">loop</span><span class="o">.</span><span class="n">call_soon_threadsafe</span><span class="p">(</span><span class="n">_update_in_main</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">_update_in_main</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="PromptUpdator.start">
