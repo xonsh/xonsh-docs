@@ -975,29 +975,32 @@
         <span class="n">safe_flush</span><span class="p">(</span><span class="n">sp_stdout</span><span class="p">)</span>
         <span class="n">safe_flush</span><span class="p">(</span><span class="n">sp_stderr</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">returncode</span> <span class="o">=</span> <span class="n">parse_proxy_return</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">sp_stdout</span><span class="p">,</span> <span class="n">sp_stderr</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">last_in_pipeline</span><span class="p">:</span>
-            <span class="c1"># Close wrappers before closing raw fds to avoid</span>
-            <span class="c1"># &quot;Bad file descriptor&quot; on finalization in Python 3.14+.</span>
-            <span class="n">safe_fdclose</span><span class="p">(</span><span class="n">sp_stdout</span><span class="p">)</span>
-            <span class="n">safe_fdclose</span><span class="p">(</span><span class="n">sp_stderr</span><span class="p">)</span>
-            <span class="c1"># Close write ends via PipeChannel to signal EOF to downstream</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">last_in_pipeline</span><span class="p">:</span>
+                <span class="c1"># Close wrappers before closing raw fds to avoid</span>
+                <span class="c1"># &quot;Bad file descriptor&quot; on finalization in Python 3.14+.</span>
+                <span class="n">safe_fdclose</span><span class="p">(</span><span class="n">sp_stdout</span><span class="p">)</span>
+                <span class="n">safe_fdclose</span><span class="p">(</span><span class="n">sp_stderr</span><span class="p">)</span>
+                <span class="c1"># Close write ends via PipeChannel to signal EOF to downstream</span>
+                <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">spec</span><span class="o">.</span><span class="n">pipe_channels</span><span class="p">:</span>
+                    <span class="n">ch</span><span class="o">.</span><span class="n">close_writer</span><span class="p">()</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stdout_pipe</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_stdout_pipe</span><span class="o">.</span><span class="n">close_writer</span><span class="p">()</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stderr_pipe</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_stderr_pipe</span><span class="o">.</span><span class="n">close_writer</span><span class="p">()</span>
+                <span class="k">return</span>
+            <span class="c1"># clean up</span>
+            <span class="k">for</span> <span class="n">handle</span> <span class="ow">in</span> <span class="p">(</span><span class="n">sp_stdout</span><span class="p">,</span> <span class="n">sp_stderr</span><span class="p">):</span>
+                <span class="n">safe_fdclose</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="n">cache</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_closed_handle_cache</span><span class="p">)</span>
+            <span class="c1"># Close write ends via PipeChannel to signal EOF to readers</span>
             <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">spec</span><span class="o">.</span><span class="n">pipe_channels</span><span class="p">:</span>
                 <span class="n">ch</span><span class="o">.</span><span class="n">close_writer</span><span class="p">()</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stdout_pipe</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_stdout_pipe</span><span class="o">.</span><span class="n">close_writer</span><span class="p">()</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stderr_pipe</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_stderr_pipe</span><span class="o">.</span><span class="n">close_writer</span><span class="p">()</span>
-            <span class="k">return</span>
-        <span class="c1"># clean up</span>
-        <span class="k">for</span> <span class="n">handle</span> <span class="ow">in</span> <span class="p">(</span><span class="n">sp_stdout</span><span class="p">,</span> <span class="n">sp_stderr</span><span class="p">):</span>
-            <span class="n">safe_fdclose</span><span class="p">(</span><span class="n">handle</span><span class="p">,</span> <span class="n">cache</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_closed_handle_cache</span><span class="p">)</span>
-        <span class="c1"># Close write ends via PipeChannel to signal EOF to readers</span>
-        <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">spec</span><span class="o">.</span><span class="n">pipe_channels</span><span class="p">:</span>
-            <span class="n">ch</span><span class="o">.</span><span class="n">close_writer</span><span class="p">()</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stdout_pipe</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_stdout_pipe</span><span class="o">.</span><span class="n">close_writer</span><span class="p">()</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stderr_pipe</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_stderr_pipe</span><span class="o">.</span><span class="n">close_writer</span><span class="p">()</span></div>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_close_devnull</span><span class="p">()</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_wait_and_getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
@@ -1069,6 +1072,11 @@
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_devnull&quot;</span><span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_devnull</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">devnull</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">O_RDWR</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_devnull</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_close_devnull</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_devnull&quot;</span><span class="p">):</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_devnull</span><span class="p">)</span>
+            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_devnull</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_get_handles</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stdin</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Construct and return tuple with IO objects:</span>
