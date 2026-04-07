@@ -1872,16 +1872,74 @@ written in pure Python.</p>
 <span class="go">&lt;json.loads help&gt;</span>
 </pre></div>
 </div>
-<p>It works for subprocess commands as well:</p>
+<p>It works for subprocess commands as well. Behavior depends on whether
+the name is a <strong>binary</strong> on <code class="docutils literal notranslate"><span class="pre">$PATH</span></code> or an <strong>alias</strong>:</p>
+<p>For a binary, <code class="docutils literal notranslate"><span class="pre">?</span></code> prints just the resolved path; <code class="docutils literal notranslate"><span class="pre">??</span></code> additionally
+runs <code class="docutils literal notranslate"><span class="pre">man</span></code>:</p>
 <div class="highlight-xonshcon notranslate"><div class="highlight"><pre><span></span><span class="gp">@ </span><span class="n">whoami</span><span class="k">?</span>
-<span class="go">whoami - print effective user name</span>
-<span class="gp">@</span> <span class="n">ls</span><span class="k">?</span>
-<span class="go">[&#39;ls&#39;, &#39;-G&#39;]</span>
-<span class="gp">@</span> <span class="n">xonfig</span><span class="k">?</span>
-<span class="go">&lt;xonsh.xonfig.XonfigAlias&gt;</span>
-<span class="go">Manage xonsh configuration.</span>
+<span class="go">Resolved whoami: &#39;/usr/bin/whoami&#39;</span>
+
+<span class="gp">@</span> <span class="n">whoami</span><span class="k">??</span>
+<span class="go">Resolved whoami: &#39;/usr/bin/whoami&#39;</span>
+<span class="go">Running man whoami</span>
+<span class="go">WHOAMI(1)                   General Commands Manual                  WHOAMI(1)</span>
+<span class="go">…</span>
 </pre></div>
 </div>
+<p>When the name does not resolve to any binary, <code class="docutils literal notranslate"><span class="pre">??</span></code> no longer falls
+through to <code class="docutils literal notranslate"><span class="pre">man</span></code> — the failed resolution is printed on its own line:</p>
+<div class="highlight-xonshcon notranslate"><div class="highlight"><pre><span></span><span class="gp">@ </span><span class="n">nosuch</span><span class="k">?</span>
+<span class="go">Resolved nosuch: None</span>
+</pre></div>
+</div>
+<p>For an alias, <code class="docutils literal notranslate"><span class="pre">?</span></code> gives a short summary and <code class="docutils literal notranslate"><span class="pre">??</span></code> adds the
+docstring, threadable/capturable flags (when set), the source file
+location and — the new bit — <strong>the function source code</strong> for
+callable aliases, fetched via <code class="docutils literal notranslate"><span class="pre">inspect.getsource</span></code>:</p>
+<div class="highlight-xonshcon notranslate"><div class="highlight"><pre><span></span><span class="gp">@ </span><span class="n">ls</span><span class="k">?</span>
+<span class="go">Alias: [&#39;ls&#39;, &#39;-G&#39;]</span>
+
+<span class="gp">@</span> <span class="n">xonfig</span><span class="k">?</span>
+<span class="go">Alias: &lt;xonsh.xonfig.XonfigAlias&gt;</span>
+<span class="go">Descr: Manage xonsh configuration.</span>
+</pre></div>
+</div>
+<p>Define a callable alias and ask for the super-help form:</p>
+<div class="highlight-xonshcon notranslate"><div class="highlight"><pre><span></span><span class="gp">@ </span><span class="c1"># ~/.xonshrc</span>
+<span class="go">  @aliases.register</span>
+<span class="go">  def _greet(args):</span>
+<span class="go">      &quot;&quot;&quot;Print a friendly greeting.&quot;&quot;&quot;</span>
+<span class="go">      print(&quot;hello,&quot;, *args)</span>
+
+<span class="gp">@</span> <span class="n">greet</span><span class="k">?</span>
+<span class="go">Alias: FuncAlias({&#39;name&#39;: &#39;greet&#39;, &#39;func&#39;: &#39;_greet&#39;, &#39;return_what&#39;: &#39;result&#39;})</span>
+<span class="go">Descr: Print a friendly greeting.</span>
+
+<span class="gp">@</span> <span class="n">greet</span><span class="k">??</span>
+<span class="go">Alias: FuncAlias({&#39;name&#39;: &#39;greet&#39;, &#39;func&#39;: &#39;_greet&#39;, &#39;return_what&#39;: &#39;result&#39;})</span>
+<span class="go">Descr: Print a friendly greeting.</span>
+<span class="go">Source: /home/snail/.xonshrc:1</span>
+<span class="go">Code:</span>
+<span class="gp">@</span><span class="n">aliases</span><span class="o">.</span><span class="n">register</span>
+<span class="go">def _greet(args):</span>
+<span class="go">    &quot;&quot;&quot;Print a friendly greeting.&quot;&quot;&quot;</span>
+<span class="go">    print(&quot;hello,&quot;, *args)</span>
+</pre></div>
+</div>
+<p>List-style aliases expand recursively through other aliases, and you
+can see where the leading token resolves on disk:</p>
+<div class="highlight-xonshcon notranslate"><div class="highlight"><pre><span></span><span class="gp">@ </span><span class="n">aliases</span><span class="p">[</span><span class="s1">&#39;lst&#39;</span><span class="p">]</span>  <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;ls&#39;</span><span class="p">,</span> <span class="s1">&#39;-la&#39;</span><span class="p">]</span>
+<span class="gp">@</span> <span class="n">aliases</span><span class="p">[</span><span class="s1">&#39;lst2&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;lst&#39;</span><span class="p">,</span> <span class="s1">&#39;/tmp&#39;</span><span class="p">]</span>
+<span class="gp">@</span> <span class="n">lst2</span><span class="k">??</span>
+<span class="go">Alias: [&#39;lst&#39;, &#39;/tmp&#39;]</span>
+<span class="go">Expanded: [&#39;ls&#39;, &#39;-G&#39;, &#39;-la&#39;, &#39;/tmp&#39;]</span>
+<span class="go">Resolved ls: &#39;/opt/homebrew/.../ls&#39;</span>
+</pre></div>
+</div>
+<p>For callable aliases defined interactively in the REPL, <code class="docutils literal notranslate"><span class="pre">inspect</span></code>
+has no source file to read from (<code class="docutils literal notranslate"><span class="pre">co_filename</span></code> is <code class="docutils literal notranslate"><span class="pre">&lt;stdin&gt;</span></code>), so
+<code class="docutils literal notranslate"><span class="pre">Code:</span></code> is replaced with a <code class="docutils literal notranslate"><span class="pre">&lt;source</span> <span class="pre">unavailable&gt;</span></code> placeholder
+while <code class="docutils literal notranslate"><span class="pre">Source:</span></code> still shows where the function was declared.</p>
 </section>
 <section id="that-s-all-folks">
 <h2>That’s All, Folks<a class="headerlink" href="#that-s-all-folks" title="Link to this heading">¶</a></h2>
