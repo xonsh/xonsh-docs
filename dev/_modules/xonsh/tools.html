@@ -3154,12 +3154,54 @@
 <span class="sd">    quote : str (or None)</span>
 <span class="sd">        A string containing the quote used to start the string (e.g., b&quot;, &quot;,</span>
 <span class="sd">        &#39;&#39;&#39;), or None if no string was found.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    This is a regex-based scanner, not a full Python tokenizer. It correctly</span>
+<span class="sd">    handles `#` comments at the top level (quotes inside `#...\n` are ignored)</span>
+<span class="sd">    and `#` inside string literals (which are part of the string, not a</span>
+<span class="sd">    comment). Known limitations / cases NOT covered:</span>
+
+<span class="sd">    * PEP 701 f-strings with nested quotes of the same kind, e.g.</span>
+<span class="sd">      ``f&quot;{ &quot;hi&quot; }&quot;`` (Python 3.12+). The scanner sees this as two separate</span>
+<span class="sd">      strings (``f&quot;{ &quot;`` and ``&quot; }&quot;``) instead of one f-string. Quotes of a</span>
+<span class="sd">      *different* kind nested inside f-string expressions work fine.</span>
+<span class="sd">    * Brace-balancing inside f-string expressions in general — anything that</span>
+<span class="sd">      relies on knowing where ``{ ... }`` starts and ends is out of scope.</span>
+<span class="sd">    * Comment characters that are not ``#`` (xonsh has no others, but other</span>
+<span class="sd">      shells&#39; line-comment markers are not recognized).</span>
+<span class="sd">    * Line continuation inside ``#`` comments — irrelevant since Python</span>
+<span class="sd">      comments always end at the next newline regardless of any trailing</span>
+<span class="sd">      backslash.</span>
+<span class="sd">    * Arbitrary Python tokenization errors: malformed input (e.g. four</span>
+<span class="sd">      double-quotes in a row) may be reported as a partial triple-quoted</span>
+<span class="sd">      string rather than a syntax error; downstream code is responsible for</span>
+<span class="sd">      validating syntax.</span>
+
+<span class="sd">    Improvements are welcome!</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">string_indices</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="n">starting_quote</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="n">current_index</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="n">match</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">RE_BEGIN_STRING</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span>
-    <span class="k">while</span> <span class="n">match</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="n">match</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">RE_BEGIN_STRING</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">match</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">break</span>
+        <span class="c1"># If the match is inside a `#` comment (i.e. there is a `#` between</span>
+        <span class="c1"># the most recent newline and the match), skip the rest of that</span>
+        <span class="c1"># comment line and search again. This avoids treating quotes inside</span>
+        <span class="c1"># comments as string delimiters.</span>
+        <span class="n">prefix</span> <span class="o">=</span> <span class="n">x</span><span class="p">[:</span> <span class="n">match</span><span class="o">.</span><span class="n">start</span><span class="p">()]</span>
+        <span class="n">line_prefix</span> <span class="o">=</span> <span class="n">prefix</span><span class="p">[</span><span class="n">prefix</span><span class="o">.</span><span class="n">rfind</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span> <span class="p">:]</span>
+        <span class="k">if</span> <span class="s2">&quot;#&quot;</span> <span class="ow">in</span> <span class="n">line_prefix</span><span class="p">:</span>
+            <span class="n">nl_after</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">match</span><span class="o">.</span><span class="n">start</span><span class="p">())</span>
+            <span class="k">if</span> <span class="n">nl_after</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="c1"># rest of input is a comment; no more strings to find</span>
+                <span class="k">break</span>
+            <span class="n">offset</span> <span class="o">=</span> <span class="n">nl_after</span> <span class="o">+</span> <span class="mi">1</span>
+            <span class="n">current_index</span> <span class="o">+=</span> <span class="n">offset</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="n">offset</span><span class="p">:]</span>
+            <span class="k">continue</span>
         <span class="c1"># add the start in</span>
         <span class="n">start</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
         <span class="n">quote</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
@@ -3184,8 +3226,6 @@
         <span class="k">if</span> <span class="n">contents</span><span class="o">.</span><span class="n">end</span><span class="p">()</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
             <span class="n">string_indices</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">current_index</span><span class="p">)</span>
         <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="n">leninside</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">ender</span><span class="p">)</span> <span class="p">:]</span>
-        <span class="c1"># find the next match</span>
-        <span class="n">match</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">RE_BEGIN_STRING</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span>
     <span class="n">numquotes</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">string_indices</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">numquotes</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
         <span class="k">return</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
