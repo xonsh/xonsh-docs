@@ -1165,15 +1165,25 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">stdin</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+            <span class="c1"># Close ONLY the writer end of any connecting pipe.  The reader</span>
+            <span class="c1"># end is in active use by the next proc in the pipeline (which</span>
+            <span class="c1"># may still be draining buffered data); closing it here would</span>
+            <span class="c1"># invalidate the fd mid-read and surface as</span>
+            <span class="c1"># `OSError: [Errno 9] Bad file descriptor` in the consumer</span>
+            <span class="c1"># (e.g. a callable alias iterating over `stdin`).</span>
+            <span class="c1"># The reader is closed later in `_close_prev_procs` /</span>
+            <span class="c1"># `_close_proc`, after the next proc has finished.</span>
             <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">s</span><span class="o">.</span><span class="n">pipe_channels</span><span class="p">:</span>
-                <span class="n">ch</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+                <span class="n">ch</span><span class="o">.</span><span class="n">close_writer</span><span class="p">()</span>
             <span class="k">if</span> <span class="n">p</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">continue</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">stdin</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+
+            <span class="c1"># Close ONLY the writer. Described above.</span>
             <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="s2">&quot;pipe_channels&quot;</span><span class="p">,</span> <span class="p">()):</span>
-                <span class="n">ch</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+                <span class="n">ch</span><span class="o">.</span><span class="n">close_writer</span><span class="p">()</span>
         <span class="k">return</span> <span class="kc">False</span> <span class="k">if</span> <span class="n">any_running</span> <span class="k">else</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_close_prev_procs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
