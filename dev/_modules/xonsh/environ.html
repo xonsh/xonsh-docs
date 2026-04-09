@@ -219,6 +219,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../prompt.html">Prompt</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../events.html">Built-in Events</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../globbing.html">Globbing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../error_handling.html">Subprocess Error Handling</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../macros.html">Macros</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../xonsh_session.html">Xonsh Session</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/xonsh/xonsh">Open technical issue</a></li>
@@ -1818,13 +1819,30 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">SubprocessSetting</span><span class="p">(</span><span class="n">Xettings</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Subprocess Settings&quot;&quot;&quot;</span>
 
-    <span class="n">RAISE_SUBPROC_ERROR</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
+    <span class="n">XONSH_SUBPROC_CMD_RAISE_ERROR</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
         <span class="kc">False</span><span class="p">,</span>
         <span class="s2">&quot;Whether or not to raise an error if a subprocess (captured or &quot;</span>
         <span class="s2">&quot;uncaptured) returns a non-zero exit status, which indicates failure. &quot;</span>
         <span class="s2">&quot;This is most useful in xonsh scripts or modules where failures &quot;</span>
         <span class="s2">&quot;should cause an end to execution. This is less useful at a terminal. &quot;</span>
-        <span class="s2">&quot;The error that is raised is a ``subprocess.CalledProcessError``.&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;The error that is raised is a ``subprocess.CalledProcessError``. &quot;</span>
+        <span class="s2">&quot;(Replaces the deprecated ``$RAISE_SUBPROC_ERROR``.)&quot;</span><span class="p">,</span>
+        <span class="n">sync</span><span class="o">=</span><span class="s2">&quot;RAISE_SUBPROC_ERROR&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">XONSH_SUBPROC_RAISE_ERROR</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
+        <span class="kc">True</span><span class="p">,</span>
+        <span class="s2">&quot;Whether or not to raise an error when the *final* command of a &quot;</span>
+        <span class="s2">&quot;logical chain (``cmd1 &amp;&amp; cmd2`` / ``cmd1 || cmd2``) returns a &quot;</span>
+        <span class="s2">&quot;non-zero exit status.  Unlike ``$XONSH_SUBPROC_CMD_RAISE_ERROR`` &quot;</span>
+        <span class="s2">&quot;(which raises on every individual non-zero subprocess), commands &quot;</span>
+        <span class="s2">&quot;inside a logical chain do not raise on their own — only the &quot;</span>
+        <span class="s2">&quot;result of the whole short-circuit evaluation is checked. &quot;</span>
+        <span class="s2">&quot;Examples (with the default ``True``):</span><span class="se">\n\n</span><span class="s2">&quot;</span>
+        <span class="s2">&quot;* ``echo 1 &amp;&amp; echo 2`` — last executed is ``echo 2`` (rc=0): no raise.</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="s2">&quot;* ``ls nono || echo 1`` — last executed is ``echo 1`` (rc=0): no raise.</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="s2">&quot;* ``ls nono &amp;&amp; echo 1`` — last executed is ``ls nono`` (rc≠0): raises.</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="s2">&quot;* ``(echo 1 &amp;&amp; ls /etc) || echo 1`` — last executed is ``ls /etc`` (rc=0): no raise.</span><span class="se">\n\n</span><span class="s2">&quot;</span>
+        <span class="s2">&quot;The exception raised is a ``subprocess.CalledProcessError``.&quot;</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">LAST_RETURN_CODE</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
         <span class="mi">0</span><span class="p">,</span>
@@ -2193,6 +2211,26 @@
     <span class="n">INDENT</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
         <span class="s2">&quot;    &quot;</span><span class="p">,</span>
         <span class="s2">&quot;Indentation string for multiline input&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">XONSH_PROMPT_SHOW_SUBPROC_ERROR</span> <span class="o">=</span> <span class="n">Var</span><span class="o">.</span><span class="n">with_default</span><span class="p">(</span>
+        <span class="kc">False</span><span class="p">,</span>
+        <span class="s2">&quot;Whether the interactive prompt should display the &quot;</span>
+        <span class="s2">&quot;``subprocess.CalledProcessError`` message when a command at the &quot;</span>
+        <span class="s2">&quot;prompt fails.  The failing command&#39;s own ``stderr`` is always &quot;</span>
+        <span class="s2">&quot;shown — this flag only controls xonsh&#39;s own exception printout &quot;</span>
+        <span class="s2">&quot;that follows it.</span><span class="se">\n\n</span><span class="s2">&quot;</span>
+        <span class="s2">&quot;* ``False`` *(default)*: after a failing command the prompt &quot;</span>
+        <span class="s2">&quot;returns silently; the command&#39;s ``stderr`` is still visible and &quot;</span>
+        <span class="s2">&quot;``$LAST_RETURN_CODE`` is set.</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="s2">&quot;* ``True``: xonsh additionally prints &quot;</span>
+        <span class="s2">&quot;``subprocess.CalledProcessError: Command &#39;...&#39; returned non-zero &quot;</span>
+        <span class="s2">&quot;exit status N.``.</span><span class="se">\n\n</span><span class="s2">&quot;</span>
+        <span class="s2">&quot;Notes:</span><span class="se">\n\n</span><span class="s2">&quot;</span>
+        <span class="s2">&quot;* Per-command ``@error_raise`` decorator always shows the &quot;</span>
+        <span class="s2">&quot;exception, regardless of this flag.</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="s2">&quot;* Non-interactive scripts (run via ``./script.xsh`` or &quot;</span>
+        <span class="s2">&quot;``xonsh -c``) are unaffected — there the exception propagates &quot;</span>
+        <span class="s2">&quot;normally so the failure is visible.&quot;</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">LS_COLORS</span> <span class="o">=</span> <span class="n">Var</span><span class="p">(</span>
         <span class="n">is_lscolors</span><span class="p">,</span>
@@ -2847,6 +2885,9 @@
 
     <span class="n">AUTO_SUGGEST</span> <span class="o">=</span> <span class="n">PTKSetting</span><span class="o">.</span><span class="n">XONSH_PROMPT_AUTO_SUGGEST</span><span class="o">.</span><span class="n">set_attrs</span><span class="p">(</span>
         <span class="p">{</span><span class="s2">&quot;sync&quot;</span><span class="p">:</span> <span class="s2">&quot;XONSH_PROMPT_AUTO_SUGGEST&quot;</span><span class="p">,</span> <span class="s2">&quot;deprecated&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">}</span>
+    <span class="p">)</span>
+    <span class="n">RAISE_SUBPROC_ERROR</span> <span class="o">=</span> <span class="n">SubprocessSetting</span><span class="o">.</span><span class="n">XONSH_SUBPROC_CMD_RAISE_ERROR</span><span class="o">.</span><span class="n">set_attrs</span><span class="p">(</span>
+        <span class="p">{</span><span class="s2">&quot;sync&quot;</span><span class="p">:</span> <span class="s2">&quot;XONSH_SUBPROC_CMD_RAISE_ERROR&quot;</span><span class="p">,</span> <span class="s2">&quot;deprecated&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">}</span>
     <span class="p">)</span></div>
 
 
@@ -2896,7 +2937,19 @@
 
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="n">os_environ</span><span class="p">,)</span>
-        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="nb">dict</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">initial</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="c1"># Avoid a spurious DeprecationWarning when both a deprecated</span>
+        <span class="c1"># alias (e.g. ``RAISE_SUBPROC_ERROR``) and its canonical name</span>
+        <span class="c1"># (``XONSH_SUBPROC_CMD_RAISE_ERROR``) are present in the source</span>
+        <span class="c1"># dict — which happens whenever a parent xonsh process set the</span>
+        <span class="c1"># canonical name and the sync mechanism mirrored the value into</span>
+        <span class="c1"># os.environ.  The canonical name alone will re-populate the</span>
+        <span class="c1"># alias via its forward ``sync=`` declaration, so we can skip</span>
+        <span class="c1"># the deprecated key silently here.</span>
+        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">initial</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">var</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vars</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">var</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">var</span><span class="o">.</span><span class="n">deprecated</span> <span class="ow">and</span> <span class="n">var</span><span class="o">.</span><span class="n">sync</span> <span class="ow">and</span> <span class="n">var</span><span class="o">.</span><span class="n">sync</span> <span class="ow">in</span> <span class="n">initial</span><span class="p">:</span>
+                <span class="k">continue</span>
             <span class="bp">self</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">val</span>
         <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
             <span class="n">path_key</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">k</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_d</span> <span class="k">if</span> <span class="n">k</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;PATH&quot;</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>

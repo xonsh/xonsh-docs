@@ -220,6 +220,7 @@
 <li class="toctree-l1"><a class="reference internal" href="prompt.html">Prompt</a></li>
 <li class="toctree-l1"><a class="reference internal" href="events.html">Built-in Events</a></li>
 <li class="toctree-l1"><a class="reference internal" href="globbing.html">Globbing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="error_handling.html">Subprocess Error Handling</a></li>
 <li class="toctree-l1"><a class="reference internal" href="macros.html">Macros</a></li>
 <li class="toctree-l1"><a class="reference internal" href="xonsh_session.html">Xonsh Session</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/xonsh/xonsh">Open technical issue</a></li>
@@ -1827,12 +1828,46 @@ operates on a given argument, rather than on the string <code class="docutils li
 <span class="go">s n a i l s</span>
 </pre></div>
 </div>
-<p>Additionally, if the script should exit if a command fails, set the
-environment variable <code class="docutils literal notranslate"><span class="pre">$RAISE_SUBPROC_ERROR</span> <span class="pre">=</span> <span class="pre">True</span></code> at the top of the
-file. Errors in Python mode will already raise exceptions.</p>
 <p>Furthermore, you can also toggle the ability to print source code lines with the
 <code class="docutils literal notranslate"><span class="pre">trace</span> <span class="pre">on</span></code> and <code class="docutils literal notranslate"><span class="pre">trace</span> <span class="pre">off</span></code> commands.  This is roughly equivalent to
 Python’s <code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">-m</span> <span class="pre">trace</span></code>.</p>
+</section>
+<section id="error-handling">
+<h2>Error Handling<a class="headerlink" href="#error-handling" title="Link to this heading">¶</a></h2>
+<p>Xonsh treats shell commands as first-class code.  When a command fails,
+you usually want your script to <strong>stop</strong> instead of silently marching
+past the failure — the way a Python exception would — but you also want
+the flexibility of <code class="docutils literal notranslate"><span class="pre">&amp;&amp;</span></code>/<code class="docutils literal notranslate"><span class="pre">||</span></code> short-circuit logic that the shell is
+built around.</p>
+<p>By default, execution stops as soon as a command <strong>chain</strong> ends in a
+failing command.  A chain is any group of commands whose result is
+determined together — a pipe, a logical <code class="docutils literal notranslate"><span class="pre">&amp;&amp;</span></code>/<code class="docutils literal notranslate"><span class="pre">||</span></code> expression, or a
+bare single command.  It is the <em>final</em> result of the chain that
+decides whether execution continues; individual commands that are
+explicitly rescued by <code class="docutils literal notranslate"><span class="pre">||</span></code> are not fatal.</p>
+<p>A couple of examples:</p>
+<div class="highlight-xonshcon notranslate"><div class="highlight"><pre><span></span><span class="gp">@ </span><span class="n">echo</span> <span class="n">hi</span> <span class="o">|</span> <span class="n">grep</span> <span class="n">x</span>                  <span class="c1"># pipe chain — grep didn&#39;t match → raise</span>
+<span class="gp">@</span> <span class="n">ls</span> <span class="n">nofile</span> <span class="o">&amp;&amp;</span> <span class="n">echo</span> <span class="n">never</span>           <span class="c1"># &amp;&amp; chain — ls failed → raise, echo skipped</span>
+<span class="gp">@</span> <span class="n">ls</span> <span class="n">nofile</span> <span class="o">||</span> <span class="n">echo</span> <span class="n">rescued</span>         <span class="c1"># || chain — rescued by echo, no raise</span>
+<span class="go">rescued</span>
+<span class="gp">@</span> <span class="p">(</span><span class="n">echo</span> <span class="mi">1</span> <span class="o">&amp;&amp;</span> <span class="n">ls</span> <span class="o">/</span><span class="n">etc</span><span class="p">)</span> <span class="o">||</span> <span class="n">echo</span> <span class="n">fb</span>    <span class="c1"># nested — inner chain succeeded, no raise</span>
+</pre></div>
+</div>
+<p>The <strong>only</strong> subprocess form that does not stop execution on failure
+is the full-capture operator <code class="docutils literal notranslate"><span class="pre">!(...)</span></code>: it returns a
+<code class="docutils literal notranslate"><span class="pre">CommandPipeline</span></code> object and leaves error handling entirely up to
+you.  This is the idiomatic way to inspect a command’s result without
+triggering an exception:</p>
+<div class="highlight-xonshcon notranslate"><div class="highlight"><pre><span></span><span class="gp">@ </span><span class="k">if</span> <span class="k">!</span><span class="p">(</span><span class="nb">ls</span> nofile<span class="p">):</span>
+<span class="go">      print(&quot;found&quot;)</span>
+<span class="go">  else:</span>
+<span class="go">      print(&quot;absent&quot;)</span>
+</pre></div>
+</div>
+<p>See <a class="reference internal" href="error_handling.html#error-handling"><span class="std std-ref">Subprocess Error Handling</span></a> for the full rules, including
+<code class="docutils literal notranslate"><span class="pre">&#64;error_raise</span></code>/<code class="docutils literal notranslate"><span class="pre">&#64;error_ignore</span></code> decorators, the environment
+variables that tune this behavior, and how the interactive prompt
+displays (or hides) the resulting exception.</p>
 </section>
 <section id="importing-xonsh-xsh">
 <h2>Importing Xonsh (<code class="docutils literal notranslate"><span class="pre">*.xsh</span></code>)<a class="headerlink" href="#importing-xonsh-xsh" title="Link to this heading">¶</a></h2>
@@ -2071,6 +2106,7 @@ On Windows, you can also type <code class="docutils literal notranslate"><span c
 </ul>
 </li>
 <li><a class="reference internal" href="#executing-commands-and-scripts">Executing Commands and Scripts</a></li>
+<li><a class="reference internal" href="#error-handling">Error Handling</a></li>
 <li><a class="reference internal" href="#importing-xonsh-xsh">Importing Xonsh (<code class="docutils literal notranslate"><span class="pre">*.xsh</span></code>)</a></li>
 <li><a class="reference internal" href="#compile-evaluate-execute">Compile, Evaluate, &amp; Execute</a></li>
 <li><a class="reference internal" href="#help-superhelp-with">Help &amp; Superhelp with <code class="docutils literal notranslate"><span class="pre">?</span></code> &amp; <code class="docutils literal notranslate"><span class="pre">??</span></code></a></li>

@@ -219,6 +219,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../prompt.html">Prompt</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../events.html">Built-in Events</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../globbing.html">Globbing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../error_handling.html">Subprocess Error Handling</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../macros.html">Macros</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../xonsh_session.html">Xonsh Session</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/xonsh/xonsh">Open technical issue</a></li>
@@ -924,7 +925,10 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">decorators</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># List of DecoratorAlias objects that applied to spec.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">pipe_channels</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># PipeChannel objects owned by this spec</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">output_format</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_SUBPROC_OUTPUT_FORMAT&quot;</span><span class="p">,</span> <span class="s2">&quot;stream_lines&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">raise_subproc_error</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># Spec-based $RAISE_SUBPROC_ERROR.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">raise_subproc_error</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># Spec-based $XONSH_SUBPROC_CMD_RAISE_ERROR.</span>
+        <span class="c1"># True when this pipeline is a direct operand of an `&amp;&amp;`/`||` chain</span>
+        <span class="c1"># (set by `cmds_to_specs` from the parser-injected `in_boolop` kwarg).</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">in_boolop</span> <span class="o">=</span> <span class="kc">False</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="n">s</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span> <span class="o">+</span> <span class="s2">&quot;(&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;, &quot;</span>
@@ -1638,9 +1642,15 @@
 
 <div class="viewcode-block" id="cmds_to_specs">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.cmds_to_specs">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">cmds_to_specs</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">cmds_to_specs</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">in_boolop</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Converts a list of cmds to a list of SubprocSpec objects that are</span>
 <span class="sd">    ready to be executed.</span>
+
+<span class="sd">    ``in_boolop`` is propagated from the parser; it is True when the whole</span>
+<span class="sd">    pipeline is a direct operand of a ``&amp;&amp;``/``||`` chain.  Each spec gets</span>
+<span class="sd">    the flag stored on it so downstream code (e.g. ``CommandPipeline``,</span>
+<span class="sd">    ``_raise_subproc_error``) can decide whether to short-circuit on</span>
+<span class="sd">    returncode or raise.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># first build the subprocs independently and separate from the redirects</span>
     <span class="n">specs</span> <span class="o">=</span> <span class="p">[]</span>
@@ -1652,6 +1662,7 @@
             <span class="n">env</span> <span class="o">=</span> <span class="n">envs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">if</span> <span class="n">envs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
             <span class="n">spec</span> <span class="o">=</span> <span class="n">SubprocSpec</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="n">captured</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">env</span><span class="p">)</span>
             <span class="n">spec</span><span class="o">.</span><span class="n">pipeline_index</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">specs</span><span class="p">)</span>
+            <span class="n">spec</span><span class="o">.</span><span class="n">in_boolop</span> <span class="o">=</span> <span class="n">in_boolop</span>
             <span class="n">specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span>
     <span class="c1"># now modify the subprocs based on the redirects.</span>
     <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">redirect</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">redirects</span><span class="p">):</span>
@@ -1718,7 +1729,7 @@
 
 <div class="viewcode-block" id="run_subproc">
 <a class="viewcode-back" href="../../../api/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.run_subproc">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">run_subproc</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">run_subproc</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">in_boolop</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Runs a subprocess, in its many forms. This takes a list of &#39;commands,&#39;</span>
 <span class="sd">    which may be a list of command line arguments or a string, representing</span>
 <span class="sd">    a special connecting character.  For example::</span>
@@ -1730,9 +1741,14 @@
 <span class="sd">        [[&#39;ls&#39;], &#39;|&#39;, [&#39;grep&#39;, &#39;wakka&#39;]]</span>
 
 <span class="sd">    Lastly, the captured argument affects only the last real command.</span>
+
+<span class="sd">    ``in_boolop`` is forwarded from the parser; True when this whole</span>
+<span class="sd">    pipeline is a direct operand of a ``&amp;&amp;``/``||`` chain.  Each spec</span>
+<span class="sd">    receives ``spec.in_boolop`` so downstream consumers can act on it</span>
+<span class="sd">    (e.g. let a non-zero return short-circuit instead of raising).</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="n">specs</span> <span class="o">=</span> <span class="n">cmds_to_specs</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="n">captured</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="n">envs</span><span class="p">)</span>
+    <span class="n">specs</span> <span class="o">=</span> <span class="n">cmds_to_specs</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="n">captured</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="n">envs</span><span class="p">,</span> <span class="n">in_boolop</span><span class="o">=</span><span class="n">in_boolop</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="n">trace_mode</span> <span class="o">:=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_TRACE_SUBPROC&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
         <span class="n">_trace_specs</span><span class="p">(</span><span class="n">trace_mode</span><span class="p">,</span> <span class="n">specs</span><span class="p">,</span> <span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="p">)</span>

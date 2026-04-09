@@ -219,6 +219,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../prompt.html">Prompt</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../events.html">Built-in Events</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../globbing.html">Globbing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../error_handling.html">Subprocess Error Handling</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../macros.html">Macros</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../xonsh_session.html">Xonsh Session</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/xonsh/xonsh">Open technical issue</a></li>
@@ -956,8 +957,8 @@
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">err_target</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">err</span><span class="p">))</span>
             <span class="n">err_target</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
-        <span class="c1"># save the raw bytes</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_raw_error</span> <span class="o">=</span> <span class="n">b</span>
+        <span class="c1"># accumulate the raw bytes</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_raw_error</span> <span class="o">+=</span> <span class="n">b</span>
         <span class="c1"># do some munging of the line before we save it to the attr</span>
         <span class="n">b</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;</span><span class="se">\r\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;</span><span class="se">\r</span><span class="s2">&quot;</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
@@ -1303,14 +1304,32 @@
         <span class="n">raise_subproc_error</span> <span class="o">=</span> <span class="n">spec</span><span class="o">.</span><span class="n">raise_subproc_error</span>
         <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">raise_subproc_error</span><span class="p">):</span>
             <span class="n">raise_subproc_error</span> <span class="o">=</span> <span class="n">raise_subproc_error</span><span class="p">(</span><span class="n">spec</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span>
+
+        <span class="c1"># @error_ignore — never raise.</span>
         <span class="k">if</span> <span class="n">raise_subproc_error</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">:</span>
             <span class="k">return</span>
 
-        <span class="k">if</span> <span class="n">raise_subproc_error</span> <span class="ow">or</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;RAISE_SUBPROC_ERROR&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
+        <span class="c1"># @error_raise — always raise, even mid-chain.</span>
+        <span class="k">if</span> <span class="n">raise_subproc_error</span> <span class="ow">is</span> <span class="kc">True</span><span class="p">:</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">(</span><span class="n">rtn</span><span class="p">,</span> <span class="n">spec</span><span class="o">.</span><span class="n">args</span><span class="p">,</span> <span class="n">output</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">output</span><span class="p">)</span>
             <span class="k">finally</span><span class="p">:</span>
-                <span class="c1"># this is need to get a working terminal in interactive mode</span>
+                <span class="c1"># needed to get a working terminal in interactive mode</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_return_terminal</span><span class="p">()</span>
+            <span class="k">return</span>
+
+        <span class="c1"># Default: defer chain operands to the BoolOp wrapper.</span>
+        <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">spec</span><span class="p">,</span> <span class="s2">&quot;in_boolop&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="k">return</span>
+
+        <span class="c1"># Standalone — only raise here if the user explicitly opted in</span>
+        <span class="c1"># to per-command raising.  Otherwise let the AST wrapper around</span>
+        <span class="c1"># the statement do it via $XONSH_SUBPROC_RAISE_ERROR.</span>
+        <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_SUBPROC_CMD_RAISE_ERROR&quot;</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">(</span><span class="n">rtn</span><span class="p">,</span> <span class="n">spec</span><span class="o">.</span><span class="n">args</span><span class="p">,</span> <span class="n">output</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">output</span><span class="p">)</span>
+            <span class="k">finally</span><span class="p">:</span>
+                <span class="c1"># needed to get a working terminal in interactive mode</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_return_terminal</span><span class="p">()</span>
 
     <span class="c1">#</span>

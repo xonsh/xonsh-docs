@@ -219,6 +219,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../prompt.html">Prompt</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../events.html">Built-in Events</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../globbing.html">Globbing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../error_handling.html">Subprocess Error Handling</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../macros.html">Macros</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../xonsh_session.html">Xonsh Session</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/xonsh/xonsh">Open technical issue</a></li>
@@ -420,6 +421,7 @@
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 
@@ -845,6 +847,27 @@
                 <span class="n">hist</span><span class="o">.</span><span class="n">last_cmd_rtn</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c1"># returncode for success</span>
         <span class="k">except</span> <span class="n">XonshError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
             <span class="nb">print</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">hist</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">hist</span><span class="o">.</span><span class="n">last_cmd_rtn</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">hist</span><span class="o">.</span><span class="n">last_cmd_rtn</span> <span class="o">=</span> <span class="mi">1</span>  <span class="c1"># return code for failure</span>
+        <span class="k">except</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">:</span>
+            <span class="c1"># A subproc command at the prompt failed.  The command&#39;s own</span>
+            <span class="c1"># ``stderr`` is already on screen; whether we *additionally*</span>
+            <span class="c1"># print xonsh&#39;s ``CalledProcessError: ...`` line is governed</span>
+            <span class="c1"># by ``$XONSH_PROMPT_SHOW_SUBPROC_ERROR``.</span>
+            <span class="c1">#</span>
+            <span class="c1"># ``@error_raise`` is a per-command opt-in that *always*</span>
+            <span class="c1"># shows the exception, regardless of the env var — detected</span>
+            <span class="c1"># by checking whether the last completed pipeline&#39;s spec</span>
+            <span class="c1"># has ``raise_subproc_error is True``.</span>
+            <span class="c1">#</span>
+            <span class="c1"># Scripts (``./script.xsh`` / ``xonsh -c``) never reach this</span>
+            <span class="c1"># handler because they don&#39;t go through ``default()``, so</span>
+            <span class="c1"># their failures keep propagating as before.</span>
+            <span class="n">lastcmd</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">lastcmd</span>
+            <span class="n">spec</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">lastcmd</span><span class="p">,</span> <span class="s2">&quot;spec&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">if</span> <span class="n">lastcmd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+            <span class="n">is_error_raise</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">spec</span><span class="p">,</span> <span class="s2">&quot;raise_subproc_error&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span>
+            <span class="k">if</span> <span class="n">is_error_raise</span> <span class="ow">or</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_PROMPT_SHOW_SUBPROC_ERROR&quot;</span><span class="p">):</span>
+                <span class="n">print_exception</span><span class="p">(</span><span class="n">exc_info</span><span class="o">=</span><span class="n">exc_info</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">hist</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">hist</span><span class="o">.</span><span class="n">last_cmd_rtn</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">hist</span><span class="o">.</span><span class="n">last_cmd_rtn</span> <span class="o">=</span> <span class="mi">1</span>  <span class="c1"># return code for failure</span>
         <span class="k">except</span> <span class="p">(</span><span class="ne">SystemExit</span><span class="p">,</span> <span class="ne">KeyboardInterrupt</span><span class="p">)</span> <span class="k">as</span> <span class="n">err</span><span class="p">:</span>

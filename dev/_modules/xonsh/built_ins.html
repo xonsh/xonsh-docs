@@ -219,6 +219,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../prompt.html">Prompt</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../events.html">Built-in Events</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../globbing.html">Globbing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../error_handling.html">Subprocess Error Handling</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../macros.html">Macros</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../xonsh_session.html">Xonsh Session</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/xonsh/xonsh">Open technical issue</a></li>
@@ -852,22 +853,76 @@
 
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_check_subproc_helper_raise</span><span class="p">(</span><span class="n">in_boolop</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Raise ``CalledProcessError`` if the most recently completed</span>
+<span class="sd">    pipeline (``XSH.lastcmd``) failed and the active settings say we</span>
+<span class="sd">    should raise.</span>
+
+<span class="sd">    Called by the ``subproc_*`` helpers right after they finish, so</span>
+<span class="sd">    that nested calls like ``echo @$(ls nono)`` raise on the inner</span>
+<span class="sd">    failure even though the *outer* helper would have succeeded with</span>
+<span class="sd">    an empty injection.</span>
+
+<span class="sd">    Skip conditions:</span>
+
+<span class="sd">    * ``in_boolop=True`` — the helper is a direct operand of a</span>
+<span class="sd">      ``&amp;&amp;``/``||`` chain; let the chain wrapper see the result.</span>
+<span class="sd">    * ``$XONSH_SUBPROC_RAISE_ERROR`` is False.</span>
+<span class="sd">    * No completed pipeline (e.g. background job).</span>
+<span class="sd">    * The pipeline succeeded.</span>
+<span class="sd">    * ``spec.captured == &#39;object&#39;`` — ``!(...)`` is the explicit</span>
+<span class="sd">      &quot;user takes responsibility&quot; form per spec.</span>
+<span class="sd">    * ``@error_ignore`` was applied (``spec.raise_subproc_error is False``).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">in_boolop</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_SUBPROC_RAISE_ERROR&quot;</span><span class="p">):</span>
+        <span class="k">return</span>
+    <span class="n">cp</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">lastcmd</span>
+    <span class="k">if</span> <span class="n">cp</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="n">rtn</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cp</span><span class="p">,</span> <span class="s2">&quot;returncode&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">rtn</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">rtn</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="n">spec</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cp</span><span class="p">,</span> <span class="s2">&quot;spec&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">spec</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">spec</span><span class="p">,</span> <span class="s2">&quot;captured&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;object&quot;</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">spec</span><span class="p">,</span> <span class="s2">&quot;raise_subproc_error&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">:</span>
+        <span class="k">return</span>
+
+    <span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
+
+    <span class="n">output</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cp</span><span class="p">,</span> <span class="s2">&quot;output&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">raise</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">(</span><span class="n">rtn</span><span class="p">,</span> <span class="n">spec</span><span class="o">.</span><span class="n">args</span><span class="p">,</span> <span class="n">output</span><span class="o">=</span><span class="n">output</span><span class="p">)</span>
+
+
 <div class="viewcode-block" id="subproc_captured_stdout">
 <a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.subproc_captured_stdout">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">subproc_captured_stdout</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">subproc_captured_stdout</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">in_boolop</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Runs a subprocess, capturing the output. Returns the stdout</span>
 <span class="sd">    that was produced as a str or list based on ``$XONSH_SUBPROC_OUTPUT_FORMAT``.</span>
+
+<span class="sd">    ``in_boolop`` is set by the parser to True when this call is a direct</span>
+<span class="sd">    operand of a ``&amp;&amp;``/``||`` chain, so the runtime can adjust behavior</span>
+<span class="sd">    (e.g. suppress ``$XONSH_SUBPROC_CMD_RAISE_ERROR`` to let the chain</span>
+<span class="sd">    short-circuit on returncode).</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="kn">import</span><span class="w"> </span><span class="nn">xonsh.procs.specs</span>
 
-    <span class="k">return</span> <span class="n">xonsh</span><span class="o">.</span><span class="n">procs</span><span class="o">.</span><span class="n">specs</span><span class="o">.</span><span class="n">run_subproc</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="s2">&quot;stdout&quot;</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="n">envs</span><span class="p">)</span></div>
+    <span class="n">r</span> <span class="o">=</span> <span class="n">xonsh</span><span class="o">.</span><span class="n">procs</span><span class="o">.</span><span class="n">specs</span><span class="o">.</span><span class="n">run_subproc</span><span class="p">(</span>
+        <span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="s2">&quot;stdout&quot;</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="n">envs</span><span class="p">,</span> <span class="n">in_boolop</span><span class="o">=</span><span class="n">in_boolop</span>
+    <span class="p">)</span>
+    <span class="n">_check_subproc_helper_raise</span><span class="p">(</span><span class="n">in_boolop</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">r</span></div>
 
 
 
 <div class="viewcode-block" id="subproc_captured_inject">
 <a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.subproc_captured_inject">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">subproc_captured_inject</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">subproc_captured_inject</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">in_boolop</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Runs a subprocess, capturing the output. Returns a list of</span>
 <span class="sd">    whitespace-separated strings of the stdout that was produced.</span>
 <span class="sd">    The string is split using xonsh&#39;s lexer, rather than Python&#39;s str.split()</span>
@@ -875,7 +930,10 @@
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">xonsh.procs.specs</span>
 
-    <span class="n">o</span> <span class="o">=</span> <span class="n">xonsh</span><span class="o">.</span><span class="n">procs</span><span class="o">.</span><span class="n">specs</span><span class="o">.</span><span class="n">run_subproc</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="s2">&quot;stdout&quot;</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="n">envs</span><span class="p">)</span>
+    <span class="n">o</span> <span class="o">=</span> <span class="n">xonsh</span><span class="o">.</span><span class="n">procs</span><span class="o">.</span><span class="n">specs</span><span class="o">.</span><span class="n">run_subproc</span><span class="p">(</span>
+        <span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="s2">&quot;stdout&quot;</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="n">envs</span><span class="p">,</span> <span class="n">in_boolop</span><span class="o">=</span><span class="n">in_boolop</span>
+    <span class="p">)</span>
+    <span class="n">_check_subproc_helper_raise</span><span class="p">(</span><span class="n">in_boolop</span><span class="p">)</span>
     <span class="n">o</span> <span class="o">=</span> <span class="n">o</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">o</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="n">o</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
     <span class="n">toks</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">o</span><span class="p">:</span>
@@ -887,38 +945,119 @@
 
 <div class="viewcode-block" id="subproc_captured_object">
 <a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.subproc_captured_object">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">subproc_captured_object</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">subproc_captured_object</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">in_boolop</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Runs a subprocess, capturing the output. Returns an instance of</span>
 <span class="sd">    CommandPipeline representing the completed command.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">xonsh.procs.specs</span>
 
-    <span class="k">return</span> <span class="n">xonsh</span><span class="o">.</span><span class="n">procs</span><span class="o">.</span><span class="n">specs</span><span class="o">.</span><span class="n">run_subproc</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="s2">&quot;object&quot;</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="n">envs</span><span class="p">)</span></div>
+    <span class="k">return</span> <span class="n">xonsh</span><span class="o">.</span><span class="n">procs</span><span class="o">.</span><span class="n">specs</span><span class="o">.</span><span class="n">run_subproc</span><span class="p">(</span>
+        <span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="s2">&quot;object&quot;</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="n">envs</span><span class="p">,</span> <span class="n">in_boolop</span><span class="o">=</span><span class="n">in_boolop</span>
+    <span class="p">)</span></div>
 
 
 
 <div class="viewcode-block" id="subproc_captured_hiddenobject">
 <a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.subproc_captured_hiddenobject">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">subproc_captured_hiddenobject</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">subproc_captured_hiddenobject</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">in_boolop</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Runs a subprocess, capturing the output. Returns an instance of</span>
 <span class="sd">    HiddenCommandPipeline representing the completed command.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">xonsh.procs.specs</span>
 
-    <span class="k">return</span> <span class="n">xonsh</span><span class="o">.</span><span class="n">procs</span><span class="o">.</span><span class="n">specs</span><span class="o">.</span><span class="n">run_subproc</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="s2">&quot;hiddenobject&quot;</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="n">envs</span><span class="p">)</span></div>
+    <span class="k">return</span> <span class="n">xonsh</span><span class="o">.</span><span class="n">procs</span><span class="o">.</span><span class="n">specs</span><span class="o">.</span><span class="n">run_subproc</span><span class="p">(</span>
+        <span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="s2">&quot;hiddenobject&quot;</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="n">envs</span><span class="p">,</span> <span class="n">in_boolop</span><span class="o">=</span><span class="n">in_boolop</span>
+    <span class="p">)</span></div>
 
 
 
 <div class="viewcode-block" id="subproc_uncaptured">
 <a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.subproc_uncaptured">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">subproc_uncaptured</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">subproc_uncaptured</span><span class="p">(</span><span class="o">*</span><span class="n">cmds</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">in_boolop</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Runs a subprocess, without capturing the output. Returns the stdout</span>
 <span class="sd">    that was produced as a str.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">xonsh.procs.specs</span>
 
-    <span class="k">return</span> <span class="n">xonsh</span><span class="o">.</span><span class="n">procs</span><span class="o">.</span><span class="n">specs</span><span class="o">.</span><span class="n">run_subproc</span><span class="p">(</span><span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="n">envs</span><span class="p">)</span></div>
+    <span class="n">r</span> <span class="o">=</span> <span class="n">xonsh</span><span class="o">.</span><span class="n">procs</span><span class="o">.</span><span class="n">specs</span><span class="o">.</span><span class="n">run_subproc</span><span class="p">(</span>
+        <span class="n">cmds</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">envs</span><span class="o">=</span><span class="n">envs</span><span class="p">,</span> <span class="n">in_boolop</span><span class="o">=</span><span class="n">in_boolop</span>
+    <span class="p">)</span>
+    <span class="n">_check_subproc_helper_raise</span><span class="p">(</span><span class="n">in_boolop</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">r</span></div>
+
+
+
+<div class="viewcode-block" id="subproc_check_boolop">
+<a class="viewcode-back" href="../../api/_autosummary/cmd/xonsh.built_ins.html#xonsh.built_ins.subproc_check_boolop">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">subproc_check_boolop</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Raise ``CalledProcessError`` if *value* is the (final) result of</span>
+<span class="sd">    a subproc statement that ended in failure.</span>
+
+<span class="sd">    Used as the AST wrapper around two kinds of nodes:</span>
+
+<span class="sd">    * The outermost ``BoolOp`` of a logical chain (``cmd1 &amp;&amp; cmd2`` /</span>
+<span class="sd">      ``cmd1 || cmd2``).  Python ``and``/``or`` short-circuits to the</span>
+<span class="sd">      pipeline that determined the chain result, so the wrapper sees</span>
+<span class="sd">      the *final* pipeline.</span>
+<span class="sd">    * A standalone subproc-helper call at statement level — bare</span>
+<span class="sd">      commands, ``![...]``, ``$[...]``, ``$(...)``, ``@$(...)``.  The</span>
+<span class="sd">      explicit-capture form ``!(...)`` is *intentionally* not wrapped:</span>
+<span class="sd">      per spec it is the user&#39;s full responsibility.</span>
+
+<span class="sd">    When ``$XONSH_SUBPROC_RAISE_ERROR`` is True (default), this enforces</span>
+<span class="sd">    &quot;raise on the last executed pipeline&#39;s non-zero exit code&quot; semantics:</span>
+
+<span class="sd">    * ``ls nono`` (standalone) — rc≠0: raises.</span>
+<span class="sd">    * ``$(ls nono)`` (standalone) — rc≠0: raises.</span>
+<span class="sd">    * ``$[ls nono]`` (standalone) — rc≠0: raises.</span>
+<span class="sd">    * ``echo 1 &amp;&amp; echo 2`` — last is ``echo 2`` (rc=0): no raise.</span>
+<span class="sd">    * ``ls nono || echo 1`` — last is ``echo 1`` (rc=0): no raise.</span>
+<span class="sd">    * ``ls nono &amp;&amp; echo 1`` — last is ``ls nono`` (rc≠0): raises.</span>
+
+<span class="sd">    Per-command overrides:</span>
+
+<span class="sd">    * ``@error_ignore`` (``spec.raise_subproc_error is False``) on the</span>
+<span class="sd">      final pipeline suppresses the raise — used e.g. for</span>
+<span class="sd">      ``echo 1 &amp;&amp; @error_ignore ls nono``.</span>
+<span class="sd">    * ``@error_raise`` raises directly at the pipeline level, so the</span>
+<span class="sd">      wrapper never sees a failed value.</span>
+
+<span class="sd">    Some subproc helpers (``$()``, ``$[]``, ``@$()``) return a *string*</span>
+<span class="sd">    / *None* / *list* rather than a ``CommandPipeline``, so the wrapper</span>
+<span class="sd">    can&#39;t read ``returncode`` directly off ``value``.  In that case it</span>
+<span class="sd">    falls back to ``XSH.lastcmd`` — the most recently completed pipeline,</span>
+<span class="sd">    which is the one this helper just ran.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_SUBPROC_RAISE_ERROR&quot;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">value</span>
+    <span class="c1"># Try to get the pipeline from the value first (BoolOp result, ![...]).</span>
+    <span class="n">spec</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s2">&quot;spec&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">rtn</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s2">&quot;returncode&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">cp_for_output</span> <span class="o">=</span> <span class="n">value</span>
+    <span class="k">if</span> <span class="n">spec</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">rtn</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Value isn&#39;t a CommandPipeline (e.g. string from $(), None from</span>
+        <span class="c1"># $[], list from @$()).  Fall back to the most recently</span>
+        <span class="c1"># completed pipeline so we can still inspect its returncode.</span>
+        <span class="n">last</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">lastcmd</span>
+        <span class="k">if</span> <span class="n">last</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">value</span>
+        <span class="n">spec</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">last</span><span class="p">,</span> <span class="s2">&quot;spec&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">rtn</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">last</span><span class="p">,</span> <span class="s2">&quot;returncode&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">cp_for_output</span> <span class="o">=</span> <span class="n">last</span>
+    <span class="k">if</span> <span class="n">spec</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">rtn</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">rtn</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">value</span>
+    <span class="c1"># ``!(...)`` is the &quot;user takes full responsibility&quot; form — never</span>
+    <span class="c1"># raise even if it ends up here via a chain like ``cmd &amp;&amp; !(cmd)``.</span>
+    <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">spec</span><span class="p">,</span> <span class="s2">&quot;captured&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;object&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">value</span>
+    <span class="c1"># @error_ignore on the final pipeline of the chain opts out.</span>
+    <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">spec</span><span class="p">,</span> <span class="s2">&quot;raise_subproc_error&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">value</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
+
+    <span class="n">output</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cp_for_output</span><span class="p">,</span> <span class="s2">&quot;output&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">raise</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">(</span><span class="n">rtn</span><span class="p">,</span> <span class="n">spec</span><span class="o">.</span><span class="n">args</span><span class="p">,</span> <span class="n">output</span><span class="o">=</span><span class="n">output</span><span class="p">)</span></div>
 
 
 
@@ -1435,6 +1574,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">subproc_captured_object</span> <span class="o">=</span> <span class="n">subproc_captured_object</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">subproc_captured_hiddenobject</span> <span class="o">=</span> <span class="n">subproc_captured_hiddenobject</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">subproc_uncaptured</span> <span class="o">=</span> <span class="n">subproc_uncaptured</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">subproc_check_boolop</span> <span class="o">=</span> <span class="n">subproc_check_boolop</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">call_macro</span> <span class="o">=</span> <span class="n">call_macro</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">enter_macro</span> <span class="o">=</span> <span class="n">enter_macro</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">path_literal</span> <span class="o">=</span> <span class="n">path_literal</span>
