@@ -1074,6 +1074,16 @@
         <span class="k">elif</span> <span class="n">args</span><span class="o">.</span><span class="n">mode</span> <span class="o">==</span> <span class="n">XonshMode</span><span class="o">.</span><span class="n">script_from_stdin</span><span class="p">:</span>
             <span class="c1"># run a script given on stdin</span>
             <span class="n">code</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdin</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="c1"># Reopen stdin from /dev/tty so that child processes</span>
+            <span class="c1"># (e.g. fzf, vim) can interact with the terminal instead</span>
+            <span class="c1"># of inheriting the exhausted pipe.</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">tty_fd</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="s2">&quot;/dev/tty&quot;</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">O_RDONLY</span><span class="p">)</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">dup2</span><span class="p">(</span><span class="n">tty_fd</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">tty_fd</span><span class="p">)</span>
+                <span class="n">sys</span><span class="o">.</span><span class="n">stdin</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">closefd</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+                <span class="k">pass</span>  <span class="c1"># no controlling terminal (cron, CI, etc.)</span>
             <span class="n">exc_info</span> <span class="o">=</span> <span class="n">run_code_with_cache</span><span class="p">(</span>
                 <span class="n">code</span><span class="p">,</span> <span class="s2">&quot;&lt;stdin&gt;&quot;</span><span class="p">,</span> <span class="n">shell</span><span class="o">.</span><span class="n">execer</span><span class="p">,</span> <span class="n">glb</span><span class="o">=</span><span class="n">shell</span><span class="o">.</span><span class="n">ctx</span><span class="p">,</span> <span class="n">loc</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;exec&quot;</span>
             <span class="p">)</span>
