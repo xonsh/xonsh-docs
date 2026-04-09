@@ -639,13 +639,20 @@
             <span class="k">if</span> <span class="n">capturable</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_label</span><span class="p">(</span><span class="s1">&#39;Capturable:&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">capturable</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
-            <span class="n">co</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="s2">&quot;__code__&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="c1"># Unwrap ``functools.wraps``-style chains so the shown source</span>
+            <span class="c1"># reflects the user-visible function (e.g. a click command body)</span>
+            <span class="c1"># rather than the internal wrapper.</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">src_func</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">unwrap</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                <span class="n">src_func</span> <span class="o">=</span> <span class="n">func</span>
+            <span class="n">co</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">src_func</span><span class="p">,</span> <span class="s2">&quot;__code__&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">co</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                     <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_label</span><span class="p">(</span><span class="s1">&#39;Source:&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">co</span><span class="o">.</span><span class="n">co_filename</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">co</span><span class="o">.</span><span class="n">co_firstlineno</span><span class="si">}</span><span class="s2">&quot;</span>
                 <span class="p">)</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="n">src</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getsource</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
+                <span class="n">src</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getsource</span><span class="p">(</span><span class="n">src_func</span><span class="p">)</span>
             <span class="k">except</span> <span class="p">(</span><span class="ne">OSError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
                 <span class="n">src</span> <span class="o">=</span> <span class="kc">None</span>
             <span class="k">if</span> <span class="n">src</span><span class="p">:</span>
@@ -665,6 +672,47 @@
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_raw</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__getattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="c1"># Lazy click integration: import is deferred until the first access</span>
+        <span class="c1"># to ``aliases.click`` or ``aliases.register_click_command``, so</span>
+        <span class="c1"># xonsh sessions that never use click don&#39;t pay the import cost.</span>
+        <span class="c1"># Once loaded, the attributes are cached on ``self.__dict__`` and</span>
+        <span class="c1"># future lookups skip this method entirely.</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;click&quot;</span><span class="p">,</span> <span class="s2">&quot;register_click_command&quot;</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_add_click_command</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">AttributeError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> requires the &#39;click&#39; package to be installed&quot;</span>
+                <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="kc">None</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+        <span class="k">raise</span> <span class="ne">AttributeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">!r}</span><span class="s2"> object has no attribute </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_add_click_command</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Expose the click integration helpers on this Aliases instance.</span>
+
+<span class="sd">        Lazily invoked from :meth:`__getattr__` on first access to</span>
+<span class="sd">        ``self.click`` or ``self.register_click_command``. Imports the</span>
+<span class="sd">        ``click`` module and caches:</span>
+
+<span class="sd">        * ``self.click`` — the ``click`` module itself, for convenient</span>
+<span class="sd">          access from xonshrc / user scripts.</span>
+<span class="sd">        * ``self.register_click_command`` — decorator factory bound to this</span>
+<span class="sd">          Aliases instance via :func:`functools.partial`. See</span>
+<span class="sd">          :func:`_click_command_alias`.</span>
+
+<span class="sd">        Raises :class:`ImportError` if ``click`` is not installed; callers</span>
+<span class="sd">        (``__getattr__``) translate this to :class:`AttributeError`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">click</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">click</span> <span class="o">=</span> <span class="n">click</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_click_command</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span>
+            <span class="n">_click_command_alias</span><span class="p">,</span> <span class="n">_aliases</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_register</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">dash_case</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
         <span class="n">name</span> <span class="o">=</span> <span class="n">get_alias_name</span><span class="p">(</span><span class="n">name</span> <span class="ow">or</span> <span class="n">func</span><span class="p">,</span> <span class="n">dash_case</span><span class="o">=</span><span class="n">dash_case</span><span class="p">)</span>
@@ -1001,6 +1049,103 @@
     <span class="s2">&quot;env&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">}</span>
 <span class="n">ALIAS_KWARG_NAMES</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">ALIAS_PARAMS_DEFAULT</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_click_command_alias</span><span class="p">(</span><span class="n">func_or_name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">_aliases</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Decorator factory that registers a xonsh alias as a ``click`` command.</span>
+
+<span class="sd">    Mirrors the calling conventions of :meth:`Aliases.register`:</span>
+
+<span class="sd">    * ``@aliases.register_click_command`` — bare, derives alias name from</span>
+<span class="sd">      the function name (leading underscore stripped, dash-cased).</span>
+<span class="sd">    * ``@aliases.register_click_command()`` — empty parentheses, same as bare.</span>
+<span class="sd">    * ``@aliases.register_click_command(&quot;custom-name&quot;)`` — explicit alias name.</span>
+
+<span class="sd">    Inside the click callback, ``ctx`` is a :class:`click.Context` subclass</span>
+<span class="sd">    carrying the usual xonsh alias params (``alias_args``, ``stdin``, ``stdout``,</span>
+<span class="sd">    ``stderr``, etc from ALIAS_PARAMS_DEFAULT). The ``args`` alias param is exposed as</span>
+<span class="sd">    ``ctx.alias_args`` to avoid clashing with ``click.Context.args``.</span>
+
+<span class="sd">    Only available when the ``click`` package is installed; wired up by</span>
+<span class="sd">    :meth:`Aliases._add_click_command` from :meth:`Aliases.__init__`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
+
+    <span class="kn">import</span><span class="w"> </span><span class="nn">click</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_make_alias</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">alias_name</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">click</span><span class="o">.</span><span class="n">Command</span><span class="p">):</span>
+            <span class="n">cmd</span> <span class="o">=</span> <span class="n">func</span>
+            <span class="n">original_func</span> <span class="o">=</span> <span class="n">cmd</span><span class="o">.</span><span class="n">callback</span>
+            <span class="n">name_source</span> <span class="o">=</span> <span class="n">original_func</span> <span class="k">if</span> <span class="n">original_func</span> <span class="k">else</span> <span class="n">cmd</span><span class="o">.</span><span class="n">name</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">original_func</span> <span class="o">=</span> <span class="n">func</span>
+            <span class="n">name_source</span> <span class="o">=</span> <span class="n">func</span>
+            <span class="n">cmd</span> <span class="o">=</span> <span class="n">click</span><span class="o">.</span><span class="n">command</span><span class="p">()(</span><span class="n">click</span><span class="o">.</span><span class="n">pass_context</span><span class="p">(</span><span class="n">func</span><span class="p">))</span>
+
+        <span class="k">class</span><span class="w"> </span><span class="nc">XonshContext</span><span class="p">(</span><span class="n">click</span><span class="o">.</span><span class="n">Context</span><span class="p">):</span>
+            <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">xsh</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+                <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+                <span class="n">xsh</span> <span class="o">=</span> <span class="n">xsh</span> <span class="ow">or</span> <span class="p">{}</span>
+                <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">ALIAS_PARAMS_DEFAULT</span><span class="p">:</span>
+                    <span class="c1"># &#39;args&#39; clashes with click.Context.args — rename.</span>
+                    <span class="n">attr</span> <span class="o">=</span> <span class="s2">&quot;alias_args&quot;</span> <span class="k">if</span> <span class="n">key</span> <span class="o">==</span> <span class="s2">&quot;args&quot;</span> <span class="k">else</span> <span class="n">key</span>
+                    <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">attr</span><span class="p">,</span> <span class="n">xsh</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">))</span>
+
+        <span class="c1"># Expose the click module itself so callbacks can use</span>
+        <span class="c1"># ``ctx.click.echo(...)`` etc. without a separate import.</span>
+        <span class="c1"># (Set after the class body — Python class-scope rules block</span>
+        <span class="c1"># ``click = click`` inside the body from resolving the enclosing</span>
+        <span class="c1"># function&#39;s name.)</span>
+        <span class="n">XonshContext</span><span class="o">.</span><span class="n">click</span> <span class="o">=</span> <span class="n">click</span>
+
+        <span class="n">cmd</span><span class="o">.</span><span class="n">context_class</span> <span class="o">=</span> <span class="n">XonshContext</span>
+
+        <span class="n">registered_name</span> <span class="o">=</span> <span class="n">get_alias_name</span><span class="p">(</span><span class="n">alias_name</span> <span class="ow">or</span> <span class="n">name_source</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_wrapper</span><span class="p">(</span><span class="o">**</span><span class="n">xsh_data</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">cmd</span><span class="o">.</span><span class="n">main</span><span class="p">(</span>
+                    <span class="n">args</span><span class="o">=</span><span class="n">xsh_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;args&quot;</span><span class="p">),</span>
+                    <span class="n">prog_name</span><span class="o">=</span><span class="n">xsh_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;called_alias_name&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">registered_name</span><span class="p">,</span>
+                    <span class="n">standalone_mode</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                    <span class="n">xsh</span><span class="o">=</span><span class="n">xsh_data</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="k">except</span> <span class="n">click</span><span class="o">.</span><span class="n">exceptions</span><span class="o">.</span><span class="n">ClickException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">e</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+                <span class="k">return</span> <span class="n">e</span><span class="o">.</span><span class="n">exit_code</span>
+            <span class="k">except</span> <span class="n">click</span><span class="o">.</span><span class="n">exceptions</span><span class="o">.</span><span class="n">Abort</span><span class="p">:</span>
+                <span class="k">return</span> <span class="mi">1</span>
+            <span class="k">return</span> <span class="mi">0</span>
+
+        <span class="c1"># Make _wrapper look like the original function to inspect.getsource</span>
+        <span class="c1"># (so `cmd??` shows the user&#39;s click callback, not _wrapper).</span>
+        <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">original_func</span><span class="p">):</span>
+            <span class="n">functools</span><span class="o">.</span><span class="n">update_wrapper</span><span class="p">(</span><span class="n">_wrapper</span><span class="p">,</span> <span class="n">original_func</span><span class="p">)</span>
+
+        <span class="c1"># Override the signature AFTER update_wrapper so run_alias_by_params</span>
+        <span class="c1"># sees the ALIAS_PARAMS_DEFAULT params, not the original function&#39;s.</span>
+        <span class="n">_wrapper</span><span class="o">.</span><span class="n">__signature__</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">Signature</span><span class="p">(</span>
+            <span class="n">parameters</span><span class="o">=</span><span class="p">[</span>
+                <span class="n">inspect</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span>
+                    <span class="n">pname</span><span class="p">,</span> <span class="n">inspect</span><span class="o">.</span><span class="n">Parameter</span><span class="o">.</span><span class="n">KEYWORD_ONLY</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">default</span>
+                <span class="p">)</span>
+                <span class="k">for</span> <span class="n">pname</span><span class="p">,</span> <span class="n">default</span> <span class="ow">in</span> <span class="n">ALIAS_PARAMS_DEFAULT</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">_aliases</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">registered_name</span><span class="p">,</span> <span class="n">dash_case</span><span class="o">=</span><span class="kc">False</span><span class="p">)(</span><span class="n">_wrapper</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_wrapper</span>
+
+    <span class="c1"># Direct use: @aliases.register_click_command (no parens)</span>
+    <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">func_or_name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">_make_alias</span><span class="p">(</span><span class="n">func_or_name</span><span class="p">)</span>
+
+    <span class="c1"># Parameterized use: @aliases.register_click_command() / (...)(&quot;name&quot;)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_decorator</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">_make_alias</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">alias_name</span><span class="o">=</span><span class="n">func_or_name</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">_decorator</span>
 
 
 <div class="viewcode-block" id="PartialEvalAlias">

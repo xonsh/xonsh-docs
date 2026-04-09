@@ -780,6 +780,53 @@ display correctly. Use <code class="docutils literal notranslate"><span class="p
 </table>
 </div>
 </section>
+<section id="click-integration">
+<h2>Click Integration<a class="headerlink" href="#click-integration" title="Link to this heading">¶</a></h2>
+<p>If the <a class="reference external" href="https://click.palletsprojects.com/">click</a> package is installed,
+xonsh exposes two helpers on the <code class="docutils literal notranslate"><span class="pre">aliases</span></code> object:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">aliases.click</span></code> — the <code class="docutils literal notranslate"><span class="pre">click</span></code> module itself, for decorating functions
+with <code class="docutils literal notranslate"><span class="pre">&#64;aliases.click.option(...)</span></code>, <code class="docutils literal notranslate"><span class="pre">&#64;aliases.click.argument(...)</span></code>, etc.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">aliases.register_click_command</span></code> — a decorator that registers a click
+command as a xonsh alias.</p></li>
+</ul>
+<p>Both are loaded lazily on first access — sessions that never touch click
+don’t pay the import cost, and nothing breaks on systems where click is
+not installed.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="o">@</span> <span class="nd">@aliases</span><span class="o">.</span><span class="n">register_click_command</span>
+  <span class="nd">@aliases</span><span class="o">.</span><span class="n">click</span><span class="o">.</span><span class="n">option</span><span class="p">(</span><span class="s1">&#39;--count&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">&#39;Number of greetings.&#39;</span><span class="p">)</span>
+  <span class="nd">@aliases</span><span class="o">.</span><span class="n">click</span><span class="o">.</span><span class="n">option</span><span class="p">(</span><span class="s1">&#39;--name&#39;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s1">&#39;The person to greet.&#39;</span><span class="p">)</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">_hello</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">count</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+<span class="w">      </span><span class="sd">&quot;&quot;&quot;Simple program that greets NAME for a total of COUNT times.&quot;&quot;&quot;</span>
+      <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">count</span><span class="p">):</span>
+          <span class="nb">print</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+
+<span class="o">@</span> <span class="n">hello</span> <span class="o">--</span><span class="n">count</span> <span class="mi">3</span> <span class="o">--</span><span class="n">name</span> <span class="n">World</span>
+<span class="n">World</span>
+<span class="n">World</span>
+<span class="n">World</span>
+</pre></div>
+</div>
+<p>The decorator mirrors the calling conventions of <code class="docutils literal notranslate"><span class="pre">&#64;aliases.register</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@aliases</span><span class="o">.</span><span class="n">register_click_command</span>              <span class="c1"># bare, name from function</span>
+<span class="nd">@aliases</span><span class="o">.</span><span class="n">register_click_command</span><span class="p">()</span>            <span class="c1"># empty parentheses, same thing</span>
+<span class="nd">@aliases</span><span class="o">.</span><span class="n">register_click_command</span><span class="p">(</span><span class="s2">&quot;my-name&quot;</span><span class="p">)</span>   <span class="c1"># explicit alias name</span>
+</pre></div>
+</div>
+<p>The function’s first argument is a <code class="docutils literal notranslate"><span class="pre">click.Context</span></code> subclass that carries
+every standard xonsh alias parameter from <a class="reference internal" href="#signature-parameters">Signature Parameters</a> as an
+attribute of the same name — <code class="docutils literal notranslate"><span class="pre">ctx.stdin</span></code>, <code class="docutils literal notranslate"><span class="pre">ctx.stdout</span></code>, <code class="docutils literal notranslate"><span class="pre">ctx.stderr</span></code>,
+<code class="docutils literal notranslate"><span class="pre">ctx.spec</span></code>, <code class="docutils literal notranslate"><span class="pre">ctx.stack</span></code>, <code class="docutils literal notranslate"><span class="pre">ctx.decorators</span></code>, <code class="docutils literal notranslate"><span class="pre">ctx.alias_name</span></code>,
+<code class="docutils literal notranslate"><span class="pre">ctx.called_alias_name</span></code>, <code class="docutils literal notranslate"><span class="pre">ctx.env</span></code>. The only exception is <code class="docutils literal notranslate"><span class="pre">args</span></code>,
+which is exposed as <code class="docutils literal notranslate"><span class="pre">ctx.alias_args</span></code> to avoid clashing with the built-in
+<code class="docutils literal notranslate"><span class="pre">click.Context.args</span></code> that <code class="docutils literal notranslate"><span class="pre">click</span></code> uses for option parsing.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">click</span></code> module itself is also attached as <code class="docutils literal notranslate"><span class="pre">ctx.click</span></code>, so
+callbacks can call <code class="docutils literal notranslate"><span class="pre">ctx.click.echo(...)</span></code>, <code class="docutils literal notranslate"><span class="pre">ctx.click.secho(...)</span></code>, etc.
+without a separate <code class="docutils literal notranslate"><span class="pre">import</span> <span class="pre">click</span></code>.</p>
+<p>Use these when a click command needs the underlying xonsh streams or
+environment overlay — for example, <code class="docutils literal notranslate"><span class="pre">print(text,</span> <span class="pre">file=ctx.stdout)</span></code> writes
+to the alias’s captured output the same way a regular callable alias does.</p>
+</section>
 <section id="string-aliases-and-execalias">
 <h2>String Aliases and ExecAlias<a class="headerlink" href="#string-aliases-and-execalias" title="Link to this heading">¶</a></h2>
 <p>When you assign a string to an alias, xonsh stores it in one of two ways
@@ -923,6 +970,7 @@ are equivalent:</p>
 <li><a class="reference internal" href="#capturing-and-stream-redirection">Capturing and Stream Redirection</a></li>
 <li><a class="reference internal" href="#threading">Threading</a></li>
 <li><a class="reference internal" href="#capturability">Capturability</a></li>
+<li><a class="reference internal" href="#click-integration">Click Integration</a></li>
 <li><a class="reference internal" href="#string-aliases-and-execalias">String Aliases and ExecAlias</a><ul>
 <li><a class="reference internal" href="#arguments">Arguments</a></li>
 <li><a class="reference internal" href="#equivalence-with-callable-aliases">Equivalence with Callable Aliases</a></li>
