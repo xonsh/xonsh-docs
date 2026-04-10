@@ -435,7 +435,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.completers.tools</span><span class="w"> </span><span class="kn">import</span> <span class="n">RichCompletion</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.lib.lazyasd</span><span class="w"> </span><span class="kn">import</span> <span class="n">LazyObject</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.platform</span><span class="w"> </span><span class="kn">import</span> <span class="n">FD_STDERR</span><span class="p">,</span> <span class="n">LIBC</span><span class="p">,</span> <span class="n">ON_CYGWIN</span><span class="p">,</span> <span class="n">ON_DARWIN</span><span class="p">,</span> <span class="n">ON_MSYS</span><span class="p">,</span> <span class="n">ON_WINDOWS</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.tools</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_signal_name</span><span class="p">,</span> <span class="n">on_main_thread</span><span class="p">,</span> <span class="n">unthreadable</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.tools</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_signal_name</span><span class="p">,</span> <span class="n">on_main_thread</span><span class="p">,</span> <span class="n">print_warning</span><span class="p">,</span> <span class="n">unthreadable</span>
 
 <span class="c1"># Track time stamp of last exit command, so that two consecutive attempts to</span>
 <span class="c1"># exit can kill all jobs and exit.</span>
@@ -591,50 +591,66 @@
 
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_kill_per_pid</span><span class="p">(</span><span class="n">job</span><span class="p">,</span> <span class="n">signal</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Send signal to each process in the job individually.&quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">pid</span> <span class="ow">in</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;pids&quot;</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="n">pid</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># the pid of an aliased proc is None</span>
+            <span class="k">continue</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">kill</span><span class="p">(</span><span class="n">pid</span><span class="p">,</span> <span class="n">signal</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ProcessLookupError</span><span class="p">:</span>
+            <span class="k">pass</span>  <span class="c1"># process already exited</span>
+        <span class="k">except</span> <span class="ne">PermissionError</span><span class="p">:</span>
+            <span class="n">print_warning</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;xonsh: permission denied sending </span><span class="si">{</span><span class="n">get_signal_name</span><span class="p">(</span><span class="n">signal</span><span class="p">)</span><span class="si">}</span><span class="s2"> to pid </span><span class="si">{</span><span class="n">pid</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+
+
+<span class="c1"># Platform-specific _send_signal implementations.</span>
+<span class="c1">#</span>
+<span class="c1"># macOS:  os.killpg() raises PermissionError on zombie children in</span>
+<span class="c1">#         the process group (github #1012), so we always signal per-pid.</span>
+<span class="c1"># Cygwin/MSYS: os.killpg() may fail for various OS-level reasons</span>
+<span class="c1">#         (github #514), so we try killpg first and fall back to per-pid.</span>
+<span class="c1"># Linux:  os.killpg() works correctly; per-pid fallback only when</span>
+<span class="c1">#         pgrp is None (callable aliases have no real process group).</span>
+
 <span class="k">if</span> <span class="n">ON_DARWIN</span><span class="p">:</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_send_signal</span><span class="p">(</span><span class="n">job</span><span class="p">,</span> <span class="n">signal</span><span class="p">):</span>
-        <span class="c1"># On OS X, os.killpg() may cause PermissionError when there are</span>
-        <span class="c1"># any zombie processes in the process group.</span>
-        <span class="c1"># See github issue #1012 for details</span>
-        <span class="k">for</span> <span class="n">pid</span> <span class="ow">in</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;pids&quot;</span><span class="p">]:</span>
-            <span class="k">if</span> <span class="n">pid</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># the pid of an aliased proc is None</span>
-                <span class="k">continue</span>
-            <span class="k">try</span><span class="p">:</span>
-                <span class="n">os</span><span class="o">.</span><span class="n">kill</span><span class="p">(</span><span class="n">pid</span><span class="p">,</span> <span class="n">signal</span><span class="p">)</span>
-            <span class="k">except</span> <span class="ne">ProcessLookupError</span><span class="p">:</span>
-                <span class="k">pass</span>
+        <span class="n">_kill_per_pid</span><span class="p">(</span><span class="n">job</span><span class="p">,</span> <span class="n">signal</span><span class="p">)</span>
 
 <span class="k">elif</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
     <span class="k">pass</span>
 <span class="k">elif</span> <span class="n">ON_CYGWIN</span> <span class="ow">or</span> <span class="n">ON_MSYS</span><span class="p">:</span>
-    <span class="c1"># Similar to what happened on OSX, more issues on Cygwin</span>
-    <span class="c1"># (see Github issue #514).</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_send_signal</span><span class="p">(</span><span class="n">job</span><span class="p">,</span> <span class="n">signal</span><span class="p">):</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">os</span><span class="o">.</span><span class="n">killpg</span><span class="p">(</span><span class="n">job</span><span class="p">[</span><span class="s2">&quot;pgrp&quot;</span><span class="p">],</span> <span class="n">signal</span><span class="p">)</span>
-        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-            <span class="k">for</span> <span class="n">pid</span> <span class="ow">in</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;pids&quot;</span><span class="p">]:</span>
-                <span class="k">try</span><span class="p">:</span>
-                    <span class="n">os</span><span class="o">.</span><span class="n">kill</span><span class="p">(</span><span class="n">pid</span><span class="p">,</span> <span class="n">signal</span><span class="p">)</span>
-                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-                    <span class="k">pass</span>
+        <span class="k">except</span> <span class="ne">ProcessLookupError</span><span class="p">:</span>
+            <span class="k">pass</span>  <span class="c1"># process group already exited</span>
+        <span class="k">except</span> <span class="ne">PermissionError</span><span class="p">:</span>
+            <span class="n">print_warning</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;xonsh: permission denied sending </span><span class="si">{</span><span class="n">get_signal_name</span><span class="p">(</span><span class="n">signal</span><span class="p">)</span><span class="si">}</span><span class="s2"> to process group </span><span class="si">{</span><span class="n">job</span><span class="p">[</span><span class="s1">&#39;pgrp&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+            <span class="n">_kill_per_pid</span><span class="p">(</span><span class="n">job</span><span class="p">,</span> <span class="n">signal</span><span class="p">)</span>  <span class="c1"># killpg failed, try per-pid</span>
 
 <span class="k">else</span><span class="p">:</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_send_signal</span><span class="p">(</span><span class="n">job</span><span class="p">,</span> <span class="n">signal</span><span class="p">):</span>
         <span class="n">pgrp</span> <span class="o">=</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;pgrp&quot;</span><span class="p">]</span>
         <span class="k">if</span> <span class="n">pgrp</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">for</span> <span class="n">pid</span> <span class="ow">in</span> <span class="n">job</span><span class="p">[</span><span class="s2">&quot;pids&quot;</span><span class="p">]:</span>
-                <span class="k">try</span><span class="p">:</span>
-                    <span class="n">os</span><span class="o">.</span><span class="n">kill</span><span class="p">(</span><span class="n">pid</span><span class="p">,</span> <span class="n">signal</span><span class="p">)</span>
-                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-                    <span class="k">pass</span>
+            <span class="n">_kill_per_pid</span><span class="p">(</span><span class="n">job</span><span class="p">,</span> <span class="n">signal</span><span class="p">)</span>  <span class="c1"># callable alias, no process group</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="n">os</span><span class="o">.</span><span class="n">killpg</span><span class="p">(</span><span class="n">job</span><span class="p">[</span><span class="s2">&quot;pgrp&quot;</span><span class="p">],</span> <span class="n">signal</span><span class="p">)</span>
-            <span class="k">except</span> <span class="p">(</span><span class="ne">ProcessLookupError</span><span class="p">,</span> <span class="ne">PermissionError</span><span class="p">):</span>
-                <span class="k">pass</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">killpg</span><span class="p">(</span><span class="n">pgrp</span><span class="p">,</span> <span class="n">signal</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">ProcessLookupError</span><span class="p">:</span>
+                <span class="k">pass</span>  <span class="c1"># process group already exited</span>
+            <span class="k">except</span> <span class="ne">PermissionError</span><span class="p">:</span>
+                <span class="n">print_warning</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;xonsh: permission denied sending </span><span class="si">{</span><span class="n">get_signal_name</span><span class="p">(</span><span class="n">signal</span><span class="p">)</span><span class="si">}</span><span class="s2"> to process group </span><span class="si">{</span><span class="n">pgrp</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
 
 
 <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
