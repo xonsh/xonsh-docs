@@ -449,6 +449,10 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Determines whether a file descriptor is still writable by trying to</span>
 <span class="sd">    write an empty string and seeing if it fails.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">fd</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="c1"># No pipe was set up (e.g. stdout=None); treat as &quot;not broken by</span>
+        <span class="c1"># downstream&quot;, so the caller attributes the OSError to the alias.</span>
+        <span class="k">return</span> <span class="kc">True</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="n">os</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
         <span class="n">status</span> <span class="o">=</span> <span class="kc">True</span>
@@ -715,7 +719,7 @@
 <span class="sd">        Return from proxy function</span>
 <span class="sd">    stdout : file-like</span>
 <span class="sd">        Current stdout stream</span>
-<span class="sd">    stdout : file-like</span>
+<span class="sd">    stderr : file-like</span>
 <span class="sd">        Current stderr stream</span>
 
 <span class="sd">    Returns</span>
@@ -887,6 +891,7 @@
 <span class="sd">        not be called directly.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">f</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_close_devnull</span><span class="p">()</span>
             <span class="k">return</span>
         <span class="c1"># Set the thread-local swapped values.</span>
         <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">set_swapped_values</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">original_swapped_values</span><span class="p">)</span>
@@ -1198,6 +1203,7 @@
         <span class="n">err</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_ENCODING_ERRORS&quot;</span><span class="p">)</span>
         <span class="n">spec</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_wait_and_getattr</span><span class="p">(</span><span class="s2">&quot;spec&quot;</span><span class="p">)</span>
         <span class="c1"># set file handles</span>
+        <span class="n">owned_handles</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># handles opened here that we must close</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">stdin</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">stdin</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">else</span><span class="p">:</span>
@@ -1206,8 +1212,14 @@
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">inbuf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stdin</span>
             <span class="n">stdin</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">TextIOWrapper</span><span class="p">(</span><span class="n">inbuf</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">err</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stdin</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                <span class="n">owned_handles</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">stdin</span><span class="p">)</span>
         <span class="n">stdout</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pick_buf</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">,</span> <span class="n">enc</span><span class="p">,</span> <span class="n">err</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">stdout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">stdout</span> <span class="ow">and</span> <span class="n">stdout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="p">:</span>
+            <span class="n">owned_handles</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">stdout</span><span class="p">)</span>
         <span class="n">stderr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pick_buf</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stderr</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">,</span> <span class="n">enc</span><span class="p">,</span> <span class="n">err</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">stderr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">stderr</span> <span class="ow">and</span> <span class="n">stderr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">:</span>
+            <span class="n">owned_handles</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">stderr</span><span class="p">)</span>
         <span class="c1"># run the actual function</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">alias_env</span> <span class="o">=</span> <span class="p">{}</span>
@@ -1238,6 +1250,8 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">returncode</span> <span class="o">=</span> <span class="n">parse_proxy_return</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">stderr</span><span class="p">)</span>
         <span class="n">safe_flush</span><span class="p">(</span><span class="n">stdout</span><span class="p">)</span>
         <span class="n">safe_flush</span><span class="p">(</span><span class="n">stderr</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">owned_handles</span><span class="p">:</span>
+            <span class="n">safe_fdclose</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">returncode</span></div>
 
 

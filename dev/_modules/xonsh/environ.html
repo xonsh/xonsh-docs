@@ -423,7 +423,6 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">inspect</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">locale</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">operator</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pathlib</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">platform</span>
@@ -864,7 +863,7 @@
     <span class="n">target_value</span> <span class="o">=</span> <span class="s2">&quot;target&quot;</span>  <span class="c1"># special value to set for ln=target</span>
     <span class="n">target_color</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;RESET&quot;</span><span class="p">,)</span>  <span class="c1"># repres in color space</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ini_dict</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ini_dict</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_style</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_style_name</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_detyped</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_d</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">()</span>
@@ -3208,6 +3207,7 @@
                 <span class="n">default</span><span class="o">=</span><span class="n">vardocs</span><span class="o">.</span><span class="n">doc_default</span><span class="p">,</span>
                 <span class="n">configurable</span><span class="o">=</span><span class="n">vardocs</span><span class="o">.</span><span class="n">is_configurable</span><span class="p">,</span>
             <span class="p">)</span>
+            <span class="n">template</span> <span class="o">=</span> <span class="n">_rst_inline_to_color</span><span class="p">(</span><span class="n">template</span><span class="p">)</span>
         <span class="n">print_color</span><span class="p">(</span><span class="n">template</span><span class="p">)</span></div>
 
 
@@ -3262,7 +3262,8 @@
                 <span class="k">else</span><span class="p">:</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">_set_item</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">thread_local</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">exception</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="n">exception</span> <span class="kn">from</span><span class="w"> </span><span class="kc">None</span></div>
+                <span class="c1"># plain re-raise to preserve __cause__/__context__ chains</span>
+                <span class="k">raise</span> <span class="n">exception</span></div>
 
 
 <div class="viewcode-block" id="Env.get_swapped_values">
@@ -3463,6 +3464,9 @@
         <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Counts only explicitly-set vars (not defaults from self._vars).</span>
+        <span class="c1"># Note: __iter__ yields defaults too, so len(env) != len(list(env)).</span>
+        <span class="c1"># Use sum(1 for _ in self) if Mapping-protocol consistency is needed.</span>
         <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_d</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -3961,7 +3965,11 @@
             <span class="k">return</span> <span class="bp">NotImplemented</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">other</span><span class="p">):</span>
             <span class="k">return</span> <span class="kc">False</span>
-        <span class="k">return</span> <span class="nb">all</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="n">operator</span><span class="o">.</span><span class="n">eq</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">))</span>
+        <span class="c1"># Expand both sides so that &quot;~/bin&quot; and &quot;/Users/x/bin&quot; compare equal.</span>
+        <span class="k">return</span> <span class="nb">all</span><span class="p">(</span>
+            <span class="n">_expandpath</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="o">==</span> <span class="n">_expandpath</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_l</span><span class="p">,</span> <span class="n">other</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_repr_pretty_</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">cycle</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Pretty print path list&quot;&quot;&quot;</span>

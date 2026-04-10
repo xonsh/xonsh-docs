@@ -419,6 +419,7 @@
           <h1>Source code for xonsh.procs.pipelines</h1><div class="highlight"><pre>
 <span></span><span class="sd">&quot;&quot;&quot;Command pipeline tools.&quot;&quot;&quot;</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">errno</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
@@ -902,11 +903,21 @@
         <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">iterraw</span><span class="p">():</span>
             <span class="c1"># write to stdout line ASAP, if needed</span>
             <span class="k">if</span> <span class="n">stream</span><span class="p">:</span>
-                <span class="k">if</span> <span class="n">stdout_has_buffer</span><span class="p">:</span>
-                    <span class="n">out_target</span><span class="o">.</span><span class="n">buffer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
-                <span class="k">else</span><span class="p">:</span>
-                    <span class="n">out_target</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">err</span><span class="p">))</span>
-                <span class="n">out_target</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">stdout_has_buffer</span><span class="p">:</span>
+                        <span class="n">out_target</span><span class="o">.</span><span class="n">buffer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">out_target</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">err</span><span class="p">))</span>
+                    <span class="n">out_target</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+                <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">errno</span> <span class="ow">in</span> <span class="p">(</span><span class="n">errno</span><span class="o">.</span><span class="n">EPIPE</span><span class="p">,</span> <span class="n">errno</span><span class="o">.</span><span class="n">EINVAL</span><span class="p">):</span>
+                        <span class="c1"># Downstream process closed the pipe. Stop streaming</span>
+                        <span class="c1"># but keep collecting raw output for captured result.</span>
+                        <span class="c1"># Linux: errno.EPIPE (32, BrokenPipeError)</span>
+                        <span class="c1"># Windows: errno.EINVAL (22, &quot;Invalid argument&quot;)</span>
+                        <span class="n">stream</span> <span class="o">=</span> <span class="kc">False</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="k">raise</span>
             <span class="c1"># save the raw bytes</span>
             <span class="n">raw_out_lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
             <span class="c1"># do some munging of the line before we return it</span>
@@ -952,11 +963,18 @@
         <span class="p">)</span>
         <span class="k">if</span> <span class="n">show_stderr</span><span class="p">:</span>
             <span class="c1"># write bytes to std stream</span>
-            <span class="k">if</span> <span class="n">stderr_has_buffer</span><span class="p">:</span>
-                <span class="n">err_target</span><span class="o">.</span><span class="n">buffer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="n">err_target</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">err</span><span class="p">))</span>
-            <span class="n">err_target</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">stderr_has_buffer</span><span class="p">:</span>
+                    <span class="n">err_target</span><span class="o">.</span><span class="n">buffer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">err_target</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">err</span><span class="p">))</span>
+                <span class="n">err_target</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">errno</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="n">errno</span><span class="o">.</span><span class="n">EPIPE</span><span class="p">,</span> <span class="n">errno</span><span class="o">.</span><span class="n">EINVAL</span><span class="p">):</span>
+                    <span class="k">raise</span>
+                <span class="c1"># Downstream process closed the pipe.</span>
+                <span class="c1"># Linux: errno.EPIPE (32, BrokenPipeError)</span>
+                <span class="c1"># Windows: errno.EINVAL (22, &quot;Invalid argument&quot;)</span>
         <span class="c1"># accumulate the raw bytes</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_raw_error</span> <span class="o">+=</span> <span class="n">b</span>
         <span class="c1"># do some munging of the line before we save it to the attr</span>
@@ -1156,7 +1174,7 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">any_running</span> <span class="o">=</span> <span class="kc">False</span>
         <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">specs</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">procs</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
-            <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">p</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">p</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">any_running</span> <span class="o">=</span> <span class="kc">True</span>
                 <span class="k">continue</span>
             <span class="c1"># Ensure thread is fully done - poll() returns non-None</span>
@@ -1176,8 +1194,6 @@
             <span class="c1"># `_close_proc`, after the next proc has finished.</span>
             <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">s</span><span class="o">.</span><span class="n">pipe_channels</span><span class="p">:</span>
                 <span class="n">ch</span><span class="o">.</span><span class="n">close_writer</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">p</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">continue</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">stdin</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_safe_close</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
