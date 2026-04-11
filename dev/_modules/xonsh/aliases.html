@@ -547,6 +547,53 @@
 
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_normalize_return_command_result</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="n">alias_repr</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Normalize the return value of a ``@return_command`` alias.</span>
+
+<span class="sd">    A ``return_command`` alias may return either:</span>
+
+<span class="sd">    - a non-empty ``list`` — the resolved command tokens, with **no** env</span>
+<span class="sd">      overlay attached to the returned command,</span>
+<span class="sd">    - a ``dict`` with a required ``&quot;cmd&quot;`` key (a non-empty list of tokens)</span>
+<span class="sd">      and an optional ``&quot;env&quot;`` key (a ``dict``) — the command tokens plus</span>
+<span class="sd">      an env overlay that applies **only** to the returned command.</span>
+
+<span class="sd">    The ``env=`` kwarg the alias received is a separate concept: it is an</span>
+<span class="sd">    overlay active **during the function body** (mutating it affects</span>
+<span class="sd">    subprocesses the alias runs inline, just like for an ordinary callable</span>
+<span class="sd">    alias). It is independent of the returned command&#39;s env — to set env</span>
+<span class="sd">    for the returned command, the alias must use dict-return.</span>
+
+<span class="sd">    Raises ``ValueError`` on malformed returns, using ``alias_repr`` in the</span>
+<span class="sd">    message so the user can tell which alias produced the bad value.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    cmd : list</span>
+<span class="sd">        The command tokens to execute.</span>
+<span class="sd">    returned_env : dict</span>
+<span class="sd">        The env overlay for the returned command (empty dict if the alias</span>
+<span class="sd">        returned a bare list or a dict without ``&quot;env&quot;``).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">returned_env</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="n">env_overlay</span> <span class="o">=</span> <span class="n">val</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;env&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">env_overlay</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">env_overlay</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;return_command alias </span><span class="si">{</span><span class="n">alias_repr</span><span class="si">}</span><span class="s2">: &#39;env&#39; must be a dict, &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;got </span><span class="si">{</span><span class="n">env_overlay</span><span class="si">!r}</span><span class="s2">.&quot;</span>
+                <span class="p">)</span>
+            <span class="n">returned_env</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">env_overlay</span><span class="p">)</span>
+        <span class="n">val</span> <span class="o">=</span> <span class="n">val</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;cmd&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">val</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;return_command alias </span><span class="si">{</span><span class="n">alias_repr</span><span class="si">}</span><span class="s2">: wrong return value </span><span class="si">{</span><span class="n">val</span><span class="si">!r}</span><span class="s2">, &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;expected a non-empty list or dict with &#39;cmd&#39; (non-empty list).&quot;</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">val</span><span class="p">,</span> <span class="n">returned_env</span>
+
+
 <div class="viewcode-block" id="FuncAlias">
 <a class="viewcode-back" href="../../lib/_autosummary/cmd/xonsh.aliases.html#xonsh.aliases.FuncAlias">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">FuncAlias</span><span class="p">:</span>
@@ -824,6 +871,7 @@
         <span class="n">seen_tokens</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">(),</span>
         <span class="n">acc_args</span><span class="o">=</span><span class="p">(),</span>
         <span class="n">decorators</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">env_out</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        &quot;Evaluates&quot; the alias ``value``, by recursively looking up the leftmost</span>
@@ -834,6 +882,11 @@
 <span class="sd">        where ``cmd=ls -al`` and ``ls`` is an alias with its value being a</span>
 <span class="sd">        callable.  The resulting callable will be &quot;partially applied&quot; with</span>
 <span class="sd">        ``[&quot;-al&quot;, &quot;arg&quot;]``.</span>
+
+<span class="sd">        ``env_out``, if given, is a mutable dict that accumulates the env</span>
+<span class="sd">        overlay requested by any ``return_command`` alias encountered while</span>
+<span class="sd">        resolving the chain (via dict-return ``&quot;env&quot;`` key). The top-level</span>
+<span class="sd">        :meth:`get` caller passes its own collector dict here.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">decorators</span> <span class="o">=</span> <span class="n">decorators</span> <span class="k">if</span> <span class="n">decorators</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">[]</span>
         <span class="c1"># Beware of mutability: default values for keyword args are evaluated</span>
@@ -853,15 +906,25 @@
             <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="p">[</span><span class="n">i</span><span class="p">:]</span>
 
         <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s2">&quot;return_what&quot;</span><span class="p">,</span> <span class="s2">&quot;result&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;command&quot;</span><span class="p">:</span>
-            <span class="n">local_env</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="n">alias_repr</span> <span class="o">=</span> <span class="nb">repr</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s2">&quot;__name__&quot;</span><span class="p">,</span> <span class="n">value</span><span class="p">))</span>
+            <span class="c1"># ``kwarg_env`` is a live overlay: while the alias body runs,</span>
+            <span class="c1"># mutating it affects commands the alias spawns inline (same</span>
+            <span class="c1"># semantics as the ``env=`` kwarg for a normal callable alias).</span>
+            <span class="c1"># It does NOT flow to the returned command — for that, the</span>
+            <span class="c1"># alias must return a dict with an ``&quot;env&quot;`` key.</span>
+            <span class="n">kwarg_env</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="p">(</span><span class="n">acc_args</span><span class="p">,</span> <span class="n">decorators</span><span class="o">=</span><span class="n">decorators</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">local_env</span><span class="p">)</span>
+                <span class="k">with</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">swap</span><span class="p">(</span><span class="n">overlay</span><span class="o">=</span><span class="n">kwarg_env</span><span class="p">):</span>
+                    <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="p">(</span><span class="n">acc_args</span><span class="p">,</span> <span class="n">decorators</span><span class="o">=</span><span class="n">decorators</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">kwarg_env</span><span class="p">)</span>
                 <span class="n">acc_args</span> <span class="o">=</span> <span class="p">[]</span>
             <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-                <span class="n">print_exception</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Exception inside alias </span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">print_exception</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Exception inside alias </span><span class="si">{</span><span class="n">alias_repr</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
                 <span class="k">return</span> <span class="kc">None</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="nb">len</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;return_command alias: zero arguments.&quot;</span><span class="p">)</span>
+            <span class="n">value</span><span class="p">,</span> <span class="n">returned_env</span> <span class="o">=</span> <span class="n">_normalize_return_command_result</span><span class="p">(</span>
+                <span class="n">value</span><span class="p">,</span> <span class="n">alias_repr</span><span class="o">=</span><span class="n">alias_repr</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">env_out</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">returned_env</span><span class="p">:</span>
+                <span class="n">env_out</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">returned_env</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
             <span class="k">return</span> <span class="p">[</span><span class="n">value</span><span class="p">]</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="n">acc_args</span><span class="p">)</span>
@@ -884,6 +947,7 @@
                     <span class="n">seen_tokens</span><span class="p">,</span>
                     <span class="n">acc_args</span><span class="p">,</span>
                     <span class="n">decorators</span><span class="o">=</span><span class="n">decorators</span><span class="p">,</span>
+                    <span class="n">env_out</span><span class="o">=</span><span class="n">env_out</span><span class="p">,</span>
                 <span class="p">)</span></div>
 
 
@@ -913,19 +977,24 @@
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
             <span class="n">args</span> <span class="o">=</span> <span class="n">key</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
             <span class="n">key</span> <span class="o">=</span> <span class="n">key</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="n">local_env</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="n">val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_raw</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="c1"># Env overlay collected for the RETURNED command — from a dict-return</span>
+        <span class="c1"># at any level of the alias chain. Kept strictly separate from the</span>
+        <span class="c1"># ``env=`` kwarg, which is a live overlay active only during the body</span>
+        <span class="c1"># of a return_command alias.</span>
+        <span class="n">returned_env</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">val</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="s2">&quot;return_what&quot;</span><span class="p">,</span> <span class="s2">&quot;result&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;command&quot;</span><span class="p">:</span>
+            <span class="n">kwarg_env</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="n">val</span> <span class="o">=</span> <span class="n">val</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">decorators</span><span class="o">=</span><span class="n">decorators</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">local_env</span><span class="p">)</span>
+                <span class="k">with</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">swap</span><span class="p">(</span><span class="n">overlay</span><span class="o">=</span><span class="n">kwarg_env</span><span class="p">):</span>
+                    <span class="n">val</span> <span class="o">=</span> <span class="n">val</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">decorators</span><span class="o">=</span><span class="n">decorators</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">kwarg_env</span><span class="p">)</span>
                 <span class="n">args</span> <span class="o">=</span> <span class="p">[]</span>
             <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
                 <span class="n">print_exception</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Exception inside alias </span><span class="si">{</span><span class="n">key</span><span class="si">!r}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
                 <span class="k">return</span> <span class="kc">None</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">len</span><span class="p">(</span><span class="n">val</span><span class="p">):</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;return_command alias </span><span class="si">{</span><span class="n">key</span><span class="si">!r}</span><span class="s2">: wrong return value </span><span class="si">{</span><span class="n">val</span><span class="si">!r}</span><span class="s2">, expected a list.&quot;</span>
-                <span class="p">)</span>
+            <span class="n">val</span><span class="p">,</span> <span class="n">returned_env</span> <span class="o">=</span> <span class="n">_normalize_return_command_result</span><span class="p">(</span>
+                <span class="n">val</span><span class="p">,</span> <span class="n">alias_repr</span><span class="o">=</span><span class="nb">repr</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+            <span class="p">)</span>
 
         <span class="k">if</span> <span class="n">val</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">default</span>
@@ -935,9 +1004,10 @@
                 <span class="n">seen_tokens</span><span class="o">=</span><span class="p">{</span><span class="n">key</span><span class="p">},</span>
                 <span class="n">decorators</span><span class="o">=</span><span class="n">decorators</span><span class="p">,</span>
                 <span class="n">acc_args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span>
+                <span class="n">env_out</span><span class="o">=</span><span class="n">returned_env</span><span class="p">,</span>
             <span class="p">)</span>
-            <span class="k">if</span> <span class="n">local_env</span> <span class="ow">and</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">result</span> <span class="o">=</span> <span class="n">AliasReturnCommandResult</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">local_env</span><span class="o">=</span><span class="n">local_env</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">returned_env</span> <span class="ow">and</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="n">AliasReturnCommandResult</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">local_env</span><span class="o">=</span><span class="n">returned_env</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">result</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;alias of </span><span class="si">{!r}</span><span class="s2"> has an inappropriate type: </span><span class="si">{!r}</span><span class="s2">&quot;</span>

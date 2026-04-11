@@ -448,6 +448,8 @@
           <h1>Source code for xonsh.xoreutils.xcontext</h1><div class="highlight"><pre>
 <span></span><span class="sd">&quot;&quot;&quot;The xontext command.&quot;&quot;&quot;</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">errno</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.built_ins</span><span class="w"> </span><span class="kn">import</span> <span class="n">XSH</span>
@@ -471,17 +473,159 @@
     <span class="k">return</span> <span class="p">(</span><span class="n">version</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;from&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="s2">&quot;from&quot;</span> <span class="ow">in</span> <span class="n">version</span> <span class="k">else</span> <span class="n">version</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_has_symlink_cycle</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">max_depth</span><span class="o">=</span><span class="mi">40</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Walk the symlink chain starting at ``path`` and detect cycles.</span>
+
+<span class="sd">    Cross-platform fallback for when :func:`os.path.realpath` with</span>
+<span class="sd">    ``strict=True`` raises an ``OSError`` whose ``errno`` is not</span>
+<span class="sd">    :data:`errno.ELOOP`. On Windows, symlink loops surface as winerror</span>
+<span class="sd">    codes (e.g. ``ERROR_CANT_ACCESS_FILE``) rather than ``ELOOP``, so</span>
+<span class="sd">    we can&#39;t rely on errno alone — this function walks the link chain</span>
+<span class="sd">    via :func:`os.readlink` and flags the path as cyclic if it revisits</span>
+<span class="sd">    a normalized node or exceeds ``max_depth``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">seen</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">current</span> <span class="o">=</span> <span class="n">path</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_depth</span><span class="p">):</span>
+            <span class="n">normalized</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">normcase</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">current</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">normalized</span> <span class="ow">in</span> <span class="n">seen</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">True</span>
+            <span class="n">seen</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">normalized</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">islink</span><span class="p">(</span><span class="n">current</span><span class="p">):</span>
+                <span class="k">return</span> <span class="kc">False</span>
+            <span class="n">target</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">readlink</span><span class="p">(</span><span class="n">current</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isabs</span><span class="p">(</span><span class="n">target</span><span class="p">):</span>
+                <span class="n">target</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">current</span><span class="p">),</span> <span class="n">target</span><span class="p">)</span>
+            <span class="n">current</span> <span class="o">=</span> <span class="n">target</span>
+    <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="c1"># Depth exceeded without a non-link terminus → treat as cyclic.</span>
+    <span class="k">return</span> <span class="kc">True</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_is_executable_file</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return True if ``path`` is an existing, accessible, executable file.</span>
+
+<span class="sd">    Used by :func:`_resolve_one` to flag a displayed path as &quot;bad&quot; when it</span>
+<span class="sd">    is inaccessible (missing file, stat error) or not marked executable.</span>
+<span class="sd">    Cross-platform:</span>
+
+<span class="sd">    * POSIX — checks the ``+x`` bit for the current user via</span>
+<span class="sd">      :func:`os.access`.</span>
+<span class="sd">    * Windows — :func:`os.access` with ``X_OK`` inspects the file</span>
+<span class="sd">      extension against ``PATHEXT`` (Python 3.12+) or always returns</span>
+<span class="sd">      ``True`` for readable files (earlier versions). Either way the</span>
+<span class="sd">      accessibility check (``isfile``) still catches missing/unreachable</span>
+<span class="sd">      paths, which is the more important signal for xcontext.</span>
+
+<span class="sd">    Special case: a file named ``__main__.py`` is treated as &quot;good&quot; as</span>
+<span class="sd">    long as it exists. Such files are module entry points invoked via</span>
+<span class="sd">    ``python -m &lt;pkg&gt;`` and are never marked ``+x`` by convention, but</span>
+<span class="sd">    they are a perfectly valid way to launch the package — flagging</span>
+<span class="sd">    them red would be a false positive for ``xxonsh`` when the current</span>
+<span class="sd">    session was started via ``python -m xonsh``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;__main__.py&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">access</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">X_OK</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_resolve_one</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">resolve</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve a single string path and report whether it&#39;s &quot;bad&quot;.</span>
+
+<span class="sd">    Returns ``(resolved_value, is_bad)``. A path is considered bad — and</span>
+<span class="sd">    the caller renders its whole row in RED — if any of:</span>
+
+<span class="sd">    * a symlink cycle is detected (original path is preserved as the</span>
+<span class="sd">      display value; the caller can&#39;t meaningfully resolve further),</span>
+<span class="sd">    * the resolved path is not an accessible executable file (missing,</span>
+<span class="sd">      not a regular file, or lacks the ``+x`` bit).</span>
+
+<span class="sd">    If ``resolve`` is False, symlinks are NOT followed, but the</span>
+<span class="sd">    accessibility / executable check still runs on the raw value, so</span>
+<span class="sd">    ``--no-resolve`` still reports broken entries in red.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">value</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">value</span><span class="p">,</span> <span class="kc">False</span>
+
+    <span class="c1"># ----- Resolution phase ------------------------------------------------</span>
+    <span class="k">if</span> <span class="n">resolve</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">resolved</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">realpath</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="c1"># POSIX reliably uses ELOOP for cycles.</span>
+            <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="s2">&quot;errno&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="o">==</span> <span class="n">errno</span><span class="o">.</span><span class="n">ELOOP</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">value</span><span class="p">,</span> <span class="kc">True</span>
+            <span class="c1"># Windows / edge cases: walk the chain ourselves before giving up.</span>
+            <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">islink</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="ow">and</span> <span class="n">_has_symlink_cycle</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">value</span><span class="p">,</span> <span class="kc">True</span>
+            <span class="c1"># Non-cyclic failure (dangling link, missing target, permission</span>
+            <span class="c1"># error, etc.) — fall back to the lenient ``realpath``, which</span>
+            <span class="c1"># never raises but may return a non-existent path.</span>
+            <span class="n">resolved</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">realpath</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">resolved</span> <span class="o">=</span> <span class="n">value</span>
+
+    <span class="c1"># ----- Accessibility / executable phase --------------------------------</span>
+    <span class="k">return</span> <span class="n">resolved</span><span class="p">,</span> <span class="ow">not</span> <span class="n">_is_executable_file</span><span class="p">(</span><span class="n">resolved</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_resolve_path</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">resolve</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return ``(resolved_value, is_bad)`` for the given alias value.</span>
+
+<span class="sd">    Accepts ``None`` (passed through), a string path (resolved via</span>
+<span class="sd">    :func:`_resolve_one`), or a list whose first element is an executable</span>
+<span class="sd">    path (only the first element is resolved — the remaining args are</span>
+<span class="sd">    kept as-is). ``is_bad`` is True if the resolved (or, for lists, the</span>
+<span class="sd">    first-element) path is a symlink loop or is missing / not executable.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">False</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">_resolve_one</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">resolve</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="n">value</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">head</span><span class="p">,</span> <span class="n">bad</span> <span class="o">=</span> <span class="n">_resolve_one</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">resolve</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">head</span><span class="p">]</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="n">value</span><span class="p">[</span><span class="mi">1</span><span class="p">:]),</span> <span class="n">bad</span>
+    <span class="k">return</span> <span class="n">value</span><span class="p">,</span> <span class="kc">False</span>
+
+
 <div class="viewcode-block" id="xcontext_main">
 <a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.xoreutils.xcontext.html#xonsh.xoreutils.xcontext.xcontext_main">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">xcontext_main</span><span class="p">(</span><span class="n">_args</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_stdout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_stderr</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Report information about the current xonsh environment.&quot;&quot;&quot;</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">xcontext_main</span><span class="p">(</span><span class="n">no_resolve</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">_stdout</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Report information about the current xonsh environment.</span>
+
+<span class="sd">    By default, all displayed binary paths (xxonsh, xpython, xpip and the</span>
+<span class="sd">    ``$PATH``-resolved ``xonsh``/``python``/``pip``/``pytest``) have their</span>
+<span class="sd">    symlinks followed to the real underlying files. This also makes the</span>
+<span class="sd">    match check that decides the label color (GREEN for match, BLUE for</span>
+<span class="sd">    mismatch) more accurate, because two paths that ultimately point to</span>
+<span class="sd">    the same file compare equal after resolution.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    no_resolve : -n, --no-resolve</span>
+<span class="sd">        Show raw paths as-is without following symlinks (turns off the</span>
+<span class="sd">        default resolution).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># Local import: xonsh.main pulls in heavy modules, keep the dependency lazy.</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.main</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_current_xonsh</span>
 
     <span class="n">stdout</span> <span class="o">=</span> <span class="n">_stdout</span> <span class="ow">or</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span>
-    <span class="n">current_xonsh</span> <span class="o">=</span> <span class="n">get_current_xonsh</span><span class="p">()</span>
+    <span class="n">resolve</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">no_resolve</span>
+
+    <span class="n">current_xonsh</span><span class="p">,</span> <span class="n">xxonsh_bad</span> <span class="o">=</span> <span class="n">_resolve_path</span><span class="p">(</span><span class="n">get_current_xonsh</span><span class="p">(),</span> <span class="n">resolve</span><span class="p">)</span>
     <span class="n">appimage_python</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="n">IN_APPIMAGE</span> <span class="k">else</span> <span class="kc">None</span>
-    <span class="n">xpy</span> <span class="o">=</span> <span class="n">appimage_python</span> <span class="k">if</span> <span class="n">appimage_python</span> <span class="k">else</span> <span class="n">sys</span><span class="o">.</span><span class="n">executable</span>
+    <span class="n">xpy</span><span class="p">,</span> <span class="n">xpython_bad</span> <span class="o">=</span> <span class="n">_resolve_path</span><span class="p">(</span>
+        <span class="n">appimage_python</span> <span class="k">if</span> <span class="n">appimage_python</span> <span class="k">else</span> <span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">,</span> <span class="n">resolve</span>
+    <span class="p">)</span>
     <span class="n">xpy_ver</span> <span class="o">=</span> <span class="n">_get_version</span><span class="p">(</span><span class="n">xpy</span><span class="p">)</span>
 
     <span class="c1"># Pre-resolve the PATH-visible binaries once so we can both display them</span>
@@ -490,15 +634,15 @@
     <span class="c1"># Uses xonsh&#39;s own ``locate_executable`` rather than ``shutil.which``</span>
     <span class="c1"># because the stdlib one is flagged (deprecated for ``PathLike`` args on</span>
     <span class="c1"># Windows &lt; 3.12), and xonsh&#39;s version is the recommended replacement.</span>
-    <span class="n">path_resolved</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s2">&quot;xonsh&quot;</span><span class="p">:</span> <span class="n">locate_executable</span><span class="p">(</span><span class="s2">&quot;xonsh&quot;</span><span class="p">),</span>
-        <span class="s2">&quot;python&quot;</span><span class="p">:</span> <span class="n">locate_executable</span><span class="p">(</span><span class="s2">&quot;python&quot;</span><span class="p">),</span>
-        <span class="s2">&quot;pip&quot;</span><span class="p">:</span> <span class="n">locate_executable</span><span class="p">(</span><span class="s2">&quot;pip&quot;</span><span class="p">),</span>
-        <span class="s2">&quot;pytest&quot;</span><span class="p">:</span> <span class="n">locate_executable</span><span class="p">(</span><span class="s2">&quot;pytest&quot;</span><span class="p">),</span>
-    <span class="p">}</span>
+    <span class="n">path_resolved</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">path_bad</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;xonsh&quot;</span><span class="p">,</span> <span class="s2">&quot;python&quot;</span><span class="p">,</span> <span class="s2">&quot;pip&quot;</span><span class="p">,</span> <span class="s2">&quot;pytest&quot;</span><span class="p">):</span>
+        <span class="n">path</span><span class="p">,</span> <span class="n">bad</span> <span class="o">=</span> <span class="n">_resolve_path</span><span class="p">(</span><span class="n">locate_executable</span><span class="p">(</span><span class="n">cmd</span><span class="p">),</span> <span class="n">resolve</span><span class="p">)</span>
+        <span class="n">path_resolved</span><span class="p">[</span><span class="n">cmd</span><span class="p">]</span> <span class="o">=</span> <span class="n">path</span>
+        <span class="n">path_bad</span><span class="p">[</span><span class="n">cmd</span><span class="p">]</span> <span class="o">=</span> <span class="n">bad</span>
 
     <span class="c1"># xpip alias value as a single string (for display AND for match check).</span>
-    <span class="n">xpip</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">aliases</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;xpip&quot;</span><span class="p">)</span>
+    <span class="n">xpip</span><span class="p">,</span> <span class="n">xpip_bad</span> <span class="o">=</span> <span class="n">_resolve_path</span><span class="p">(</span><span class="n">XSH</span><span class="o">.</span><span class="n">aliases</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;xpip&quot;</span><span class="p">),</span> <span class="n">resolve</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">xpip</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">all</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">xpip</span><span class="p">):</span>
         <span class="n">xpip_display</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">xpip</span><span class="p">)</span>
     <span class="k">elif</span> <span class="n">xpip</span><span class="p">:</span>
@@ -509,13 +653,16 @@
     <span class="c1"># Color tokens: section headers are purple; within a family (xonsh/xxonsh,</span>
     <span class="c1"># python/xpython, pip/xpip) both labels go GREEN when the session binary</span>
     <span class="c1"># matches what ``$PATH`` resolves to, otherwise BLUE. Labels outside any</span>
-    <span class="c1"># family (pytest, ``[Current environment]`` vars) stay YELLOW. Printed</span>
-    <span class="c1"># via print_color, which dispatches to the active shell&#39;s own color</span>
-    <span class="c1"># renderer.</span>
+    <span class="c1"># family (pytest, ``[Current environment]`` vars) stay YELLOW. Any row</span>
+    <span class="c1"># whose path is &quot;bad&quot; — symlink loop, missing, inaccessible, or not</span>
+    <span class="c1"># executable — is rendered entirely in RED, overriding the row color.</span>
+    <span class="c1"># Printed via print_color, which dispatches to the active shell&#39;s own</span>
+    <span class="c1"># color renderer.</span>
     <span class="n">PURPLE</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{PURPLE}</span><span class="s2">&quot;</span>
     <span class="n">GREEN</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{GREEN}</span><span class="s2">&quot;</span>
     <span class="n">BLUE</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{BLUE}</span><span class="s2">&quot;</span>
     <span class="n">YELLOW</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{YELLOW}</span><span class="s2">&quot;</span>
+    <span class="n">RED</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">&quot;</span>
     <span class="n">RESET</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span>
 
     <span class="n">xonsh_color</span> <span class="o">=</span> <span class="n">GREEN</span> <span class="k">if</span> <span class="n">current_xonsh</span> <span class="o">==</span> <span class="n">path_resolved</span><span class="p">[</span><span class="s2">&quot;xonsh&quot;</span><span class="p">]</span> <span class="k">else</span> <span class="n">BLUE</span>
@@ -532,17 +679,36 @@
         <span class="s2">&quot;pytest&quot;</span><span class="p">:</span> <span class="n">YELLOW</span><span class="p">,</span>
     <span class="p">}</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_label</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return ``{COLOR}name:{RESET}`` for ``print_color`` format strings.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">label_color</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">YELLOW</span><span class="p">)</span><span class="si">}{</span><span class="n">name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">RESET</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_format_row</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">ver</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">bad</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build a ``print_color`` format string for one label/value row.</span>
+
+<span class="sd">        If ``bad`` is True, the whole line (label + value + version) is</span>
+<span class="sd">        wrapped in :data:`RED` to flag the problem (cycle, missing file,</span>
+<span class="sd">        or not executable) — the label&#39;s normal color is overridden.</span>
+<span class="sd">        Otherwise the label uses its family color and the value is</span>
+<span class="sd">        rendered in the default terminal color.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">bad</span><span class="p">:</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">RED</span><span class="si">}{</span><span class="n">name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">value</span><span class="si">}{</span><span class="n">ver</span><span class="si">}{</span><span class="n">RESET</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="n">color</span> <span class="o">=</span> <span class="n">label_color</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">YELLOW</span><span class="p">)</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">color</span><span class="si">}{</span><span class="n">name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">RESET</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">value</span><span class="si">}{</span><span class="n">ver</span><span class="si">}</span><span class="s2">&quot;</span>
 
     <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">PURPLE</span><span class="si">}</span><span class="s2">[Current xonsh session]</span><span class="si">{</span><span class="n">RESET</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
-    <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_label</span><span class="p">(</span><span class="s1">&#39;xxonsh&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">current_xonsh</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
-    <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_label</span><span class="p">(</span><span class="s1">&#39;xpython&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">xpy</span><span class="si">}</span><span class="s2">  # </span><span class="si">{</span><span class="n">xpy_ver</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="n">print_color</span><span class="p">(</span>
+        <span class="n">_format_row</span><span class="p">(</span><span class="s2">&quot;xxonsh&quot;</span><span class="p">,</span> <span class="n">current_xonsh</span><span class="p">,</span> <span class="n">bad</span><span class="o">=</span><span class="n">xxonsh_bad</span><span class="p">),</span>
+        <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">print_color</span><span class="p">(</span>
+        <span class="n">_format_row</span><span class="p">(</span><span class="s2">&quot;xpython&quot;</span><span class="p">,</span> <span class="n">xpy</span><span class="p">,</span> <span class="n">ver</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;  # </span><span class="si">{</span><span class="n">xpy_ver</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">bad</span><span class="o">=</span><span class="n">xpython_bad</span><span class="p">),</span>
+        <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">,</span>
+    <span class="p">)</span>
     <span class="k">if</span> <span class="n">xpip_display</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_label</span><span class="p">(</span><span class="s1">&#39;xpip&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">xpip_display</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+        <span class="n">print_color</span><span class="p">(</span>
+            <span class="n">_format_row</span><span class="p">(</span><span class="s2">&quot;xpip&quot;</span><span class="p">,</span> <span class="n">xpip_display</span><span class="p">,</span> <span class="n">bad</span><span class="o">=</span><span class="n">xpip_bad</span><span class="p">),</span>
+            <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">,</span>
+        <span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_label</span><span class="p">(</span><span class="s1">&#39;xpip&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2"> not found&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+        <span class="n">print_color</span><span class="p">(</span><span class="n">_format_row</span><span class="p">(</span><span class="s2">&quot;xpip&quot;</span><span class="p">,</span> <span class="s2">&quot;not found&quot;</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
 
     <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
     <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">PURPLE</span><span class="si">}</span><span class="s2">[Current commands environment]</span><span class="si">{</span><span class="n">RESET</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
@@ -551,20 +717,19 @@
         <span class="n">cmds</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;pytest&quot;</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="n">cmds</span><span class="p">:</span>
         <span class="n">path</span> <span class="o">=</span> <span class="n">path_resolved</span><span class="p">[</span><span class="n">cmd</span><span class="p">]</span>
+        <span class="n">bad</span> <span class="o">=</span> <span class="n">path_bad</span><span class="p">[</span><span class="n">cmd</span><span class="p">]</span>
         <span class="k">if</span> <span class="n">path</span><span class="p">:</span>
-            <span class="n">ver</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
-            <span class="k">if</span> <span class="n">cmd</span> <span class="o">==</span> <span class="s2">&quot;python&quot;</span><span class="p">:</span>
-                <span class="n">ver</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;  # </span><span class="si">{</span><span class="n">_get_version</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_label</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">path</span><span class="si">}{</span><span class="n">ver</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+            <span class="n">ver</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;  # </span><span class="si">{</span><span class="n">_get_version</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">cmd</span> <span class="o">==</span> <span class="s2">&quot;python&quot;</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+            <span class="n">print_color</span><span class="p">(</span><span class="n">_format_row</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">ver</span><span class="o">=</span><span class="n">ver</span><span class="p">,</span> <span class="n">bad</span><span class="o">=</span><span class="n">bad</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_label</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span><span class="si">}</span><span class="s2"> not found&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+            <span class="n">print_color</span><span class="p">(</span><span class="n">_format_row</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="s2">&quot;not found&quot;</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
     <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
     <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">PURPLE</span><span class="si">}</span><span class="s2">[Current environment]</span><span class="si">{</span><span class="n">RESET</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
     <span class="n">envs</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;CONDA_DEFAULT_ENV&quot;</span><span class="p">,</span> <span class="s2">&quot;VIRTUAL_ENV&quot;</span><span class="p">]</span>
     <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">envs</span><span class="p">:</span>
         <span class="n">val</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ev</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">val</span><span class="p">:</span>
-            <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_label</span><span class="p">(</span><span class="n">ev</span><span class="p">)</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">val</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+            <span class="n">print_color</span><span class="p">(</span><span class="n">_format_row</span><span class="p">(</span><span class="n">ev</span><span class="p">,</span> <span class="n">val</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
     <span class="k">return</span> <span class="mi">0</span></div>
 
 
