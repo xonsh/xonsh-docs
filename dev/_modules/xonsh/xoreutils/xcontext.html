@@ -448,12 +448,13 @@
           <h1>Source code for xonsh.xoreutils.xcontext</h1><div class="highlight"><pre>
 <span></span><span class="sd">&quot;&quot;&quot;The xontext command.&quot;&quot;&quot;</span>
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.built_ins</span><span class="w"> </span><span class="kn">import</span> <span class="n">XSH</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.cli_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">ArgParserAlias</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.platform</span><span class="w"> </span><span class="kn">import</span> <span class="n">IN_APPIMAGE</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.procs.executables</span><span class="w"> </span><span class="kn">import</span> <span class="n">locate_executable</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.tools</span><span class="w"> </span><span class="kn">import</span> <span class="n">print_color</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_get_version</span><span class="p">(</span><span class="n">binary</span><span class="p">,</span> <span class="n">arg_ver</span><span class="o">=</span><span class="s2">&quot;--version&quot;</span><span class="p">):</span>
@@ -474,51 +475,103 @@
 <a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.xoreutils.xcontext.html#xonsh.xoreutils.xcontext.xcontext_main">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">xcontext_main</span><span class="p">(</span><span class="n">_args</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_stdout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_stderr</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Report information about the current xonsh environment.&quot;&quot;&quot;</span>
+    <span class="c1"># Local import: xonsh.main pulls in heavy modules, keep the dependency lazy.</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.main</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_current_xonsh</span>
+
     <span class="n">stdout</span> <span class="o">=</span> <span class="n">_stdout</span> <span class="ow">or</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span>
-    <span class="n">current_xonsh</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">current_xonsh</span> <span class="o">=</span> <span class="n">get_current_xonsh</span><span class="p">()</span>
     <span class="n">appimage_python</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="n">IN_APPIMAGE</span> <span class="k">else</span> <span class="kc">None</span>
     <span class="n">xpy</span> <span class="o">=</span> <span class="n">appimage_python</span> <span class="k">if</span> <span class="n">appimage_python</span> <span class="k">else</span> <span class="n">sys</span><span class="o">.</span><span class="n">executable</span>
     <span class="n">xpy_ver</span> <span class="o">=</span> <span class="n">_get_version</span><span class="p">(</span><span class="n">xpy</span><span class="p">)</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[Current xonsh session]&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xonsh: </span><span class="si">{</span><span class="n">current_xonsh</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xpython: </span><span class="si">{</span><span class="n">xpy</span><span class="si">}</span><span class="s2">  # </span><span class="si">{</span><span class="n">xpy_ver</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="c1"># Pre-resolve the PATH-visible binaries once so we can both display them</span>
+    <span class="c1"># in the &quot;commands environment&quot; section and compare them against the</span>
+    <span class="c1"># session-specific values (xxonsh/xpython/xpip) to decide coloring.</span>
+    <span class="c1"># Uses xonsh&#39;s own ``locate_executable`` rather than ``shutil.which``</span>
+    <span class="c1"># because the stdlib one is flagged (deprecated for ``PathLike`` args on</span>
+    <span class="c1"># Windows &lt; 3.12), and xonsh&#39;s version is the recommended replacement.</span>
+    <span class="n">path_resolved</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;xonsh&quot;</span><span class="p">:</span> <span class="n">locate_executable</span><span class="p">(</span><span class="s2">&quot;xonsh&quot;</span><span class="p">),</span>
+        <span class="s2">&quot;python&quot;</span><span class="p">:</span> <span class="n">locate_executable</span><span class="p">(</span><span class="s2">&quot;python&quot;</span><span class="p">),</span>
+        <span class="s2">&quot;pip&quot;</span><span class="p">:</span> <span class="n">locate_executable</span><span class="p">(</span><span class="s2">&quot;pip&quot;</span><span class="p">),</span>
+        <span class="s2">&quot;pytest&quot;</span><span class="p">:</span> <span class="n">locate_executable</span><span class="p">(</span><span class="s2">&quot;pytest&quot;</span><span class="p">),</span>
+    <span class="p">}</span>
 
+    <span class="c1"># xpip alias value as a single string (for display AND for match check).</span>
     <span class="n">xpip</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">aliases</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;xpip&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">xpip</span><span class="p">:</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">xpip</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">all</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">xpip</span><span class="p">):</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xpip: </span><span class="si">{</span><span class="s1">&#39; &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">xpip</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;xpip: </span><span class="si">{</span><span class="n">xpip</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">xpip</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">all</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">xpip</span><span class="p">):</span>
+        <span class="n">xpip_display</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">xpip</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">xpip</span><span class="p">:</span>
+        <span class="n">xpip_display</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">xpip</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;xpip: not found&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+        <span class="n">xpip_display</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="c1"># Color tokens: section headers are purple; within a family (xonsh/xxonsh,</span>
+    <span class="c1"># python/xpython, pip/xpip) both labels go GREEN when the session binary</span>
+    <span class="c1"># matches what ``$PATH`` resolves to, otherwise BLUE. Labels outside any</span>
+    <span class="c1"># family (pytest, ``[Current environment]`` vars) stay YELLOW. Printed</span>
+    <span class="c1"># via print_color, which dispatches to the active shell&#39;s own color</span>
+    <span class="c1"># renderer.</span>
+    <span class="n">PURPLE</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{PURPLE}</span><span class="s2">&quot;</span>
+    <span class="n">GREEN</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{GREEN}</span><span class="s2">&quot;</span>
+    <span class="n">BLUE</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{BLUE}</span><span class="s2">&quot;</span>
+    <span class="n">YELLOW</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{YELLOW}</span><span class="s2">&quot;</span>
+    <span class="n">RESET</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{RESET}</span><span class="s2">&quot;</span>
+
+    <span class="n">xonsh_color</span> <span class="o">=</span> <span class="n">GREEN</span> <span class="k">if</span> <span class="n">current_xonsh</span> <span class="o">==</span> <span class="n">path_resolved</span><span class="p">[</span><span class="s2">&quot;xonsh&quot;</span><span class="p">]</span> <span class="k">else</span> <span class="n">BLUE</span>
+    <span class="n">python_color</span> <span class="o">=</span> <span class="n">GREEN</span> <span class="k">if</span> <span class="n">xpy</span> <span class="o">==</span> <span class="n">path_resolved</span><span class="p">[</span><span class="s2">&quot;python&quot;</span><span class="p">]</span> <span class="k">else</span> <span class="n">BLUE</span>
+    <span class="n">pip_color</span> <span class="o">=</span> <span class="n">GREEN</span> <span class="k">if</span> <span class="n">xpip_display</span> <span class="o">==</span> <span class="n">path_resolved</span><span class="p">[</span><span class="s2">&quot;pip&quot;</span><span class="p">]</span> <span class="k">else</span> <span class="n">BLUE</span>
+
+    <span class="n">label_color</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;xonsh&quot;</span><span class="p">:</span> <span class="n">xonsh_color</span><span class="p">,</span>
+        <span class="s2">&quot;xxonsh&quot;</span><span class="p">:</span> <span class="n">xonsh_color</span><span class="p">,</span>
+        <span class="s2">&quot;python&quot;</span><span class="p">:</span> <span class="n">python_color</span><span class="p">,</span>
+        <span class="s2">&quot;xpython&quot;</span><span class="p">:</span> <span class="n">python_color</span><span class="p">,</span>
+        <span class="s2">&quot;pip&quot;</span><span class="p">:</span> <span class="n">pip_color</span><span class="p">,</span>
+        <span class="s2">&quot;xpip&quot;</span><span class="p">:</span> <span class="n">pip_color</span><span class="p">,</span>
+        <span class="s2">&quot;pytest&quot;</span><span class="p">:</span> <span class="n">YELLOW</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_label</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return ``{COLOR}name:{RESET}`` for ``print_color`` format strings.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">label_color</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">YELLOW</span><span class="p">)</span><span class="si">}{</span><span class="n">name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">RESET</span><span class="si">}</span><span class="s2">&quot;</span>
+
+    <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">PURPLE</span><span class="si">}</span><span class="s2">[Current xonsh session]</span><span class="si">{</span><span class="n">RESET</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_label</span><span class="p">(</span><span class="s1">&#39;xxonsh&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">current_xonsh</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_label</span><span class="p">(</span><span class="s1">&#39;xpython&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">xpy</span><span class="si">}</span><span class="s2">  # </span><span class="si">{</span><span class="n">xpy_ver</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">xpip_display</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_label</span><span class="p">(</span><span class="s1">&#39;xpip&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">xpip_display</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_label</span><span class="p">(</span><span class="s1">&#39;xpip&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2"> not found&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
 
     <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[Current commands environment]&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">PURPLE</span><span class="si">}</span><span class="s2">[Current commands environment]</span><span class="si">{</span><span class="n">RESET</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
     <span class="n">cmds</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;xonsh&quot;</span><span class="p">,</span> <span class="s2">&quot;python&quot;</span><span class="p">,</span> <span class="s2">&quot;pip&quot;</span><span class="p">]</span>
-    <span class="k">if</span> <span class="n">shutil</span><span class="o">.</span><span class="n">which</span><span class="p">(</span><span class="s2">&quot;pytest&quot;</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">path_resolved</span><span class="p">[</span><span class="s2">&quot;pytest&quot;</span><span class="p">]:</span>
         <span class="n">cmds</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;pytest&quot;</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="n">cmds</span><span class="p">:</span>
-        <span class="n">path</span> <span class="o">=</span> <span class="n">shutil</span><span class="o">.</span><span class="n">which</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">path_resolved</span><span class="p">[</span><span class="n">cmd</span><span class="p">]</span>
         <span class="k">if</span> <span class="n">path</span><span class="p">:</span>
             <span class="n">ver</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
             <span class="k">if</span> <span class="n">cmd</span> <span class="o">==</span> <span class="s2">&quot;python&quot;</span><span class="p">:</span>
                 <span class="n">ver</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;  # </span><span class="si">{</span><span class="n">_get_version</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">cmd</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">path</span><span class="si">}{</span><span class="n">ver</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+            <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_label</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">path</span><span class="si">}{</span><span class="n">ver</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">cmd</span><span class="si">}</span><span class="s2">: not found&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+            <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_label</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span><span class="si">}</span><span class="s2"> not found&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
     <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;[Current environment]&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+    <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">PURPLE</span><span class="si">}</span><span class="s2">[Current environment]</span><span class="si">{</span><span class="n">RESET</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
     <span class="n">envs</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;CONDA_DEFAULT_ENV&quot;</span><span class="p">,</span> <span class="s2">&quot;VIRTUAL_ENV&quot;</span><span class="p">]</span>
     <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">envs</span><span class="p">:</span>
         <span class="n">val</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ev</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">val</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ev</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">val</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
+            <span class="n">print_color</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_label</span><span class="p">(</span><span class="n">ev</span><span class="p">)</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">val</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">stdout</span><span class="p">)</span>
     <span class="k">return</span> <span class="mi">0</span></div>
 
 
 
-<span class="n">xcontext</span> <span class="o">=</span> <span class="n">ArgParserAlias</span><span class="p">(</span><span class="n">func</span><span class="o">=</span><span class="n">xcontext_main</span><span class="p">,</span> <span class="n">has_args</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">prog</span><span class="o">=</span><span class="s2">&quot;xcontext&quot;</span><span class="p">)</span>
+<span class="n">xcontext</span> <span class="o">=</span> <span class="n">ArgParserAlias</span><span class="p">(</span>
+    <span class="n">func</span><span class="o">=</span><span class="n">xcontext_main</span><span class="p">,</span> <span class="n">has_args</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">prog</span><span class="o">=</span><span class="s2">&quot;xcontext&quot;</span><span class="p">,</span> <span class="n">threadable</span><span class="o">=</span><span class="kc">False</span>
+<span class="p">)</span>
 </pre></div>
         </article>
       </div>

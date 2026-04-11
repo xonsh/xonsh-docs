@@ -1806,9 +1806,60 @@
 
 
 
-<div class="viewcode-block" id="detect_xpip_alias">
-<a class="viewcode-back" href="../../lib/_autosummary/cmd/xonsh.aliases.html#xonsh.aliases.detect_xpip_alias">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">detect_xpip_alias</span><span class="p">():</span>
+<div class="viewcode-block" id="get_xxonsh_alias">
+<a class="viewcode-back" href="../../lib/_autosummary/cmd/xonsh.aliases.html#xonsh.aliases.get_xxonsh_alias">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_xxonsh_alias</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Determine the correct invocation to launch xonsh the same way the</span>
+<span class="sd">    current session was launched.</span>
+
+<span class="sd">    Always returns a list, so the result can be concatenated with other</span>
+<span class="sd">    argv lists (e.g. ``[&#39;tmux&#39;, &#39;new-session&#39;] + get_xxonsh_alias()``).</span>
+
+<span class="sd">    For an entry-point launch (e.g. ``/usr/local/bin/xonsh``) the value of</span>
+<span class="sd">    ``sys.argv[0]`` is already a runnable absolute path, so the result is</span>
+<span class="sd">    a single-element list.</span>
+
+<span class="sd">    For a &quot;from source&quot; launch via ``python -m xonsh`` (``sys.argv[0]``</span>
+<span class="sd">    basename is ``__main__.py``) a naive ``[sys.executable, &quot;-m&quot;, &quot;xonsh&quot;]``</span>
+<span class="sd">    would be CWD-dependent: ``python -m xonsh`` resolves the package via</span>
+<span class="sd">    ``sys.path``, which has the *current* working directory at position 0.</span>
+<span class="sd">    Running ``xxonsh`` from outside the source repo would silently pick</span>
+<span class="sd">    whatever ``import xonsh`` resolves to in ``site-packages`` (or raise</span>
+<span class="sd">    ``ModuleNotFoundError``), which is almost never what the user wants.</span>
+
+<span class="sd">    Instead, compute the parent directory of the source ``xonsh`` package</span>
+<span class="sd">    once (from the absolute path of ``__main__.py``) and spawn Python with</span>
+<span class="sd">    a ``-c`` bootstrap that prepends that directory to ``sys.path`` before</span>
+<span class="sd">    importing ``xonsh.main``. This makes the alias resolve to the same</span>
+<span class="sd">    source tree from any CWD, regardless of what is installed in</span>
+<span class="sd">    ``site-packages``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Local import: xonsh.main pulls in heavy modules (shell, execer,</span>
+    <span class="c1"># xontribs), so keep the dependency lazy.</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.main</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_current_xonsh</span>
+
+    <span class="n">current_xonsh</span> <span class="o">=</span> <span class="n">get_current_xonsh</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">current_xonsh</span><span class="p">)</span> <span class="o">!=</span> <span class="s2">&quot;__main__.py&quot;</span><span class="p">:</span>
+        <span class="c1"># Entry-point case: sys.argv[0] is an absolute path to the xonsh</span>
+        <span class="c1"># launcher and is already runnable as-is.</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">current_xonsh</span><span class="p">]</span>
+
+    <span class="c1"># Source case: __main__.py lives inside the xonsh/ package, whose</span>
+    <span class="c1"># parent directory is the one we need on sys.path for</span>
+    <span class="c1"># ``from xonsh.main import main`` to pick up the source version.</span>
+    <span class="n">pkg_parent</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">current_xonsh</span><span class="p">)))</span>
+    <span class="n">bootstrap</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;import sys; sys.path.insert(0, </span><span class="si">{</span><span class="n">pkg_parent</span><span class="si">!r}</span><span class="s2">); &quot;</span>
+        <span class="sa">f</span><span class="s2">&quot;from xonsh.main import main; main()&quot;</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">,</span> <span class="s2">&quot;-c&quot;</span><span class="p">,</span> <span class="n">bootstrap</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="get_xpip_alias">
+<a class="viewcode-back" href="../../lib/_autosummary/cmd/xonsh.aliases.html#xonsh.aliases.get_xpip_alias">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_xpip_alias</span><span class="p">():</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Determines the correct invocation to get xonsh&#39;s pip</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -1877,6 +1928,7 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Creates a new default aliases dictionary.&quot;&quot;&quot;</span>
     <span class="n">default_aliases</span> <span class="o">=</span> <span class="p">{</span>
         <span class="s2">&quot;cd&quot;</span><span class="p">:</span> <span class="n">cd</span><span class="p">,</span>
+        <span class="s2">&quot;completer&quot;</span><span class="p">:</span> <span class="n">xca</span><span class="o">.</span><span class="n">completer_alias</span><span class="p">,</span>
         <span class="s2">&quot;pushd&quot;</span><span class="p">:</span> <span class="n">pushd</span><span class="p">,</span>
         <span class="s2">&quot;popd&quot;</span><span class="p">:</span> <span class="n">popd</span><span class="p">,</span>
         <span class="s2">&quot;dirs&quot;</span><span class="p">:</span> <span class="n">dirs</span><span class="p">,</span>
@@ -1910,8 +1962,8 @@
         <span class="s2">&quot;which&quot;</span><span class="p">:</span> <span class="n">xxw</span><span class="o">.</span><span class="n">which</span><span class="p">,</span>
         <span class="s2">&quot;xcontext&quot;</span><span class="p">:</span> <span class="n">xxt</span><span class="o">.</span><span class="n">xcontext</span><span class="p">,</span>
         <span class="s2">&quot;xontrib&quot;</span><span class="p">:</span> <span class="n">xontribs_main</span><span class="p">,</span>
-        <span class="s2">&quot;completer&quot;</span><span class="p">:</span> <span class="n">xca</span><span class="o">.</span><span class="n">completer_alias</span><span class="p">,</span>
-        <span class="s2">&quot;xpip&quot;</span><span class="p">:</span> <span class="n">detect_xpip_alias</span><span class="p">(),</span>
+        <span class="s2">&quot;xxonsh&quot;</span><span class="p">:</span> <span class="n">get_xxonsh_alias</span><span class="p">(),</span>
+        <span class="s2">&quot;xpip&quot;</span><span class="p">:</span> <span class="n">get_xpip_alias</span><span class="p">(),</span>
         <span class="s2">&quot;xpython&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;_&quot;</span><span class="p">,</span> <span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">)]</span>
         <span class="k">if</span> <span class="n">IN_APPIMAGE</span>
         <span class="k">else</span> <span class="p">[</span><span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">],</span>
