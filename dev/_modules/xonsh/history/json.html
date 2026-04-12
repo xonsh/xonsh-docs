@@ -1282,6 +1282,76 @@
                 <span class="k">continue</span>
 
         <span class="k">return</span> <span class="n">deleted</span></div>
+
+
+<div class="viewcode-block" id="JsonHistory.erasedups">
+<a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.history.json.html#xonsh.history.json.JsonHistory.erasedups">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">erasedups</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove duplicate commands across all history files, keeping the latest.&quot;&quot;&quot;</span>
+        <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">gc</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">gc</span><span class="o">.</span><span class="n">is_alive</span><span class="p">():</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.011</span><span class="p">)</span>
+
+        <span class="c1"># Collect all commands from all files with their source file.</span>
+        <span class="c1"># Each entry: (inp, tsb, file_path, index_in_file)</span>
+        <span class="n">entries</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">_xhj_get_history_files</span><span class="p">():</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">json_file</span> <span class="o">=</span> <span class="n">xlj</span><span class="o">.</span><span class="n">LazyJSON</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">reopen</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">file_content</span> <span class="o">=</span> <span class="n">json_file</span><span class="o">.</span><span class="n">load</span><span class="p">()</span>
+                <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">file_content</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;cmds&quot;</span><span class="p">,</span> <span class="p">[])):</span>
+                    <span class="n">inp</span> <span class="o">=</span> <span class="n">cmd</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;inp&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span>
+                    <span class="n">ts</span> <span class="o">=</span> <span class="n">cmd</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;ts&quot;</span><span class="p">,</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
+                    <span class="n">tsb</span> <span class="o">=</span> <span class="n">ts</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">ts</span> <span class="k">else</span> <span class="mi">0</span>
+                    <span class="n">entries</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">inp</span><span class="p">,</span> <span class="n">tsb</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">idx</span><span class="p">))</span>
+            <span class="k">except</span> <span class="p">(</span><span class="n">JSONDecodeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+                <span class="k">continue</span>
+
+        <span class="c1"># Find which entries to keep: for each inp, keep the one with max tsb.</span>
+        <span class="n">keep</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c1"># inp -&gt; (tsb, file_path, idx)</span>
+        <span class="k">for</span> <span class="n">inp</span><span class="p">,</span> <span class="n">tsb</span><span class="p">,</span> <span class="n">fpath</span><span class="p">,</span> <span class="n">idx</span> <span class="ow">in</span> <span class="n">entries</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">inp</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">keep</span> <span class="ow">or</span> <span class="n">tsb</span> <span class="o">&gt;</span> <span class="n">keep</span><span class="p">[</span><span class="n">inp</span><span class="p">][</span><span class="mi">0</span><span class="p">]:</span>
+                <span class="n">keep</span><span class="p">[</span><span class="n">inp</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">tsb</span><span class="p">,</span> <span class="n">fpath</span><span class="p">,</span> <span class="n">idx</span><span class="p">)</span>
+
+        <span class="c1"># Build set of (file_path, idx) to keep.</span>
+        <span class="n">keep_set</span> <span class="o">=</span> <span class="p">{(</span><span class="n">v</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">v</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">keep</span><span class="o">.</span><span class="n">values</span><span class="p">()}</span>
+
+        <span class="n">total_before</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">entries</span><span class="p">)</span>
+        <span class="n">total_after</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">keep_set</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">total_before</span> <span class="o">==</span> <span class="n">total_after</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span><span class="p">,</span> <span class="n">total_before</span>
+
+        <span class="c1"># Rewrite each file, removing duplicate entries.</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">_xhj_get_history_files</span><span class="p">():</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">json_file</span> <span class="o">=</span> <span class="n">xlj</span><span class="o">.</span><span class="n">LazyJSON</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">reopen</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">file_content</span> <span class="o">=</span> <span class="n">json_file</span><span class="o">.</span><span class="n">load</span><span class="p">()</span>
+                <span class="k">del</span> <span class="n">json_file</span>  <span class="c1"># release file handle before replacing (Windows)</span>
+                <span class="n">cmds</span> <span class="o">=</span> <span class="n">file_content</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;cmds&quot;</span><span class="p">,</span> <span class="p">[])</span>
+                <span class="n">new_cmds</span> <span class="o">=</span> <span class="p">[</span><span class="n">cmd</span> <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">cmds</span><span class="p">)</span> <span class="k">if</span> <span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">idx</span><span class="p">)</span> <span class="ow">in</span> <span class="n">keep_set</span><span class="p">]</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">new_cmds</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">cmds</span><span class="p">):</span>
+                    <span class="k">continue</span>  <span class="c1"># no changes needed</span>
+                <span class="n">file_content</span><span class="p">[</span><span class="s2">&quot;cmds&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_cmds</span>
+                <span class="n">dirname</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+                <span class="n">fd</span><span class="p">,</span> <span class="n">tmpname</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">mkstemp</span><span class="p">(</span><span class="nb">dir</span><span class="o">=</span><span class="n">dirname</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;.json.tmp&quot;</span><span class="p">)</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">with</span> <span class="n">os</span><span class="o">.</span><span class="n">fdopen</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">,</span> <span class="n">newline</span><span class="o">=</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;utf-8&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">fp</span><span class="p">:</span>
+                        <span class="n">xlj</span><span class="o">.</span><span class="n">ljdump</span><span class="p">(</span><span class="n">file_content</span><span class="p">,</span> <span class="n">fp</span><span class="p">)</span>
+                    <span class="n">os</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tmpname</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="k">try</span><span class="p">:</span>
+                        <span class="n">os</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="n">tmpname</span><span class="p">)</span>
+                    <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+                        <span class="k">pass</span>
+            <span class="k">except</span> <span class="p">(</span><span class="n">JSONDecodeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+                <span class="k">continue</span>
+
+        <span class="k">return</span> <span class="n">total_before</span> <span class="o">-</span> <span class="n">total_after</span><span class="p">,</span> <span class="n">total_before</span></div>
 </div>
 
 </pre></div>

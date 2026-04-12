@@ -486,8 +486,7 @@
 
 <span class="sd">    Columns:</span>
 <span class="sd">        info - JSON formatted, reserved for future extension.</span>
-<span class="sd">        frequency - in case of HISTCONTROL=erasedups,</span>
-<span class="sd">        it tracks the frequency of the inputs. helps in sorting autocompletion</span>
+<span class="sd">        frequency - tracks the frequency of the inputs</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">XH_SQLITE_CACHE</span><span class="p">,</span> <span class="n">XH_SQLITE_CREATED_SQL_TBL</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
         <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
@@ -527,7 +526,7 @@
         <span class="k">except</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">OperationalError</span><span class="p">:</span>
             <span class="k">pass</span>
 
-        <span class="c1"># add index on inp. since we query when erasedups is True</span>
+        <span class="c1"># add index on inp for faster lookups</span>
         <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span><span class="se">\</span>
 <span class="s2">CREATE INDEX IF NOT EXISTS  idx_inp_history</span>
@@ -536,20 +535,6 @@
 
         <span class="c1"># mark that this function ran for this session</span>
         <span class="nb">setattr</span><span class="p">(</span><span class="n">XH_SQLITE_CACHE</span><span class="p">,</span> <span class="n">XH_SQLITE_CREATED_SQL_TBL</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">_xh_sqlite_get_frequency</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="nb">input</span><span class="p">):</span>
-    <span class="c1"># type: (sqlite3.Cursor, str) -&gt; int</span>
-    <span class="n">sql</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;SELECT sum(frequency) FROM </span><span class="si">{</span><span class="n">XH_SQLITE_TABLE_NAME</span><span class="si">}</span><span class="s2"> WHERE inp=?&quot;</span>
-    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="p">(</span><span class="nb">input</span><span class="p">,))</span>
-    <span class="k">return</span> <span class="n">cursor</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">or</span> <span class="mi">0</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">_xh_sqlite_erase_dups</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="nb">input</span><span class="p">):</span>
-    <span class="n">freq</span> <span class="o">=</span> <span class="n">_xh_sqlite_get_frequency</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="nb">input</span><span class="p">)</span>
-    <span class="n">sql</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;DELETE FROM </span><span class="si">{</span><span class="n">XH_SQLITE_TABLE_NAME</span><span class="si">}</span><span class="s2"> WHERE inp=?&quot;</span>
-    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="p">(</span><span class="nb">input</span><span class="p">,))</span>
-    <span class="k">return</span> <span class="n">freq</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_sql_insert</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">values</span><span class="p">):</span>
@@ -563,7 +548,7 @@
     <span class="p">)</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_xh_sqlite_insert_command</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">sessionid</span><span class="p">,</span> <span class="n">store_stdout</span><span class="p">,</span> <span class="n">remove_duplicates</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_xh_sqlite_insert_command</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">sessionid</span><span class="p">,</span> <span class="n">store_stdout</span><span class="p">):</span>
     <span class="n">tss</span> <span class="o">=</span> <span class="n">cmd</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;ts&quot;</span><span class="p">,</span> <span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">])</span>
     <span class="n">values</span> <span class="o">=</span> <span class="n">collections</span><span class="o">.</span><span class="n">OrderedDict</span><span class="p">(</span>
         <span class="p">[</span>
@@ -581,8 +566,6 @@
     <span class="k">if</span> <span class="s2">&quot;info&quot;</span> <span class="ow">in</span> <span class="n">cmd</span><span class="p">:</span>
         <span class="n">info</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">cmd</span><span class="p">[</span><span class="s2">&quot;info&quot;</span><span class="p">])</span>
         <span class="n">values</span><span class="p">[</span><span class="s2">&quot;info&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">info</span>
-    <span class="k">if</span> <span class="n">remove_duplicates</span><span class="p">:</span>
-        <span class="n">values</span><span class="p">[</span><span class="s2">&quot;frequency&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_xh_sqlite_erase_dups</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">values</span><span class="p">[</span><span class="s2">&quot;inp&quot;</span><span class="p">])</span> <span class="o">+</span> <span class="mi">1</span>
     <span class="n">_sql_insert</span><span class="p">(</span><span class="n">cursor</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span>
 
 
@@ -627,13 +610,11 @@
 
 <div class="viewcode-block" id="xh_sqlite_append_history">
 <a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.xh_sqlite_append_history">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">xh_sqlite_append_history</span><span class="p">(</span>
-    <span class="n">cmd</span><span class="p">,</span> <span class="n">sessionid</span><span class="p">,</span> <span class="n">store_stdout</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">remove_duplicates</span><span class="o">=</span><span class="kc">False</span>
-<span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">xh_sqlite_append_history</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">sessionid</span><span class="p">,</span> <span class="n">store_stdout</span><span class="p">,</span> <span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="k">with</span> <span class="n">_xh_sqlite_get_conn</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
         <span class="n">c</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
         <span class="n">_xh_sqlite_create_history_table</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
-        <span class="n">_xh_sqlite_insert_command</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">sessionid</span><span class="p">,</span> <span class="n">store_stdout</span><span class="p">,</span> <span class="n">remove_duplicates</span><span class="p">)</span>
+        <span class="n">_xh_sqlite_insert_command</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">sessionid</span><span class="p">,</span> <span class="n">store_stdout</span><span class="p">)</span>
         <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span></div>
 
 
@@ -720,6 +701,53 @@
         <span class="n">c</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
         <span class="n">_xh_sqlite_create_history_table</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
         <span class="n">c</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">sessionid</span><span class="p">),))</span></div>
+
+
+
+<div class="viewcode-block" id="xh_sqlite_erasedups">
+<a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.xh_sqlite_erasedups">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">xh_sqlite_erasedups</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Remove duplicate commands, keeping only the latest occurrence of each.&quot;&quot;&quot;</span>
+    <span class="k">with</span> <span class="n">_xh_sqlite_get_conn</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">_xh_sqlite_create_history_table</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+
+        <span class="c1"># Count total entries</span>
+        <span class="n">c</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SELECT COUNT(*) FROM </span><span class="si">{</span><span class="n">XH_SQLITE_TABLE_NAME</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">total</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="c1"># Find all inps that have more than one entry</span>
+        <span class="n">c</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;SELECT inp, COUNT(*) as cnt, SUM(frequency) as total_freq &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;FROM </span><span class="si">{</span><span class="n">XH_SQLITE_TABLE_NAME</span><span class="si">}</span><span class="s2"> GROUP BY inp HAVING cnt &gt; 1&quot;</span>
+        <span class="p">)</span>
+        <span class="n">dups</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()</span>
+
+        <span class="n">removed</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">inp</span><span class="p">,</span> <span class="n">_cnt</span><span class="p">,</span> <span class="n">total_freq</span> <span class="ow">in</span> <span class="n">dups</span><span class="p">:</span>
+            <span class="c1"># Keep only the latest entry (by tsb)</span>
+            <span class="n">c</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;SELECT rowid FROM </span><span class="si">{</span><span class="n">XH_SQLITE_TABLE_NAME</span><span class="si">}</span><span class="s2"> &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;WHERE inp = ? ORDER BY tsb DESC LIMIT 1&quot;</span><span class="p">,</span>
+                <span class="p">(</span><span class="n">inp</span><span class="p">,),</span>
+            <span class="p">)</span>
+            <span class="n">keep_rowid</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+
+            <span class="c1"># Delete all other entries for this inp</span>
+            <span class="n">c</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;DELETE FROM </span><span class="si">{</span><span class="n">XH_SQLITE_TABLE_NAME</span><span class="si">}</span><span class="s2"> WHERE inp = ? AND rowid != ?&quot;</span><span class="p">,</span>
+                <span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">keep_rowid</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="n">removed</span> <span class="o">+=</span> <span class="n">c</span><span class="o">.</span><span class="n">rowcount</span>
+
+            <span class="c1"># Update frequency on the kept row</span>
+            <span class="n">c</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;UPDATE </span><span class="si">{</span><span class="n">XH_SQLITE_TABLE_NAME</span><span class="si">}</span><span class="s2"> SET frequency = ? WHERE rowid = ?&quot;</span><span class="p">,</span>
+                <span class="p">(</span><span class="n">total_freq</span><span class="p">,</span> <span class="n">keep_rowid</span><span class="p">),</span>
+            <span class="p">)</span>
+
+        <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">removed</span><span class="p">,</span> <span class="n">total</span></div>
 
 
 
@@ -859,7 +887,6 @@
                 <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sessionid</span><span class="p">),</span>
                 <span class="n">store_stdout</span><span class="o">=</span><span class="n">envs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_STORE_STDOUT&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
                 <span class="n">filename</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">,</span>
-                <span class="n">remove_duplicates</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;erasedups&quot;</span> <span class="ow">in</span> <span class="n">opts</span><span class="p">),</span>
             <span class="p">)</span>
         <span class="k">except</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">OperationalError</span> <span class="k">as</span> <span class="n">err</span><span class="p">:</span>
             <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;SQLite History Backend Error: </span><span class="si">{</span><span class="n">err</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
@@ -955,6 +982,13 @@
         <span class="k">return</span> <span class="n">xh_sqlite_delete_input_matching</span><span class="p">(</span>
             <span class="n">pattern</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">pattern</span><span class="p">),</span> <span class="n">filename</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span>
         <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="SqliteHistory.erasedups">
+<a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.history.sqlite.html#xonsh.history.sqlite.SqliteHistory.erasedups">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">erasedups</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove duplicate commands, keeping only the latest occurrence.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">xh_sqlite_erasedups</span><span class="p">(</span><span class="n">filename</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">)</span></div>
 </div>
 
 </pre></div>
