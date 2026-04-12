@@ -488,6 +488,25 @@
         <span class="nb">print</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_safe_iter</span><span class="p">(</span><span class="n">gen</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Iterate a generator, catching exceptions from broken pygments plugins.</span>
+
+<span class="sd">    Pygments discovers plugin lexers/formatters/styles via entry points.</span>
+<span class="sd">    If a third-party package registers a broken entry point (e.g. voltron</span>
+<span class="sd">    trying to import gdb internals outside of a gdb session), the generator</span>
+<span class="sd">    dies on the first error.  Built-in entries are yielded before plugins,</span>
+<span class="sd">    so we lose at most some plugin entries.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">it</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">(</span><span class="n">gen</span><span class="p">)</span>
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">yield</span> <span class="nb">next</span><span class="p">(</span><span class="n">it</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">StopIteration</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">return</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_discover_lexers</span><span class="p">():</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">inspect</span>
 
@@ -559,10 +578,13 @@
         <span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">defaultdict</span>
 
         <span class="n">duplicates</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">set</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">longname</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">filenames</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">get_all_lexers</span><span class="p">():</span>
-        <span class="bp">cls</span> <span class="o">=</span> <span class="n">find_lexer_class</span><span class="p">(</span><span class="n">longname</span><span class="p">)</span>
-        <span class="n">mod</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getmodule</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span>
-        <span class="n">val</span> <span class="o">=</span> <span class="p">(</span><span class="n">mod</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span> <span class="bp">cls</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">longname</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">filenames</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">_safe_iter</span><span class="p">(</span><span class="n">get_all_lexers</span><span class="p">()):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">cls</span> <span class="o">=</span> <span class="n">find_lexer_class</span><span class="p">(</span><span class="n">longname</span><span class="p">)</span>
+            <span class="n">mod</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getmodule</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span>
+            <span class="n">val</span> <span class="o">=</span> <span class="p">(</span><span class="n">mod</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span> <span class="bp">cls</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">continue</span>
         <span class="k">for</span> <span class="n">filename</span> <span class="ow">in</span> <span class="n">filenames</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">filename</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;*.&quot;</span><span class="p">):</span>
                 <span class="n">filename</span> <span class="o">=</span> <span class="n">filename</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
@@ -601,7 +623,7 @@
         <span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">defaultdict</span>
 
         <span class="n">duplicates</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">set</span><span class="p">)</span>
-    <span class="k">for</span> <span class="bp">cls</span> <span class="ow">in</span> <span class="n">get_all_formatters</span><span class="p">():</span>
+    <span class="k">for</span> <span class="bp">cls</span> <span class="ow">in</span> <span class="n">_safe_iter</span><span class="p">(</span><span class="n">get_all_formatters</span><span class="p">()):</span>
         <span class="n">mod</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getmodule</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span>
         <span class="n">val</span> <span class="o">=</span> <span class="p">(</span><span class="n">mod</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span> <span class="bp">cls</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
         <span class="c1"># add extentions</span>
@@ -653,7 +675,7 @@
         <span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">defaultdict</span>
 
         <span class="n">duplicates</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">set</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">get_all_styles</span><span class="p">():</span>
+    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">_safe_iter</span><span class="p">(</span><span class="n">get_all_styles</span><span class="p">()):</span>
         <span class="bp">cls</span> <span class="o">=</span> <span class="n">get_style_by_name</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
         <span class="n">mod</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getmodule</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span>
         <span class="n">val</span> <span class="o">=</span> <span class="p">(</span><span class="n">mod</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span> <span class="bp">cls</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
@@ -682,7 +704,7 @@
         <span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">defaultdict</span>
 
         <span class="n">duplicates</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">set</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">get_all_filters</span><span class="p">():</span>
+    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">_safe_iter</span><span class="p">(</span><span class="n">get_all_filters</span><span class="p">()):</span>
         <span class="nb">filter</span> <span class="o">=</span> <span class="n">get_filter_by_name</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
         <span class="bp">cls</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="nb">filter</span><span class="p">)</span>
         <span class="n">mod</span> <span class="o">=</span> <span class="n">inspect</span><span class="o">.</span><span class="n">getmodule</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span>
