@@ -449,6 +449,7 @@
           <h1>Source code for xonsh.pyghooks</h1><div class="highlight"><pre>
 <span></span><span class="sd">&quot;&quot;&quot;Hooks for pygments syntax highlighting.&quot;&quot;&quot;</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">importlib.util</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">stat</span>
@@ -459,7 +460,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">keyword</span><span class="w"> </span><span class="kn">import</span> <span class="n">iskeyword</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">pygments.util</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">pygments.lexer</span><span class="w"> </span><span class="kn">import</span> <span class="n">bygroups</span><span class="p">,</span> <span class="n">include</span><span class="p">,</span> <span class="n">inherit</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pygments.lexer</span><span class="w"> </span><span class="kn">import</span> <span class="n">bygroups</span><span class="p">,</span> <span class="n">default</span><span class="p">,</span> <span class="n">include</span><span class="p">,</span> <span class="n">inherit</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pygments.lexers.agile</span><span class="w"> </span><span class="kn">import</span> <span class="n">Python3Lexer</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pygments.style</span><span class="w"> </span><span class="kn">import</span> <span class="n">Style</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pygments.token</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
@@ -1080,7 +1081,7 @@
 <span class="n">XONSH_BASE_STYLE</span> <span class="o">=</span> <span class="n">LazyObject</span><span class="p">(</span>
     <span class="k">lambda</span><span class="p">:</span> <span class="p">{</span>
         <span class="n">Whitespace</span><span class="p">:</span> <span class="s2">&quot;ansigray&quot;</span><span class="p">,</span>
-        <span class="n">Comment</span><span class="p">:</span> <span class="s2">&quot;underline ansicyan&quot;</span><span class="p">,</span>
+        <span class="n">Comment</span><span class="p">:</span> <span class="s2">&quot;ansicyan&quot;</span><span class="p">,</span>
         <span class="n">Comment</span><span class="o">.</span><span class="n">Preproc</span><span class="p">:</span> <span class="s2">&quot;underline ansiyellow&quot;</span><span class="p">,</span>
         <span class="n">Keyword</span><span class="p">:</span> <span class="s2">&quot;bold ansigreen&quot;</span><span class="p">,</span>
         <span class="n">Keyword</span><span class="o">.</span><span class="n">Pseudo</span><span class="p">:</span> <span class="s2">&quot;nobold&quot;</span><span class="p">,</span>
@@ -1099,8 +1100,8 @@
         <span class="n">Name</span><span class="o">.</span><span class="n">Attribute</span><span class="p">:</span> <span class="s2">&quot;ansibrightyellow&quot;</span><span class="p">,</span>
         <span class="n">Name</span><span class="o">.</span><span class="n">Tag</span><span class="p">:</span> <span class="s2">&quot;bold ansigreen&quot;</span><span class="p">,</span>
         <span class="n">Name</span><span class="o">.</span><span class="n">Decorator</span><span class="p">:</span> <span class="s2">&quot;ansibrightmagenta&quot;</span><span class="p">,</span>
-        <span class="n">String</span><span class="p">:</span> <span class="s2">&quot;ansibrightred&quot;</span><span class="p">,</span>
-        <span class="n">String</span><span class="o">.</span><span class="n">Doc</span><span class="p">:</span> <span class="s2">&quot;underline&quot;</span><span class="p">,</span>
+        <span class="n">String</span><span class="p">:</span> <span class="s2">&quot;ansiyellow&quot;</span><span class="p">,</span>
+        <span class="n">String</span><span class="o">.</span><span class="n">Doc</span><span class="p">:</span> <span class="s2">&quot;ansicyan&quot;</span><span class="p">,</span>
         <span class="n">String</span><span class="o">.</span><span class="n">Interpol</span><span class="p">:</span> <span class="s2">&quot;bold ansimagenta&quot;</span><span class="p">,</span>
         <span class="n">String</span><span class="o">.</span><span class="n">Escape</span><span class="p">:</span> <span class="s2">&quot;bold ansiyellow&quot;</span><span class="p">,</span>
         <span class="n">String</span><span class="o">.</span><span class="n">Regex</span><span class="p">:</span> <span class="s2">&quot;ansimagenta&quot;</span><span class="p">,</span>
@@ -2234,6 +2235,92 @@
             <span class="k">pass</span>
 
 
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Import module validation — highlight non-importable top-level modules</span>
+<span class="c1"># as Error.  Only the first name after ``import`` / ``from`` is checked;</span>
+<span class="c1"># submodule parts after a dot are left as Name.Namespace.</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="n">_import_check_next</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_import_start_cb</span><span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">match</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Intercept ``import``/``from`` keyword — check the next module name.&quot;&quot;&quot;</span>
+    <span class="k">global</span> <span class="n">_import_check_next</span>
+    <span class="n">_import_check_next</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">yield</span> <span class="n">match</span><span class="o">.</span><span class="n">start</span><span class="p">(),</span> <span class="n">Keyword</span><span class="o">.</span><span class="n">Namespace</span><span class="p">,</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">yield</span> <span class="n">match</span><span class="o">.</span><span class="n">start</span><span class="p">()</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)),</span> <span class="n">Text</span><span class="o">.</span><span class="n">Whitespace</span><span class="p">,</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_import_module_cb</span><span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">match</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check only the first identifier after import/from.  Rest pass through.&quot;&quot;&quot;</span>
+    <span class="k">global</span> <span class="n">_import_check_next</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">_import_check_next</span><span class="p">:</span>
+        <span class="n">_import_check_next</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">found</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">ModuleNotFoundError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">,</span> <span class="ne">AttributeError</span><span class="p">):</span>
+            <span class="n">found</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">yield</span> <span class="n">match</span><span class="o">.</span><span class="n">start</span><span class="p">(),</span> <span class="n">Name</span><span class="o">.</span><span class="n">Namespace</span> <span class="k">if</span> <span class="n">found</span> <span class="k">else</span> <span class="n">Error</span><span class="p">,</span> <span class="n">name</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">yield</span> <span class="n">match</span><span class="o">.</span><span class="n">start</span><span class="p">(),</span> <span class="n">Name</span><span class="o">.</span><span class="n">Namespace</span><span class="p">,</span> <span class="n">name</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_import_comma_cb</span><span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">match</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Comma separates independent imports — re-enable check for next name.&quot;&quot;&quot;</span>
+    <span class="k">global</span> <span class="n">_import_check_next</span>
+    <span class="n">_import_check_next</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">yield</span> <span class="n">match</span><span class="o">.</span><span class="n">start</span><span class="p">(),</span> <span class="n">Punctuation</span><span class="p">,</span> <span class="s2">&quot;,&quot;</span>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># @() Python substitution — highlight undefined names as Error.</span>
+<span class="c1"># Only bare names are checked (not attributes like os.path.join).</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="n">_at_bracket_check</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_at_bracket_start_cb</span><span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">match</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Enter @() substitution — mark that the first name should be checked.&quot;&quot;&quot;</span>
+    <span class="k">global</span> <span class="n">_at_bracket_check</span>
+    <span class="n">_at_bracket_check</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">yield</span> <span class="n">match</span><span class="o">.</span><span class="n">start</span><span class="p">(),</span> <span class="n">Keyword</span><span class="p">,</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">yield</span> <span class="n">match</span><span class="o">.</span><span class="n">start</span><span class="p">()</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)),</span> <span class="n">Punctuation</span><span class="p">,</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_at_bracket_name_cb</span><span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">match</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check first bare name inside @() against session context and builtins.&quot;&quot;&quot;</span>
+    <span class="k">global</span> <span class="n">_at_bracket_check</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">builtins</span>
+
+    <span class="n">name</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">_at_bracket_check</span><span class="p">:</span>
+        <span class="n">_at_bracket_check</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">ctx</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">XSH</span><span class="p">,</span> <span class="s2">&quot;ctx&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">found</span> <span class="o">=</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">ctx</span> <span class="ow">or</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span> <span class="ow">or</span> <span class="n">iskeyword</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">yield</span> <span class="n">match</span><span class="o">.</span><span class="n">start</span><span class="p">(),</span> <span class="n">Name</span> <span class="k">if</span> <span class="n">found</span> <span class="k">else</span> <span class="n">Error</span><span class="p">,</span> <span class="n">name</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">yield</span> <span class="n">match</span><span class="o">.</span><span class="n">start</span><span class="p">(),</span> <span class="n">Name</span><span class="p">,</span> <span class="n">name</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_at_bracket_walrus_cb</span><span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">match</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Walrus operator target — it&#39;s a definition, skip the check.&quot;&quot;&quot;</span>
+    <span class="k">global</span> <span class="n">_at_bracket_check</span>
+    <span class="n">_at_bracket_check</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">yield</span> <span class="n">match</span><span class="o">.</span><span class="n">start</span><span class="p">(),</span> <span class="n">Name</span><span class="p">,</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">()</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_env_var_cb</span><span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">match</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check $VAR against the environment.&quot;&quot;&quot;</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">()</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">text</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>  <span class="c1"># strip leading $</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">XSH</span><span class="p">,</span> <span class="s2">&quot;env&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">found</span> <span class="o">=</span> <span class="n">env</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">env</span>
+    <span class="k">yield</span> <span class="n">match</span><span class="o">.</span><span class="n">start</span><span class="p">(),</span> <span class="n">Name</span><span class="o">.</span><span class="n">Variable</span> <span class="k">if</span> <span class="n">found</span> <span class="k">else</span> <span class="n">Error</span><span class="p">,</span> <span class="n">text</span>
+
+
 <div class="viewcode-block" id="subproc_cmd_callback">
 <a class="viewcode-back" href="../../lib/_autosummary/helpers/xonsh.pyghooks.html#xonsh.pyghooks.subproc_cmd_callback">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">subproc_cmd_callback</span><span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">match</span><span class="p">):</span>
@@ -2288,7 +2375,7 @@
         <span class="s2">&quot;mode_switch_brackets&quot;</span><span class="p">:</span> <span class="p">[</span>
             <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;(\$)(\{)&quot;</span><span class="p">,</span> <span class="n">bygroups</span><span class="p">(</span><span class="n">Keyword</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">),</span> <span class="s2">&quot;py_curly_bracket&quot;</span><span class="p">),</span>
             <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;(@!)(\()&quot;</span><span class="p">,</span> <span class="n">bygroups</span><span class="p">(</span><span class="n">Keyword</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">),</span> <span class="s2">&quot;py_bracket&quot;</span><span class="p">),</span>
-            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;(@)(\()&quot;</span><span class="p">,</span> <span class="n">bygroups</span><span class="p">(</span><span class="n">Keyword</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">),</span> <span class="s2">&quot;py_bracket&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;(@)(\()&quot;</span><span class="p">,</span> <span class="n">_at_bracket_start_cb</span><span class="p">,</span> <span class="s2">&quot;at_py_bracket&quot;</span><span class="p">),</span>
             <span class="p">(</span>
                 <span class="sa">r</span><span class="s2">&quot;([\!\$])(\()&quot;</span><span class="p">,</span>
                 <span class="n">bygroups</span><span class="p">(</span><span class="n">Keyword</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">),</span>
@@ -2313,6 +2400,12 @@
         <span class="s2">&quot;subproc_bracket&quot;</span><span class="p">:</span> <span class="p">[(</span><span class="sa">r</span><span class="s2">&quot;\)&quot;</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">,</span> <span class="s2">&quot;#pop&quot;</span><span class="p">),</span> <span class="n">include</span><span class="p">(</span><span class="s2">&quot;subproc&quot;</span><span class="p">)],</span>
         <span class="s2">&quot;subproc_square_bracket&quot;</span><span class="p">:</span> <span class="p">[(</span><span class="sa">r</span><span class="s2">&quot;\]&quot;</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">,</span> <span class="s2">&quot;#pop&quot;</span><span class="p">),</span> <span class="n">include</span><span class="p">(</span><span class="s2">&quot;subproc&quot;</span><span class="p">)],</span>
         <span class="s2">&quot;py_bracket&quot;</span><span class="p">:</span> <span class="p">[(</span><span class="sa">r</span><span class="s2">&quot;\)&quot;</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">,</span> <span class="s2">&quot;#pop&quot;</span><span class="p">),</span> <span class="n">include</span><span class="p">(</span><span class="s2">&quot;root&quot;</span><span class="p">)],</span>
+        <span class="s2">&quot;at_py_bracket&quot;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\)&quot;</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">,</span> <span class="s2">&quot;#pop&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\w+(?=\s*:=)&quot;</span><span class="p">,</span> <span class="n">_at_bracket_walrus_cb</span><span class="p">),</span>
+            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\w+&quot;</span><span class="p">,</span> <span class="n">_at_bracket_name_cb</span><span class="p">),</span>
+            <span class="n">include</span><span class="p">(</span><span class="s2">&quot;root&quot;</span><span class="p">),</span>
+        <span class="p">],</span>
         <span class="s2">&quot;py_curly_bracket&quot;</span><span class="p">:</span> <span class="p">[(</span><span class="sa">r</span><span class="s2">&quot;\}&quot;</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">,</span> <span class="s2">&quot;#pop&quot;</span><span class="p">),</span> <span class="n">include</span><span class="p">(</span><span class="s2">&quot;root&quot;</span><span class="p">)],</span>
         <span class="s2">&quot;backtick_re&quot;</span><span class="p">:</span> <span class="p">[</span>
             <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;[\.\^\$\*\+\?\[\]\|]&quot;</span><span class="p">,</span> <span class="n">String</span><span class="o">.</span><span class="n">Regex</span><span class="p">),</span>
@@ -2321,12 +2414,29 @@
             <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;`&quot;</span><span class="p">,</span> <span class="n">String</span><span class="o">.</span><span class="n">Backtick</span><span class="p">,</span> <span class="s2">&quot;#pop&quot;</span><span class="p">),</span>
             <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;[^`\.\^\$\*\+\?\[\]\|]+&quot;</span><span class="p">,</span> <span class="n">String</span><span class="o">.</span><span class="n">Backtick</span><span class="p">),</span>
         <span class="p">],</span>
+        <span class="s2">&quot;import&quot;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;(\s+)(as)(\s+)&quot;</span><span class="p">,</span> <span class="n">bygroups</span><span class="p">(</span><span class="n">Keyword</span><span class="p">,</span> <span class="n">Keyword</span><span class="p">,</span> <span class="n">Text</span><span class="p">)),</span>
+            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\.&quot;</span><span class="p">,</span> <span class="n">Name</span><span class="o">.</span><span class="n">Namespace</span><span class="p">),</span>
+            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\w+&quot;</span><span class="p">,</span> <span class="n">_import_module_cb</span><span class="p">),</span>
+            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;,&quot;</span><span class="p">,</span> <span class="n">_import_comma_cb</span><span class="p">),</span>
+            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\s+&quot;</span><span class="p">,</span> <span class="n">Text</span><span class="o">.</span><span class="n">Whitespace</span><span class="p">),</span>
+            <span class="n">default</span><span class="p">(</span><span class="s2">&quot;#pop&quot;</span><span class="p">),</span>
+        <span class="p">],</span>
+        <span class="s2">&quot;fromimport&quot;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;(\s+)(import)\b&quot;</span><span class="p">,</span> <span class="n">bygroups</span><span class="p">(</span><span class="n">Text</span><span class="o">.</span><span class="n">Whitespace</span><span class="p">,</span> <span class="n">Keyword</span><span class="o">.</span><span class="n">Namespace</span><span class="p">),</span> <span class="s2">&quot;#pop&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\.&quot;</span><span class="p">,</span> <span class="n">Name</span><span class="o">.</span><span class="n">Namespace</span><span class="p">),</span>
+            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;None\b&quot;</span><span class="p">,</span> <span class="n">Keyword</span><span class="o">.</span><span class="n">Constant</span><span class="p">,</span> <span class="s2">&quot;#pop&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\w+&quot;</span><span class="p">,</span> <span class="n">_import_module_cb</span><span class="p">),</span>
+            <span class="n">default</span><span class="p">(</span><span class="s2">&quot;#pop&quot;</span><span class="p">),</span>
+        <span class="p">],</span>
         <span class="s2">&quot;root&quot;</span><span class="p">:</span> <span class="p">[</span>
             <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\?&quot;</span><span class="p">,</span> <span class="n">Keyword</span><span class="p">),</span>
             <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;(?&lt;=\w)!&quot;</span><span class="p">,</span> <span class="n">Keyword</span><span class="p">),</span>
-            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\$\w+&quot;</span><span class="p">,</span> <span class="n">Name</span><span class="o">.</span><span class="n">Variable</span><span class="p">),</span>
+            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\$\w+&quot;</span><span class="p">,</span> <span class="n">_env_var_cb</span><span class="p">),</span>
             <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\(&quot;</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">,</span> <span class="s2">&quot;py_bracket&quot;</span><span class="p">),</span>
             <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\{&quot;</span><span class="p">,</span> <span class="n">Punctuation</span><span class="p">,</span> <span class="s2">&quot;py_curly_bracket&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;(import)((?:\s|</span><span class="se">\\</span><span class="s2">\s)+)&quot;</span><span class="p">,</span> <span class="n">_import_start_cb</span><span class="p">,</span> <span class="s2">&quot;import&quot;</span><span class="p">),</span>
+            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;(from)((?:\s|</span><span class="se">\\</span><span class="s2">\s)+)&quot;</span><span class="p">,</span> <span class="n">_import_start_cb</span><span class="p">,</span> <span class="s2">&quot;fromimport&quot;</span><span class="p">),</span>
             <span class="n">include</span><span class="p">(</span><span class="s2">&quot;mode_switch_brackets&quot;</span><span class="p">),</span>
             <span class="n">inherit</span><span class="p">,</span>
         <span class="p">],</span>
@@ -2349,7 +2459,7 @@
             <span class="p">(</span><span class="n">SubprocCommentHighlight</span><span class="p">,</span> <span class="n">Comment</span><span class="o">.</span><span class="n">Single</span><span class="p">),</span>
             <span class="p">(</span><span class="sa">r</span><span class="s1">&#39;[^=\s\[\]</span><span class="si">{}</span><span class="s1">()$&quot;</span><span class="se">\&#39;</span><span class="s1">`&lt;&amp;|;]+&#39;</span><span class="p">,</span> <span class="n">subproc_arg_callback</span><span class="p">),</span>
             <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;&lt;&quot;</span><span class="p">,</span> <span class="n">Text</span><span class="p">),</span>
-            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\$\w+&quot;</span><span class="p">,</span> <span class="n">Name</span><span class="o">.</span><span class="n">Variable</span><span class="p">),</span>
+            <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\$\w+&quot;</span><span class="p">,</span> <span class="n">_env_var_cb</span><span class="p">),</span>
         <span class="p">],</span>
         <span class="s2">&quot;subproc_macro&quot;</span><span class="p">:</span> <span class="p">[</span>
             <span class="p">(</span><span class="sa">r</span><span class="s2">&quot;(\s*)([^\n]+)&quot;</span><span class="p">,</span> <span class="n">bygroups</span><span class="p">(</span><span class="n">Whitespace</span><span class="p">,</span> <span class="n">String</span><span class="p">)),</span>
