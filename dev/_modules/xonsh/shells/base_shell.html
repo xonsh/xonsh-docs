@@ -868,6 +868,28 @@
         <span class="n">tee</span> <span class="o">=</span> <span class="n">Tee</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="n">enc</span><span class="p">,</span> <span class="n">errors</span><span class="o">=</span><span class="n">err</span><span class="p">)</span>
         <span class="n">ts0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
         <span class="n">exc_info</span> <span class="o">=</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">hist</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Reset so the ``is None`` guard below can distinguish</span>
+            <span class="c1"># &quot;no subprocess ran&quot; from &quot;a subprocess already reported</span>
+            <span class="c1"># its return code&quot;.</span>
+            <span class="c1">#</span>
+            <span class="c1"># Flow:</span>
+            <span class="c1">#   1. Prompt fields may run subprocesses (e.g. ``$(cmd)``</span>
+            <span class="c1">#      inside a lambda) whose pipelines call</span>
+            <span class="c1">#      ``CommandPipeline._apply_to_history()`` and set</span>
+            <span class="c1">#      ``hist.last_cmd_rtn`` to *their* exit code.</span>
+            <span class="c1">#   2. ``run_compiled_code()`` executes the user&#39;s command.</span>
+            <span class="c1">#      - Subprocess commands (``echo 1``, ``!(cmd)``,</span>
+            <span class="c1">#        ``$(cmd)``) again go through ``_apply_to_history()``</span>
+            <span class="c1">#        and set ``hist.last_cmd_rtn`` to the real exit code.</span>
+            <span class="c1">#      - Pure-Python expressions (``2+2``) never touch it.</span>
+            <span class="c1">#   3. The ``if hist.last_cmd_rtn is None`` guard then sets 0</span>
+            <span class="c1">#      for success — but only fires when no subprocess has</span>
+            <span class="c1">#      already reported a code.</span>
+            <span class="c1">#</span>
+            <span class="c1"># Without this reset, a stale code from step 1 survives into</span>
+            <span class="c1"># step 3 and is mistaken for the user command&#39;s result.  #4912</span>
+            <span class="n">hist</span><span class="o">.</span><span class="n">last_cmd_rtn</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">exc_info</span> <span class="o">=</span> <span class="n">run_compiled_code</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ctx</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;single&quot;</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">exc_info</span> <span class="o">!=</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">):</span>
