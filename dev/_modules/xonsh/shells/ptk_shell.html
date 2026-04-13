@@ -1023,7 +1023,13 @@
         <span class="k">if</span> <span class="n">is_soft_wrap</span><span class="p">:</span>
             <span class="k">return</span> <span class="s2">&quot;&quot;</span>
         <span class="n">dots</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;MULTILINE_PROMPT&quot;</span><span class="p">)</span>
-        <span class="n">dots</span> <span class="o">=</span> <span class="n">dots</span><span class="p">()</span> <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">dots</span><span class="p">)</span> <span class="k">else</span> <span class="n">dots</span>
+        <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">dots</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="c1"># prompt_toolkit passes 1 for the first continuation,</span>
+                <span class="c1"># but the main prompt is line 1, so shift by 1.</span>
+                <span class="n">dots</span> <span class="o">=</span> <span class="n">dots</span><span class="p">(</span><span class="n">line_number</span><span class="o">=</span><span class="n">line_number</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="n">width</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+                <span class="n">dots</span> <span class="o">=</span> <span class="n">dots</span><span class="p">()</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">dots</span><span class="p">:</span>
             <span class="k">return</span> <span class="s2">&quot;&quot;</span>
         <span class="n">prefix</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
@@ -1039,15 +1045,17 @@
             <span class="c1"># [(&#39;class:pygments.color.reset&#39;,&#39;&#39;), (&#39;[ZeroWidthEscape]&#39;,&#39;\x1b]133;P;k=c\x07&#39;)]</span>
             <span class="c1"># [(&#39;class:pygments.color.reset&#39;,&#39;&#39;), (&#39;[ZeroWidthEscape]&#39;,&#39;\x1b]133;B\x07&#39;)]</span>
 
-        <span class="n">basetoks</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">format_color</span><span class="p">(</span><span class="n">dots</span><span class="p">)</span>
+        <span class="c1"># Resolve both xonsh colors ({RED}) and ANSI escapes (\033[31m)</span>
+        <span class="c1"># so baselen counts only visible characters.  See #5898.</span>
+        <span class="n">basetoks</span> <span class="o">=</span> <span class="n">tokenize_ansi</span><span class="p">(</span><span class="n">PygmentsTokens</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">format_color</span><span class="p">(</span><span class="n">dots</span><span class="p">)))</span>
         <span class="n">baselen</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">t</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">basetoks</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">baselen</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="n">toks</span> <span class="o">=</span> <span class="p">[(</span><span class="n">Token</span><span class="p">,</span> <span class="s2">&quot; &quot;</span> <span class="o">*</span> <span class="n">width</span><span class="p">)]</span>
-            <span class="k">if</span> <span class="n">is_affix</span><span class="p">:</span>  <span class="c1"># to convert ↓ classes to str to allow +</span>
-                <span class="k">return</span> <span class="n">prefixtoks</span> <span class="o">+</span> <span class="n">to_formatted_text</span><span class="p">(</span><span class="n">PygmentsTokens</span><span class="p">(</span><span class="n">toks</span><span class="p">))</span> <span class="o">+</span> <span class="n">suffixtoks</span>
+            <span class="n">toks</span> <span class="o">=</span> <span class="p">[(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot; &quot;</span> <span class="o">*</span> <span class="n">width</span><span class="p">)]</span>
+            <span class="k">if</span> <span class="n">is_affix</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">prefixtoks</span> <span class="o">+</span> <span class="n">toks</span> <span class="o">+</span> <span class="n">suffixtoks</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="k">return</span> <span class="n">PygmentsTokens</span><span class="p">(</span><span class="n">toks</span><span class="p">)</span>
-        <span class="n">toks</span> <span class="o">=</span> <span class="n">basetoks</span> <span class="o">*</span> <span class="p">(</span><span class="n">width</span> <span class="o">//</span> <span class="n">baselen</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">toks</span>
+        <span class="n">toks</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">basetoks</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">width</span> <span class="o">//</span> <span class="n">baselen</span><span class="p">)</span>
         <span class="n">n</span> <span class="o">=</span> <span class="n">width</span> <span class="o">%</span> <span class="n">baselen</span>
         <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
         <span class="k">for</span> <span class="n">tok</span> <span class="ow">in</span> <span class="n">basetoks</span><span class="p">:</span>
@@ -1063,9 +1071,9 @@
             <span class="k">if</span> <span class="n">n</span> <span class="o">&lt;=</span> <span class="n">count</span><span class="p">:</span>
                 <span class="k">break</span>
         <span class="k">if</span> <span class="n">is_affix</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">prefixtoks</span> <span class="o">+</span> <span class="n">to_formatted_text</span><span class="p">(</span><span class="n">PygmentsTokens</span><span class="p">(</span><span class="n">toks</span><span class="p">))</span> <span class="o">+</span> <span class="n">suffixtoks</span>
+            <span class="k">return</span> <span class="n">prefixtoks</span> <span class="o">+</span> <span class="n">toks</span> <span class="o">+</span> <span class="n">suffixtoks</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">PygmentsTokens</span><span class="p">(</span><span class="n">toks</span><span class="p">)</span></div>
+            <span class="k">return</span> <span class="n">toks</span></div>
 
 
 <div class="viewcode-block" id="PromptToolkitShell.format_color">
