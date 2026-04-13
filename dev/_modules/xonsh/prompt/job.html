@@ -450,6 +450,7 @@
 <span></span><span class="sd">&quot;&quot;&quot;Prompt formatter for jobs fields e.g. current_job.&quot;&quot;&quot;</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">contextlib</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.prompt.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">PromptField</span>
 
@@ -457,13 +458,21 @@
 <div class="viewcode-block" id="CurrentJobField">
 <a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.prompt.job.html#xonsh.prompt.job.CurrentJobField">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">CurrentJobField</span><span class="p">(</span><span class="n">PromptField</span><span class="p">):</span>
-    <span class="n">_current_cmds</span><span class="p">:</span> <span class="nb">list</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Prompt field for the currently running foreground job.</span>
+
+<span class="sd">    Uses thread-local storage so that background threads running</span>
+<span class="sd">    subprocesses don&#39;t leak their command names into the prompt.</span>
+<span class="sd">    See xonsh/xonsh#3175.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">_tlocal</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">local</span><span class="p">()</span>
 
 <div class="viewcode-block" id="CurrentJobField.update">
 <a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.prompt.job.html#xonsh.prompt.job.CurrentJobField.update">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ctx</span><span class="p">):</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_cmds</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">cmd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_cmds</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">cmds</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tlocal</span><span class="p">,</span> <span class="s2">&quot;current_cmds&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cmds</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">cmd</span> <span class="o">=</span> <span class="n">cmds</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
             <span class="n">s</span> <span class="o">=</span> <span class="n">cmd</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
             <span class="k">if</span> <span class="n">s</span> <span class="o">==</span> <span class="s2">&quot;sudo&quot;</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
                 <span class="n">s</span> <span class="o">=</span> <span class="n">cmd</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
@@ -477,12 +486,12 @@
     <span class="nd">@contextlib</span><span class="o">.</span><span class="n">contextmanager</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">update_current_cmds</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cmds</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Context manager that updates the information used to update the job name&quot;&quot;&quot;</span>
-        <span class="n">old_cmds</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_current_cmds</span>
+        <span class="n">old_cmds</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_tlocal</span><span class="p">,</span> <span class="s2">&quot;current_cmds&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_current_cmds</span> <span class="o">=</span> <span class="n">cmds</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tlocal</span><span class="o">.</span><span class="n">current_cmds</span> <span class="o">=</span> <span class="n">cmds</span>
             <span class="k">yield</span>
         <span class="k">finally</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_current_cmds</span> <span class="o">=</span> <span class="n">old_cmds</span></div>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tlocal</span><span class="o">.</span><span class="n">current_cmds</span> <span class="o">=</span> <span class="n">old_cmds</span></div>
 </div>
 
 </pre></div>
