@@ -610,17 +610,110 @@ xonsh actually uses, in the <code class="docutils literal notranslate"><span cla
 </pre></div>
 </div>
 <p>To understand how xonsh uses completers and their return values try
-to set <a class="reference internal" href="envvars.html#XONSH_TRACE_COMPLETIONS"><span class="std std-ref">$XONSH_TRACE_COMPLETIONS</span></a> to <code class="docutils literal notranslate"><span class="pre">True</span></code>:</p>
-<div class="highlight-xonshcon notranslate"><div class="highlight"><pre><span></span><span class="gp">@ </span><span class="nv">$XONSH_TRACE_COMPLETIONS</span> <span class="o">=</span> <span class="kc">True</span>
+to set <a class="reference internal" href="envvars.html#XONSH_COMPLETER_TRACE"><span class="std std-ref">$XONSH_COMPLETER_TRACE</span></a> to <code class="docutils literal notranslate"><span class="pre">True</span></code>:</p>
+<div class="highlight-xonshcon notranslate"><div class="highlight"><pre><span></span><span class="gp">@ </span><span class="nv">$XONSH_COMPLETER_TRACE</span> <span class="o">=</span> <span class="kc">True</span>
 <span class="gp">@ </span><span class="n">pip</span> <span class="n">c</span><span class="o">&lt;</span><span class="n">TAB</span><span class="o">&gt;</span>
 <span class="go">TRACE COMPLETIONS: Getting completions with context:</span>
 <span class="go">CompletionContext(command=CommandContext(args=(CommandArg(value=&#39;pip&#39;, opening_quote=&#39;&#39;, closing_quote=&#39;&#39;),), arg_index=1, prefix=&#39;c&#39;, suffix=&#39;&#39;, opening_quote=&#39;&#39;, closing_quote=&#39;&#39;, is_after_closing_quote=False, subcmd_opening=&#39;&#39;), python=PythonContext(&#39;pip c&#39;, 5, is_sub_expression=False))</span>
-<span class="go">TRACE COMPLETIONS: Got 3 results from exclusive completer &#39;pip&#39;:</span>
-<span class="go">{RichCompletion(&#39;cache&#39;, append_space=True),</span>
-<span class="go"> RichCompletion(&#39;check&#39;, append_space=True),</span>
-<span class="go"> RichCompletion(&#39;config&#39;, append_space=True)}</span>
+<span class="go">TRACE COMPLETIONS: Got 3 from exclusive &#39;pip&#39; for &#39;c&#39;:</span>
+<span class="go">&#39;cache&#39;: src=pip, type=exclusive, prefix_len=1, append_space=True</span>
+<span class="go">&#39;check&#39;: src=pip, type=exclusive, prefix_len=1, append_space=True</span>
+<span class="go">&#39;config&#39;: src=pip, type=exclusive, prefix_len=1, append_space=True</span>
 </pre></div>
 </div>
+<p>The header reads as <code class="docutils literal notranslate"><span class="pre">Got</span> <span class="pre">&lt;N&gt;</span> <span class="pre">from</span> <span class="pre">&lt;type&gt;</span> <span class="pre">'&lt;name&gt;'</span> <span class="pre">for</span> <span class="pre">'&lt;prefix&gt;'</span></code> —
+showing the number of results, the completer’s exclusivity, its name,
+and the prefix the completer tried to match. Each body line shows the
+completion value, the <code class="docutils literal notranslate"><span class="pre">src</span></code> (completer that produced it), the
+completer <code class="docutils literal notranslate"><span class="pre">type</span></code> (<code class="docutils literal notranslate"><span class="pre">exclusive</span></code> or <code class="docutils literal notranslate"><span class="pre">non-exclusive</span></code>), and any
+non-default <code class="docutils literal notranslate"><span class="pre">RichCompletion</span></code> attributes (<code class="docutils literal notranslate"><span class="pre">prefix_len</span></code>, <code class="docutils literal notranslate"><span class="pre">display</span></code>,
+<code class="docutils literal notranslate"><span class="pre">description</span></code>, <code class="docutils literal notranslate"><span class="pre">append_space</span></code>, <code class="docutils literal notranslate"><span class="pre">close_quote</span></code> — short for
+<code class="docutils literal notranslate"><span class="pre">append_closing_quote</span></code> — <code class="docutils literal notranslate"><span class="pre">style</span></code>, <code class="docutils literal notranslate"><span class="pre">pvd</span></code> — short for <code class="docutils literal notranslate"><span class="pre">provider</span></code>).
+The format is grep-friendly, so you can filter by source or type,
+e.g. <code class="docutils literal notranslate"><span class="pre">...</span> <span class="pre">|</span> <span class="pre">grep</span> <span class="pre">'src=pip'</span></code> or <code class="docutils literal notranslate"><span class="pre">...</span> <span class="pre">|</span> <span class="pre">grep</span> <span class="pre">'type=non-exclusive'</span></code>.</p>
+<section id="fine-grained-origin-via-provider">
+<h3>Fine-grained origin via <code class="docutils literal notranslate"><span class="pre">provider</span></code><a class="headerlink" href="#fine-grained-origin-via-provider" title="Link to this heading">¶</a></h3>
+<p>A completer may set a <code class="docutils literal notranslate"><span class="pre">provider</span></code> tag on each <code class="docutils literal notranslate"><span class="pre">RichCompletion</span></code> to
+identify the sub-source inside the completer. This is trace-only
+metadata and does not affect the completion UX.</p>
+<p>For example, the <code class="docutils literal notranslate"><span class="pre">base</span></code> completer runs a union of Python names,
+<code class="docutils literal notranslate"><span class="pre">$PATH</span></code> executables, aliases, and file paths. When you type the first
+argument and hit <code class="docutils literal notranslate"><span class="pre">&lt;TAB&gt;</span></code>, the trace distinguishes them:</p>
+<div class="highlight-xonshcon notranslate"><div class="highlight"><pre><span></span><span class="gp">@ </span><span class="n">aliases</span><span class="p">[</span><span class="s1">&#39;qwe-xonsh&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;echo&#39;</span>
+<span class="gp">@ </span><span class="n">xonsh</span><span class="o">&lt;</span><span class="n">TAB</span><span class="o">&gt;</span>
+<span class="go">TRACE COMPLETIONS: Got 2 from exclusive &#39;base&#39; for &#39;xonsh&#39;:</span>
+<span class="go">&#39;qwe-xonsh &#39;: src=base, pvd=&#39;alias&#39;, type=exclusive, prefix_len=5, append_space=True</span>
+<span class="go">&#39;xonsh &#39;: src=base, pvd=&#39;command&#39;, type=exclusive, prefix_len=5, append_space=True</span>
+</pre></div>
+</div>
+<p>Completers that are invoked but return no usable matches are also
+reported, so you can see the full decision path:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>TRACE COMPLETIONS: Got 0 from non-exclusive &#39;environment_vars&#39; for &#39;xonsh&#39;.
+TRACE COMPLETIONS: Got 0 from exclusive &#39;bash&#39; for &#39;xonsh&#39;.
+TRACE COMPLETIONS: Got 3 from exclusive &#39;path&#39; for &#39;./do&#39;:
+...
+</pre></div>
+</div>
+<p>This way you can see immediately that <code class="docutils literal notranslate"><span class="pre">qwe-xonsh</span></code> comes from an alias
+while <code class="docutils literal notranslate"><span class="pre">xonsh</span></code> is a real executable on <code class="docutils literal notranslate"><span class="pre">$PATH</span></code>. Built-in providers:
+<code class="docutils literal notranslate"><span class="pre">alias</span></code>, <code class="docutils literal notranslate"><span class="pre">command</span></code>, <code class="docutils literal notranslate"><span class="pre">python</span></code>, <code class="docutils literal notranslate"><span class="pre">path</span></code>, plus the xompletion module
+name (e.g. <code class="docutils literal notranslate"><span class="pre">pip</span></code>, <code class="docutils literal notranslate"><span class="pre">gh</span></code>) for completions produced by the <code class="docutils literal notranslate"><span class="pre">xompleter</span></code>.
+Custom completers may set any string they like.</p>
+</section>
+<section id="setting-provider-in-your-own-completer">
+<h3>Setting <code class="docutils literal notranslate"><span class="pre">provider</span></code> in your own completer<a class="headerlink" href="#setting-provider-in-your-own-completer" title="Link to this heading">¶</a></h3>
+<p>There are two ways to tag your completions, depending on whether you
+want per-item control or want to label the whole result at once.</p>
+<p><strong>Per-item</strong>: pass <code class="docutils literal notranslate"><span class="pre">provider=...</span></code> directly to each <code class="docutils literal notranslate"><span class="pre">RichCompletion</span></code>.
+This is most useful when a single completer has internal branches and
+you want to distinguish them in trace:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.completers.tools</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">RichCompletion</span><span class="p">,</span>
+    <span class="n">contextual_command_completer_for</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="nd">@contextual_command_completer_for</span><span class="p">(</span><span class="s2">&quot;deploy&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">complete_deploy</span><span class="p">(</span><span class="n">command</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Complete ``deploy &lt;env&gt;`` with fast- and slow-paths tagged.&quot;&quot;&quot;</span>
+    <span class="n">cached</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;prod&quot;</span><span class="p">,</span> <span class="s2">&quot;staging&quot;</span><span class="p">}</span>       <span class="c1"># e.g. loaded from a local cache</span>
+    <span class="n">remote</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;dev-42&quot;</span><span class="p">,</span> <span class="s2">&quot;dev-43&quot;</span><span class="p">}</span>      <span class="c1"># e.g. hit an HTTP endpoint</span>
+
+    <span class="k">for</span> <span class="n">env</span> <span class="ow">in</span> <span class="n">cached</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">env</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">command</span><span class="o">.</span><span class="n">prefix</span><span class="p">):</span>
+            <span class="k">yield</span> <span class="n">RichCompletion</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">provider</span><span class="o">=</span><span class="s2">&quot;deploy:cache&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">env</span> <span class="ow">in</span> <span class="n">remote</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">env</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">command</span><span class="o">.</span><span class="n">prefix</span><span class="p">):</span>
+            <span class="k">yield</span> <span class="n">RichCompletion</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">provider</span><span class="o">=</span><span class="s2">&quot;deploy:remote&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>After <code class="docutils literal notranslate"><span class="pre">completer</span> <span class="pre">add</span> <span class="pre">deploy</span> <span class="pre">complete_deploy</span></code> the trace will show:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>TRACE COMPLETIONS: Got 3 from exclusive &#39;deploy&#39; for &#39;d&#39;:
+&#39;dev-42&#39;: src=deploy, pvd=&#39;deploy:remote&#39;, type=exclusive, prefix_len=1
+&#39;dev-43&#39;: src=deploy, pvd=&#39;deploy:remote&#39;, type=exclusive, prefix_len=1
+&#39;staging&#39;: src=deploy, pvd=&#39;deploy:cache&#39;, type=exclusive, prefix_len=1
+</pre></div>
+</div>
+<p><strong>Whole-result</strong>: wrap the completer’s return value with
+<code class="docutils literal notranslate"><span class="pre">tag_provider</span></code>. This preserves the return shape (<code class="docutils literal notranslate"><span class="pre">None</span></code>, iterable,
+or <code class="docutils literal notranslate"><span class="pre">(comps,</span> <span class="pre">lprefix)</span></code> tuple) and only tags completions that do not
+already carry their own <code class="docutils literal notranslate"><span class="pre">provider</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.completers.tools</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">contextual_command_completer_for</span><span class="p">,</span>
+    <span class="n">tag_provider</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="nd">@contextual_command_completer_for</span><span class="p">(</span><span class="s2">&quot;mycmd&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">complete_mycmd</span><span class="p">(</span><span class="n">command</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Completer whose entire output is tagged ``provider=&#39;mycmd&#39;``.&quot;&quot;&quot;</span>
+    <span class="n">results</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;start&quot;</span><span class="p">,</span> <span class="s2">&quot;stop&quot;</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">}</span>
+    <span class="k">return</span> <span class="n">tag_provider</span><span class="p">(</span><span class="n">results</span><span class="p">,</span> <span class="s2">&quot;mycmd&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">tag_provider</span></code> is also what the built-in <code class="docutils literal notranslate"><span class="pre">xompleter</span></code> uses under the
+hood to label each xompletion module’s output — so any <code class="docutils literal notranslate"><span class="pre">RichCompletion</span></code>
+that <em>already</em> specifies its own <code class="docutils literal notranslate"><span class="pre">provider</span></code> is kept intact and won’t
+be overwritten by the outer tag.</p>
+</section>
 </section>
 <section id="registering-a-completer">
 <h2>Registering a Completer<a class="headerlink" href="#registering-a-completer" title="Link to this heading">¶</a></h2>
@@ -913,7 +1006,11 @@ While this legacy API is not recommended, xonsh still supports it.</p>
 <li><a class="reference internal" href="#overview">Overview</a></li>
 <li><a class="reference internal" href="#structure">Structure</a></li>
 <li><a class="reference internal" href="#listing-active-completers">Listing Active Completers</a></li>
-<li><a class="reference internal" href="#writing-a-new-completer">Writing a New Completer</a></li>
+<li><a class="reference internal" href="#writing-a-new-completer">Writing a New Completer</a><ul>
+<li><a class="reference internal" href="#fine-grained-origin-via-provider">Fine-grained origin via <code class="docutils literal notranslate"><span class="pre">provider</span></code></a></li>
+<li><a class="reference internal" href="#setting-provider-in-your-own-completer">Setting <code class="docutils literal notranslate"><span class="pre">provider</span></code> in your own completer</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#registering-a-completer">Registering a Completer</a></li>
 <li><a class="reference internal" href="#removing-a-completer">Removing a Completer</a></li>
 <li><a class="reference internal" href="#advanced-completions">Advanced Completions</a><ul>

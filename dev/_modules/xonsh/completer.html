@@ -455,6 +455,7 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.built_ins</span><span class="w"> </span><span class="kn">import</span> <span class="n">XSH</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.completers.tools</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">RICH_COMPLETION_DEFAULTS</span><span class="p">,</span>
     <span class="n">Completion</span><span class="p">,</span>
     <span class="n">RichCompletion</span><span class="p">,</span>
     <span class="n">apply_lprefix</span><span class="p">,</span>
@@ -635,6 +636,44 @@
 
         <span class="k">return</span> <span class="n">completion</span><span class="p">,</span> <span class="n">lprefix</span>
 
+    <span class="c1"># Renames applied to ``RichCompletion`` attribute names in trace</span>
+    <span class="c1"># output only; the Python attributes themselves are unchanged.</span>
+    <span class="n">_TRACE_ATTR_ALIASES</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;append_closing_quote&quot;</span><span class="p">:</span> <span class="s2">&quot;close_quote&quot;</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_format_trace_item</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="n">lprefix</span><span class="p">,</span> <span class="n">source</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">exclusive</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Render one completion as a single ``$XONSH_COMPLETER_TRACE`` line.</span>
+
+<span class="sd">        Format::</span>
+
+<span class="sd">            &quot;value&quot;: src=&lt;completer&gt;, pvd=&lt;sub-source&gt;, type=&lt;exclusive|non-exclusive&gt;, &lt;non-default RichCompletion attrs&gt;</span>
+
+<span class="sd">        ``pvd`` (provider) is placed right after ``src`` (source) when</span>
+<span class="sd">        set, so the two origin fields stay visually adjacent. Other</span>
+<span class="sd">        non-default ``RichCompletion`` fields (``prefix_len``,</span>
+<span class="sd">        ``display``, ``description``, ``append_space``, ``close_quote``</span>
+<span class="sd">        — short for ``append_closing_quote`` — and ``style``) are</span>
+<span class="sd">        appended afterwards. Plain ``str`` completions fall back to</span>
+<span class="sd">        showing the pipeline&#39;s ``lprefix``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">parts</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;src=</span><span class="si">{</span><span class="n">source</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="n">RichCompletion</span><span class="p">)</span> <span class="ow">and</span> <span class="n">comp</span><span class="o">.</span><span class="n">provider</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;pvd=</span><span class="si">{</span><span class="n">comp</span><span class="o">.</span><span class="n">provider</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;type=</span><span class="si">{</span><span class="s1">&#39;exclusive&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">exclusive</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;non-exclusive&#39;</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="n">RichCompletion</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">default</span> <span class="ow">in</span> <span class="n">RICH_COMPLETION_DEFAULTS</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;provider&quot;</span><span class="p">:</span>
+                    <span class="k">continue</span>  <span class="c1"># already placed right after ``src``</span>
+                <span class="n">val</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">val</span> <span class="o">!=</span> <span class="n">default</span><span class="p">:</span>
+                    <span class="n">label</span> <span class="o">=</span> <span class="n">Completer</span><span class="o">.</span><span class="n">_TRACE_ATTR_ALIASES</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+                    <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2">=</span><span class="si">{</span><span class="n">val</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;prefix_len=</span><span class="si">{</span><span class="n">lprefix</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">comp</span><span class="p">)</span><span class="si">!r}</span><span class="s2">: </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+
 <div class="viewcode-block" id="Completer.generate_completions">
 <a class="viewcode-back" href="../../lib/_autosummary/cmd/xonsh.completer.html#xonsh.completer.Completer.generate_completions">[docs]</a>
     <span class="nd">@staticmethod</span>
@@ -695,34 +734,63 @@
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">res</span> <span class="o">=</span> <span class="n">out</span>
 
-            <span class="k">if</span> <span class="n">res</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">continue</span>
+            <span class="c1"># Completer was invoked (didn&#39;t raise, wasn&#39;t skipped by the</span>
+            <span class="c1"># contextual gate). Process its output into ``items``; note</span>
+            <span class="c1"># that ``res is None`` is valid — it just yields an empty</span>
+            <span class="c1"># ``items``, and trace will report ``Got 0 results``.</span>
+            <span class="n">items</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">if</span> <span class="n">res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="n">res</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="p">(</span><span class="ow">not</span> <span class="n">is_filtered</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="ow">not</span> <span class="n">filter_func</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="n">prefix</span><span class="p">)):</span>
+                        <span class="k">continue</span>
+                    <span class="c1"># Skip empty or whitespace-only completions as if the</span>
+                    <span class="c1"># completer had not returned them. Without this an</span>
+                    <span class="c1"># exclusive completer that yields only blanks (e.g. a</span>
+                    <span class="c1"># subprocess-based completer returning spurious empty</span>
+                    <span class="c1"># lines) would short-circuit the pipeline and hide</span>
+                    <span class="c1"># the fallback ``python``/``path`` completers. See #5810.</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="nb">str</span><span class="p">(</span><span class="n">comp</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+                        <span class="k">continue</span>
+                    <span class="n">comp</span> <span class="o">=</span> <span class="n">Completer</span><span class="o">.</span><span class="n">_format_completion</span><span class="p">(</span>
+                        <span class="n">comp</span><span class="p">,</span>
+                        <span class="n">completion_context</span><span class="p">,</span>
+                        <span class="n">completing_contextual_command</span><span class="p">,</span>
+                        <span class="n">lprefix</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">,</span>
+                        <span class="n">custom_lprefix</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="n">items</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">comp</span><span class="p">)</span>
+                    <span class="k">yield</span> <span class="n">comp</span>
 
-            <span class="n">items</span> <span class="o">=</span> <span class="p">[]</span>
-            <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="n">res</span><span class="p">:</span>
-                <span class="k">if</span> <span class="p">(</span><span class="ow">not</span> <span class="n">is_filtered</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="ow">not</span> <span class="n">filter_func</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="n">prefix</span><span class="p">)):</span>
-                    <span class="k">continue</span>
-                <span class="n">comp</span> <span class="o">=</span> <span class="n">Completer</span><span class="o">.</span><span class="n">_format_completion</span><span class="p">(</span>
-                    <span class="n">comp</span><span class="p">,</span>
-                    <span class="n">completion_context</span><span class="p">,</span>
-                    <span class="n">completing_contextual_command</span><span class="p">,</span>
-                    <span class="n">lprefix</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">,</span>
-                    <span class="n">custom_lprefix</span><span class="p">,</span>
-                <span class="p">)</span>
-                <span class="n">items</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">comp</span><span class="p">)</span>
-                <span class="k">yield</span> <span class="n">comp</span>
+            <span class="n">exclusive</span> <span class="o">=</span> <span class="n">is_exclusive_completer</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">trace</span><span class="p">:</span>
+                <span class="n">exclusivity</span> <span class="o">=</span> <span class="s2">&quot;exclusive&quot;</span> <span class="k">if</span> <span class="n">exclusive</span> <span class="k">else</span> <span class="s2">&quot;non-exclusive&quot;</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">items</span><span class="p">:</span>
+                    <span class="c1"># Completer was invoked but produced nothing usable —</span>
+                    <span class="c1"># still report it so the user can see which completers</span>
+                    <span class="c1"># ran. Trailing ``.`` since no list follows.</span>
+                    <span class="nb">print</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;TRACE COMPLETIONS: Got 0&quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot; from </span><span class="si">{</span><span class="n">exclusivity</span><span class="si">}</span><span class="s2"> &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot; for </span><span class="si">{</span><span class="n">prefix</span><span class="si">!r}</span><span class="s2">.&quot;</span>
+                    <span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;TRACE COMPLETIONS: Got </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">items</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot; from </span><span class="si">{</span><span class="n">exclusivity</span><span class="si">}</span><span class="s2"> &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot; for </span><span class="si">{</span><span class="n">prefix</span><span class="si">!r}</span><span class="s2">:&quot;</span>
+                    <span class="p">)</span>
+                    <span class="k">for</span> <span class="n">item_comp</span><span class="p">,</span> <span class="n">item_lprefix</span> <span class="ow">in</span> <span class="n">items</span><span class="p">:</span>
+                        <span class="nb">print</span><span class="p">(</span>
+                            <span class="n">Completer</span><span class="o">.</span><span class="n">_format_trace_item</span><span class="p">(</span>
+                                <span class="n">item_comp</span><span class="p">,</span> <span class="n">item_lprefix</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">exclusive</span>
+                            <span class="p">)</span>
+                        <span class="p">)</span>
 
             <span class="k">if</span> <span class="ow">not</span> <span class="n">items</span><span class="p">:</span>  <span class="c1"># empty completion</span>
                 <span class="k">continue</span>
 
-            <span class="k">if</span> <span class="n">trace</span><span class="p">:</span>
-                <span class="nb">print</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;TRACE COMPLETIONS: Got </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">items</span><span class="p">)</span><span class="si">}</span><span class="s2"> results&quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot; from </span><span class="si">{</span><span class="s1">&#39;&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">is_exclusive_completer</span><span class="p">(</span><span class="n">func</span><span class="p">)</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;non-&#39;</span><span class="si">}</span><span class="s2">exclusive completer &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39;:&quot;</span>
-                <span class="p">)</span>
-                <span class="n">sys</span><span class="o">.</span><span class="n">displayhook</span><span class="p">(</span><span class="n">items</span><span class="p">)</span>
-
-            <span class="k">if</span> <span class="n">is_exclusive_completer</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">exclusive</span><span class="p">:</span>
                 <span class="c1"># we got completions for an exclusive completer</span>
                 <span class="k">break</span></div>
 
@@ -730,7 +798,7 @@
 <div class="viewcode-block" id="Completer.complete_from_context">
 <a class="viewcode-back" href="../../lib/_autosummary/cmd/xonsh.completer.html#xonsh.completer.Completer.complete_from_context">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">complete_from_context</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">completion_context</span><span class="p">,</span> <span class="n">old_completer_args</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-        <span class="n">trace</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_TRACE_COMPLETIONS&quot;</span><span class="p">)</span>
+        <span class="n">trace</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_COMPLETER_TRACE&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">trace</span><span class="p">:</span>
             <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">TRACE COMPLETIONS: Getting completions with context:&quot;</span><span class="p">)</span>
             <span class="n">sys</span><span class="o">.</span><span class="n">displayhook</span><span class="p">(</span><span class="n">completion_context</span><span class="p">)</span>

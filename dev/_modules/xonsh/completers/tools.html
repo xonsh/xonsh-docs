@@ -521,6 +521,7 @@
         <span class="n">style</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
         <span class="n">append_closing_quote</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">append_space</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">provider</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Parameters</span>
@@ -545,6 +546,13 @@
 <span class="sd">            This is intended to work with ``appending_closing_quote``, so the space will be added correctly **after** the closing quote.</span>
 <span class="sd">            This is used in ``Completer.complete``.</span>
 <span class="sd">            An extra bonus is that the space won&#39;t show up in the ``display`` attribute.</span>
+<span class="sd">        provider :</span>
+<span class="sd">            Optional, debug-only tag identifying the sub-source inside the</span>
+<span class="sd">            completer that produced this completion (e.g. ``&quot;alias&quot;``,</span>
+<span class="sd">            ``&quot;command&quot;``, ``&quot;python&quot;``, ``&quot;path&quot;``). Surfaced by</span>
+<span class="sd">            ``$XONSH_COMPLETER_TRACE`` so users can tell whether a match</span>
+<span class="sd">            came from, say, an alias vs. a ``$PATH`` executable inside the</span>
+<span class="sd">            same ``base`` completer. Does not affect UX.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">prefix_len</span> <span class="o">=</span> <span class="n">prefix_len</span>
@@ -553,6 +561,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">style</span> <span class="o">=</span> <span class="n">style</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">append_closing_quote</span> <span class="o">=</span> <span class="n">append_closing_quote</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">append_space</span> <span class="o">=</span> <span class="n">append_space</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">provider</span> <span class="o">=</span> <span class="n">provider</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">value</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -693,6 +702,43 @@
 
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_tag_each</span><span class="p">(</span><span class="n">comps</span><span class="p">,</span> <span class="n">provider</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Yield completions with ``provider`` set, promoting ``str`` to</span>
+<span class="sd">    ``RichCompletion``. A completion that already has a ``provider`` keeps</span>
+<span class="sd">    its own — lets a nested completer override the outer tag.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="n">comps</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="n">RichCompletion</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">comp</span><span class="o">.</span><span class="n">provider</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">yield</span> <span class="n">comp</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">provider</span><span class="o">=</span><span class="n">provider</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">yield</span> <span class="n">comp</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">yield</span> <span class="n">RichCompletion</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="n">provider</span><span class="o">=</span><span class="n">provider</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="tag_provider">
+<a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.completers.tools.html#xonsh.completers.tools.tag_provider">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">tag_provider</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">provider</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tag completer output with ``provider`` for ``$XONSH_COMPLETER_TRACE``.</span>
+
+<span class="sd">    Accepts any of the three standard completer return shapes and</span>
+<span class="sd">    preserves the shape so downstream pipeline logic (exclusivity,</span>
+<span class="sd">    filtering, lprefix) is unaffected:</span>
+
+<span class="sd">    - ``None`` → returned unchanged.</span>
+<span class="sd">    - ``(comps, extra)`` 2-tuple → ``(tagged_generator, extra)``.</span>
+<span class="sd">    - Any other iterable → generator of tagged completions.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">result</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="n">comps</span><span class="p">,</span> <span class="n">extra</span> <span class="o">=</span> <span class="n">result</span>
+        <span class="k">return</span> <span class="n">_tag_each</span><span class="p">(</span><span class="n">comps</span><span class="p">,</span> <span class="n">provider</span><span class="p">),</span> <span class="n">extra</span>
+    <span class="k">return</span> <span class="n">_tag_each</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">provider</span><span class="p">)</span></div>
+
+
+
 <div class="viewcode-block" id="completion_from_cmd_output">
 <a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.completers.tools.html#xonsh.completers.tools.completion_from_cmd_output">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">completion_from_cmd_output</span><span class="p">(</span><span class="n">line</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
@@ -757,6 +803,11 @@
             <span class="n">lines</span> <span class="o">=</span> <span class="n">sep</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">lines</span> <span class="o">=</span> <span class="n">output</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">sep</span><span class="p">)</span>
+
+        <span class="c1"># Drop blank lines before counting / yielding so that a subprocess</span>
+        <span class="c1"># emitting trailing/extra whitespace doesn&#39;t produce empty</span>
+        <span class="c1"># RichCompletion objects (see #5810).</span>
+        <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span><span class="n">ln</span> <span class="k">for</span> <span class="n">ln</span> <span class="ow">in</span> <span class="n">lines</span> <span class="k">if</span> <span class="n">ln</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
 
         <span class="c1"># if there is a single completion candidate then maybe it is over</span>
         <span class="n">append_space</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">lines</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">sep</span><span class="p">)</span>
