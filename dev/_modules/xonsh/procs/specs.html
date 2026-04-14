@@ -676,6 +676,40 @@
     <span class="k">return</span> <span class="nb">frozenset</span><span class="p">({</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">o</span><span class="si">}</span><span class="s2">&gt;</span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">_REDIR_ERR</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">_REDIR_OUT</span> <span class="k">if</span> <span class="n">o</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span><span class="p">})</span>
 
 
+<span class="nd">@xl</span><span class="o">.</span><span class="n">lazyobject</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_A2P_MAP</span><span class="p">():</span>
+    <span class="c1"># `a&gt;p` and variants: merge stdout+stderr into the following pipe.</span>
+    <span class="c1"># `&amp;` is excluded here: `&amp;&gt;p` would conflict with the background-process</span>
+    <span class="c1"># parsing of `&amp;` in subproc redirects.</span>
+    <span class="k">return</span> <span class="nb">frozenset</span><span class="p">({</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">a</span><span class="si">}</span><span class="s2">&gt;p&quot;</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">_REDIR_ALL</span> <span class="k">if</span> <span class="n">a</span> <span class="o">!=</span> <span class="s2">&quot;&amp;&quot;</span><span class="p">})</span>
+
+
+<span class="nd">@xl</span><span class="o">.</span><span class="n">lazyobject</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_E2P_MAP</span><span class="p">():</span>
+    <span class="c1"># `e&gt;p` and variants: route stderr into the following pipe</span>
+    <span class="k">return</span> <span class="nb">frozenset</span><span class="p">({</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&gt;p&quot;</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">_REDIR_ERR</span><span class="p">})</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">_PipeRedirectSentinel</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Marker put in a spec&#39;s stdout/stderr slot by ``_redirect_streams``</span>
+<span class="sd">    when the command uses ``a&gt;p`` or ``e&gt;p``. It is replaced by the pipe&#39;s</span>
+<span class="sd">    write fd later in ``cmds_to_specs``; if it survives to execution, the</span>
+<span class="sd">    redirect was used without a subsequent ``|`` pipe.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="vm">__slots__</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;&lt;pipe-redirect </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&gt;&quot;</span>
+
+
+<span class="n">_PIPE_ALL</span> <span class="o">=</span> <span class="n">_PipeRedirectSentinel</span><span class="p">(</span><span class="s2">&quot;a&gt;p&quot;</span><span class="p">)</span>
+<span class="n">_PIPE_ERR</span> <span class="o">=</span> <span class="n">_PipeRedirectSentinel</span><span class="p">(</span><span class="s2">&quot;e&gt;p&quot;</span><span class="p">)</span>
+
+
 <div class="viewcode-block" id="safe_open">
 <a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.safe_open">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">safe_open</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="n">mode</span><span class="p">,</span> <span class="n">buffering</span><span class="o">=-</span><span class="mi">1</span><span class="p">):</span>
@@ -738,6 +772,12 @@
         <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported redirect: </span><span class="si">{</span><span class="n">r</span><span class="si">!r}</span><span class="s2"> </span><span class="si">{</span><span class="n">loc</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="n">stdin</span> <span class="o">=</span> <span class="n">stdout</span> <span class="o">=</span> <span class="n">stderr</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1"># pipe redirects: a&gt;p merges both streams into the following pipe,</span>
+    <span class="c1"># e&gt;p routes stderr into the following pipe (stdout left alone).</span>
+    <span class="k">if</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">_A2P_MAP</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">stdin</span><span class="p">,</span> <span class="n">_PIPE_ALL</span><span class="p">,</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">STDOUT</span>
+    <span class="k">elif</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">_E2P_MAP</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">stdin</span><span class="p">,</span> <span class="n">stdout</span><span class="p">,</span> <span class="n">_PIPE_ERR</span>
     <span class="n">no_ampersand</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;&amp;&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
     <span class="c1"># special case of redirecting stderr to stdout</span>
     <span class="k">if</span> <span class="n">no_ampersand</span> <span class="ow">in</span> <span class="n">_E2O_MAP</span><span class="p">:</span>
@@ -1723,13 +1763,37 @@
             <span class="c1"># these should remain integer file descriptors, and not Python</span>
             <span class="c1"># file objects since they connect processes.</span>
             <span class="n">pipe</span> <span class="o">=</span> <span class="n">PipeChannel</span><span class="o">.</span><span class="n">from_pipe</span><span class="p">()</span>
-            <span class="n">specs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">write_fd</span>
+            <span class="n">upstream</span> <span class="o">=</span> <span class="n">specs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="c1"># `e&gt;p` adds stderr to the pipe; stdout still goes through the</span>
+            <span class="c1"># pipe by default, unless the user diverted it with `o&gt;`/`&gt;`.</span>
+            <span class="k">if</span> <span class="n">upstream</span><span class="o">.</span><span class="n">_stderr</span> <span class="ow">is</span> <span class="n">_PIPE_ERR</span><span class="p">:</span>
+                <span class="n">upstream</span><span class="o">.</span><span class="n">_stderr</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="n">upstream</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">write_fd</span>
+                <span class="c1"># Skip wiring stdout if it is already redirected elsewhere</span>
+                <span class="c1"># (e.g. `cmd o&gt; file e&gt;p | grep` — stdout to file, pipe gets</span>
+                <span class="c1"># only stderr).</span>
+                <span class="n">skip_stdout</span> <span class="o">=</span> <span class="n">upstream</span><span class="o">.</span><span class="n">_stdout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">skip_stdout</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="c1"># `a&gt;p`: stdout goes to the pipe and stderr is merged into it</span>
+            <span class="c1"># (stderr was already set to subprocess.STDOUT by _redirect_streams).</span>
+            <span class="k">if</span> <span class="n">upstream</span><span class="o">.</span><span class="n">_stdout</span> <span class="ow">is</span> <span class="n">_PIPE_ALL</span><span class="p">:</span>
+                <span class="n">upstream</span><span class="o">.</span><span class="n">_stdout</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">skip_stdout</span><span class="p">:</span>
+                <span class="n">upstream</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">write_fd</span>
             <span class="n">specs</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">stdin</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">read_fd</span>
-            <span class="n">specs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">pipe_channels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pipe</span><span class="p">)</span>
+            <span class="n">upstream</span><span class="o">.</span><span class="n">pipe_channels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pipe</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">redirect</span> <span class="o">==</span> <span class="s2">&quot;&amp;&quot;</span> <span class="ow">and</span> <span class="n">i</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">redirects</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
             <span class="n">specs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">background</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">raise</span> <span class="n">xt</span><span class="o">.</span><span class="n">XonshError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;unrecognized redirect </span><span class="si">{</span><span class="n">redirect</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="c1"># Any pipe-redirect sentinel still present means `a&gt;p`/`e&gt;p` was used</span>
+    <span class="c1"># without a following `|` pipe.</span>
+    <span class="k">for</span> <span class="n">spec</span> <span class="ow">in</span> <span class="n">specs</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">spec</span><span class="o">.</span><span class="n">_stdout</span> <span class="ow">is</span> <span class="n">_PIPE_ALL</span> <span class="ow">or</span> <span class="n">spec</span><span class="o">.</span><span class="n">_stderr</span> <span class="ow">is</span> <span class="n">_PIPE_ERR</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">xt</span><span class="o">.</span><span class="n">XonshError</span><span class="p">(</span>
+                <span class="s2">&quot;xonsh: redirect &#39;a&gt;p&#39;/&#39;e&gt;p&#39; requires a following pipe &#39;|&#39;&quot;</span>
+            <span class="p">)</span>
 
     <span class="c1"># Apply boundary conditions</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_CAPTURE_ALWAYS&quot;</span><span class="p">):</span>
