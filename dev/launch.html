@@ -284,6 +284,7 @@
 <li class="toctree-l3"><a class="reference internal" href="lib/_autosummary/cmd/xonsh.completers.base.html">xonsh.completers.base</a></li>
 <li class="toctree-l3"><a class="reference internal" href="lib/_autosummary/cmd/xonsh.completers.bash.html">xonsh.completers.bash</a></li>
 <li class="toctree-l3"><a class="reference internal" href="lib/_autosummary/cmd/xonsh.completers.bash_completion.html">xonsh.completers.bash_completion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lib/_autosummary/cmd/xonsh.completers.click.html">xonsh.completers.click</a></li>
 <li class="toctree-l3"><a class="reference internal" href="lib/_autosummary/cmd/xonsh.completers.commands.html">xonsh.completers.commands</a></li>
 <li class="toctree-l3"><a class="reference internal" href="lib/_autosummary/cmd/xonsh.completers.completer.html">xonsh.completers.completer</a></li>
 <li class="toctree-l3"><a class="reference internal" href="lib/_autosummary/cmd/xonsh.completers.dirs.html">xonsh.completers.dirs</a></li>
@@ -596,6 +597,61 @@ in interactive mode — otherwise the OS will suspend the interactive xonsh
 process. For example, when starting xonsh from a bash script, use an
 interactive shebang (<code class="docutils literal notranslate"><span class="pre">#!/bin/bash</span> <span class="pre">-i</span></code>).</p>
 </section>
+<section id="controlling-terminal-and-foreground-process-group">
+<span id="launch-fg-takeover"></span><h2>Controlling Terminal and Foreground Process Group<a class="headerlink" href="#controlling-terminal-and-foreground-process-group" title="Link to this heading">¶</a></h2>
+<p>At startup xonsh performs the industry-standard handshake used by interactive shells
+to install itself as the foreground process group of its controlling terminal.</p>
+<p>On POSIX, the first thing <a class="reference internal" href="lib/_autosummary/helpers/xonsh.main.html#xonsh.main.main" title="xonsh.main.main"><code class="xref py py-func docutils literal notranslate"><span class="pre">xonsh.main.main()</span></code></a> does — before argument
+parsing, xontrib loading, or xonshrc execution — is call
+<code class="xref py py-func docutils literal notranslate"><span class="pre">xonsh.main._setup_controlling_terminal()</span></code>. This function installs a
+Python-level no-op handler for <code class="docutils literal notranslate"><span class="pre">SIGTTIN</span></code> and <code class="docutils literal notranslate"><span class="pre">SIGTTOU</span></code> on every POSIX
+invocation. If <code class="docutils literal notranslate"><span class="pre">os.isatty(stderr)</span></code> is true, it then calls
+<code class="xref py py-func docutils literal notranslate"><span class="pre">xonsh.main._acquire_controlling_terminal()</span></code>; otherwise it returns after
+installing the handlers.</p>
+<p><code class="docutils literal notranslate"><span class="pre">_acquire_controlling_terminal</span></code> uses stderr (file descriptor 2) as the TTY
+handle, matching <a class="reference internal" href="lib/_autosummary/cmd/xonsh.procs.jobs.html#xonsh.procs.jobs.give_terminal_to" title="xonsh.procs.jobs.give_terminal_to"><code class="xref py py-func docutils literal notranslate"><span class="pre">xonsh.procs.jobs.give_terminal_to()</span></code></a>. It blocks
+<code class="docutils literal notranslate"><span class="pre">SIGTTOU</span></code>, <code class="docutils literal notranslate"><span class="pre">SIGTTIN</span></code>, <code class="docutils literal notranslate"><span class="pre">SIGTSTP</span></code>, and <code class="docutils literal notranslate"><span class="pre">SIGCHLD</span></code> in the calling thread
+with <code class="docutils literal notranslate"><span class="pre">pthread_sigmask</span></code>. If the TTY’s foreground group is already the current
+process group, it short-circuits to success without registering an <code class="docutils literal notranslate"><span class="pre">atexit</span></code>
+restorer. Otherwise it calls <code class="docutils literal notranslate"><span class="pre">setpgid(0,</span> <span class="pre">0)</span></code> followed by
+<code class="docutils literal notranslate"><span class="pre">tcsetpgrp(tty_fd,</span> <span class="pre">getpgrp())</span></code>, remembers the previous foreground group, and
+records the success. The signal mask is restored in a <code class="docutils literal notranslate"><span class="pre">finally</span></code> block.</p>
+<p>Control returns to <code class="docutils literal notranslate"><span class="pre">_setup_controlling_terminal</span></code>, which branches on the
+result. On success, the Python no-op handlers stay in place, and
+<code class="xref py py-func docutils literal notranslate"><span class="pre">xonsh.main._release_controlling_terminal()</span></code> is registered with
+<code class="xref py py-mod docutils literal notranslate"><span class="pre">atexit</span></code> only when foreground ownership was actually transferred. On
+failure, the Python no-op handlers are replaced with <code class="docutils literal notranslate"><span class="pre">SIG_IGN</span></code> for
+<code class="docutils literal notranslate"><span class="pre">SIGTTIN</span></code> and <code class="docutils literal notranslate"><span class="pre">SIGTTOU</span></code>. <code class="docutils literal notranslate"><span class="pre">_setup_controlling_terminal</span></code> is idempotent and
+is also called from the top of <a class="reference internal" href="lib/_autosummary/helpers/xonsh.main.html#xonsh.main.main_xonsh" title="xonsh.main.main_xonsh"><code class="xref py py-func docutils literal notranslate"><span class="pre">xonsh.main.main_xonsh()</span></code></a>, with the second
+call short-circuiting on the <code class="docutils literal notranslate"><span class="pre">_tty_setup_done</span></code> module flag.</p>
+<p>On shutdown, if the <code class="docutils literal notranslate"><span class="pre">atexit</span></code> restorer was registered,
+<code class="docutils literal notranslate"><span class="pre">_release_controlling_terminal</span></code> calls <code class="docutils literal notranslate"><span class="pre">tcsetpgrp</span></code> to hand the previous
+foreground group back to the parent shell with <code class="docutils literal notranslate"><span class="pre">SIGTTOU</span></code> blocked during the
+call. If the parent has already reclaimed the TTY, or if the fd is no longer
+valid, the error is swallowed. In every other case — no handshake ran, the
+fast path was taken, or the handshake failed — the restorer is a no-op.</p>
+<section id="when-the-handshake-is-a-no-op">
+<h3>When the handshake is a no-op<a class="headerlink" href="#when-the-handshake-is-a-no-op" title="Link to this heading">¶</a></h3>
+<p>The handshake itself is skipped, though the Python no-op handlers for
+<code class="docutils literal notranslate"><span class="pre">SIGTTIN</span></code> and <code class="docutils literal notranslate"><span class="pre">SIGTTOU</span></code> are still installed, on Windows; in non-interactive
+invocations where stderr is not a TTY, such as <code class="docutils literal notranslate"><span class="pre">xonsh</span> <span class="pre">script.xsh</span></code>, piped
+input, redirected stderr, script-from-stdin mode, and pytest runs that capture
+stderr via a pipe; when xonsh is a session leader (<code class="docutils literal notranslate"><span class="pre">getsid(0)</span> <span class="pre">==</span> <span class="pre">getpid()</span></code>);
+when xonsh is already the foreground group, in which case the fast path
+returns and the <code class="docutils literal notranslate"><span class="pre">atexit</span></code> restorer is not registered; and when
+<code class="docutils literal notranslate"><span class="pre">pthread_sigmask</span></code> is not available on the platform.</p>
+</section>
+<section id="disabling-the-handshake">
+<h3>Disabling the handshake<a class="headerlink" href="#disabling-the-handshake" title="Link to this heading">¶</a></h3>
+<p>Set <code class="docutils literal notranslate"><span class="pre">XONSH_NO_FG_TAKEOVER=1</span></code> in the parent environment (before launching
+xonsh) to skip the handshake entirely. When the handshake is disabled, xonsh
+falls back to installing <code class="docutils literal notranslate"><span class="pre">SIG_IGN</span></code> for <code class="docutils literal notranslate"><span class="pre">SIGTTIN</span></code> and <code class="docutils literal notranslate"><span class="pre">SIGTTOU</span></code>.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># disable the takeover</span>
+<span class="nv">XONSH_NO_FG_TAKEOVER</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>xonsh
+</pre></div>
+</div>
+</section>
+</section>
 <section id="see-also">
 <h2>See also<a class="headerlink" href="#see-also" title="Link to this heading">¶</a></h2>
 <ul class="simple">
@@ -603,222 +659,6 @@ interactive shebang (<code class="docutils literal notranslate"><span class="pre
 <li><p><a class="reference internal" href="env.html"><span class="doc">Environment</span></a> – environment variables and type system</p></li>
 <li><p><a class="reference internal" href="envvars.html"><span class="doc">Environment Variables</span></a> – full list of environment variables</p></li>
 </ul>
-</section>
-<section id="controlling-terminal-and-foreground-process-group">
-<span id="launch-fg-takeover"></span><h2>Controlling Terminal and Foreground Process Group<a class="headerlink" href="#controlling-terminal-and-foreground-process-group" title="Link to this heading">¶</a></h2>
-<p>When xonsh starts interactively on a POSIX system it performs a small
-startup handshake to make itself the <em>foreground process group</em> of the
-terminal it’s attached to. This section explains what that means, why
-xonsh bothers, and how to disable it if it conflicts with something in
-your environment.</p>
-<section id="background-foreground-process-group">
-<h3>Background: foreground process group<a class="headerlink" href="#background-foreground-process-group" title="Link to this heading">¶</a></h3>
-<p>Every POSIX terminal has exactly one <strong>foreground process group</strong>.
-Processes in that group are allowed to read from and write control
-operations to the terminal without being suspended. Processes in any
-other group are “in the background” — when they touch the TTY the
-kernel sends them <code class="docutils literal notranslate"><span class="pre">SIGTTIN</span></code> (background read) or <code class="docutils literal notranslate"><span class="pre">SIGTTOU</span></code>
-(background control / write under <code class="docutils literal notranslate"><span class="pre">TOSTOP</span></code>), and the default
-disposition of those signals is to stop the process, not to let the
-operation proceed.</p>
-<p>Interactive shells like bash and zsh install themselves as the
-foreground group at startup. They do it with a short sequence:</p>
-<ol class="arabic simple">
-<li><p>Find the controlling TTY’s file descriptor.</p></li>
-<li><p>Check whether the current foreground group is already ours.</p></li>
-<li><p>If not, block the signals that would disrupt step 4.</p></li>
-<li><p>Call <code class="docutils literal notranslate"><span class="pre">setpgid(0,</span> <span class="pre">0)</span></code> to land in a process group of our own.</p></li>
-<li><p>Call <code class="docutils literal notranslate"><span class="pre">tcsetpgrp(tty_fd,</span> <span class="pre">getpgrp())</span></code> to install that group as
-the TTY’s foreground group.</p></li>
-<li><p>Restore the signal mask.</p></li>
-</ol>
-<p>After this, every TTY touch the shell makes is permitted by the
-kernel and the job-control primitives the shell uses to manage
-pipelines (<code class="docutils literal notranslate"><span class="pre">tcsetpgrp</span></code>, <code class="docutils literal notranslate"><span class="pre">tcsetattr</span></code>, …) work as intended.</p>
-</section>
-<section id="why-xonsh-needs-to-do-the-same">
-<h3>Why xonsh needs to do the same<a class="headerlink" href="#why-xonsh-needs-to-do-the-same" title="Link to this heading">¶</a></h3>
-<p>Historically xonsh skipped this handshake and relied on whatever
-launched it to have arranged things correctly. That assumption holds
-when xonsh is started from a typical terminal via a parent shell
-(bash, zsh, fish, another xonsh, …), because those shells
-<code class="docutils literal notranslate"><span class="pre">fork</span> <span class="pre">+</span> <span class="pre">exec</span> <span class="pre">+</span> <span class="pre">tcsetpgrp</span></code> the child correctly. It breaks in several
-common non-typical environments:</p>
-<ul class="simple">
-<li><p><strong>Flatpak / Bubblewrap</strong> and similar sandbox launchers: <code class="docutils literal notranslate"><span class="pre">bwrap</span></code>
-does not reassign the TTY’s foreground group to the sandboxed
-child. xonsh ends up running as a background process of the TTY.</p></li>
-<li><p><strong>Build systems, CI runners, IDE integrated terminals</strong> and
-service managers such as <code class="docutils literal notranslate"><span class="pre">systemd</span> <span class="pre">--user</span></code> that launch xonsh via
-<code class="docutils literal notranslate"><span class="pre">posix_spawn</span></code> without wiring up job control.</p></li>
-<li><p><strong>Nested containers</strong> that reuse the outer PTY without reconfiguring
-foreground ownership.</p></li>
-</ul>
-<p>In all of these, xonsh is technically a background process of the
-TTY. Every terminal operation — <code class="docutils literal notranslate"><span class="pre">tcgetattr</span></code> during
-<code class="docutils literal notranslate"><span class="pre">prompt_toolkit</span></code> initialisation, <code class="docutils literal notranslate"><span class="pre">tcsetpgrp</span></code> when launching a
-pipeline, plain reads and writes when <code class="docutils literal notranslate"><span class="pre">TOSTOP</span></code> is set — fires
-<code class="docutils literal notranslate"><span class="pre">SIGTTIN</span></code> or <code class="docutils literal notranslate"><span class="pre">SIGTTOU</span></code>. There are two failure modes that follow:</p>
-<ol class="arabic">
-<li><p><strong>asyncio wakeup pipe overflow.</strong> Python routes signals to a
-non-blocking self-pipe so the main event loop can wake up when
-one arrives. If signals arrive faster than the loop drains the
-pipe — which happens instantly under a startup storm — the C-level
-signal handler’s write to the pipe fails and raises:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="ne">BlockingIOError</span><span class="p">:</span> <span class="p">[</span><span class="n">Errno</span> <span class="mi">11</span><span class="p">]</span> <span class="n">Resource</span> <span class="n">temporarily</span> <span class="n">unavailable</span>
-</pre></div>
-</div>
-<p>xonsh startup crashes.</p>
-</li>
-<li><p><strong>termios EINTR.</strong> Even when the storm is under control,
-low-frequency signals (<code class="docutils literal notranslate"><span class="pre">SIGCHLD</span></code>, <code class="docutils literal notranslate"><span class="pre">SIGWINCH</span></code>, …) still arrive
-while <code class="docutils literal notranslate"><span class="pre">prompt_toolkit</span></code> calls <code class="docutils literal notranslate"><span class="pre">termios.tcsetattr</span></code> to switch the
-terminal into raw mode. The C call returns <code class="docutils literal notranslate"><span class="pre">EINTR</span></code>, which
-<code class="docutils literal notranslate"><span class="pre">tcsetattr</span></code> surfaces as:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">termios</span><span class="o">.</span><span class="n">error</span><span class="p">:</span> <span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="s1">&#39;Interrupted system call&#39;</span><span class="p">)</span>
-</pre></div>
-</div>
-</li>
-</ol>
-<p>Users in the affected environments used to work around this by
-running xonsh under a wrapper that installed <code class="docutils literal notranslate"><span class="pre">SIG_IGN</span></code> for
-<code class="docutils literal notranslate"><span class="pre">SIGTTIN</span></code> / <code class="docutils literal notranslate"><span class="pre">SIGTTOU</span></code> before importing xonsh. That works, but
-it is a workaround: the kernel still considers xonsh background, job
-control is still subtly wrong, <code class="docutils literal notranslate"><span class="pre">SIG_IGN</span></code> is inherited through
-<code class="docutils literal notranslate"><span class="pre">exec</span></code> and affects child processes, and the wakeup-pipe race can
-still bite if a signal storm recurs after the fallback handler is
-re-installed.</p>
-</section>
-<section id="what-xonsh-does-now">
-<h3>What xonsh does now<a class="headerlink" href="#what-xonsh-does-now" title="Link to this heading">¶</a></h3>
-<p>On POSIX, the <strong>very first thing</strong> <a class="reference internal" href="lib/_autosummary/helpers/xonsh.main.html#xonsh.main.main" title="xonsh.main.main"><code class="xref py py-func docutils literal notranslate"><span class="pre">xonsh.main.main()</span></code></a> does — before
-argument parsing, xontrib loading or xonshrc execution — is call
-<code class="xref py py-func docutils literal notranslate"><span class="pre">xonsh.main._setup_controlling_terminal()</span></code>. That in turn runs the
-bash-style handshake in
-<code class="xref py py-func docutils literal notranslate"><span class="pre">xonsh.main._acquire_controlling_terminal()</span></code> and installs matching
-signal handlers. The early placement matters: xonsh’s rc files are
-arbitrary user code, and a typical <code class="docutils literal notranslate"><span class="pre">~/.xonshrc</span></code> will contain
-<code class="docutils literal notranslate"><span class="pre">$(...)</span></code>/<code class="docutils literal notranslate"><span class="pre">!(...)</span></code> subprocess captures, possibly including
-interactive programs like <code class="docutils literal notranslate"><span class="pre">fzf</span></code> that themselves want to manipulate
-the terminal via <code class="docutils literal notranslate"><span class="pre">tcsetattr</span></code>. If xonsh is already foreground by the
-time rc runs, every downstream TTY operation is straightforward; if it
-is not, the <code class="docutils literal notranslate"><span class="pre">SIG_IGN</span></code> fallback (see below) keeps the asyncio wakeup
-pipe from overflowing while rc executes.</p>
-<p>The handshake itself (<code class="docutils literal notranslate"><span class="pre">_acquire_controlling_terminal</span></code>):</p>
-<ul class="simple">
-<li><p>Uses <strong>stderr</strong> (file descriptor 2) as the TTY handle. This matches
-<a class="reference internal" href="lib/_autosummary/cmd/xonsh.procs.jobs.html#xonsh.procs.jobs.give_terminal_to" title="xonsh.procs.jobs.give_terminal_to"><code class="xref py py-func docutils literal notranslate"><span class="pre">xonsh.procs.jobs.give_terminal_to()</span></code></a>, which also uses FD 2 when
-xonsh later transfers the terminal between pipeline groups.</p></li>
-<li><p>Aborts cleanly — with no side effects — if any precondition fails:
-Windows, session leader (which cannot <code class="docutils literal notranslate"><span class="pre">setpgid</span></code> itself), missing
-<code class="docutils literal notranslate"><span class="pre">pthread_sigmask</span></code>, or the escape hatch described below.</p></li>
-<li><p>Blocks <code class="docutils literal notranslate"><span class="pre">SIGTTOU</span></code>, <code class="docutils literal notranslate"><span class="pre">SIGTTIN</span></code>, <code class="docutils literal notranslate"><span class="pre">SIGTSTP</span></code> and <code class="docutils literal notranslate"><span class="pre">SIGCHLD</span></code> in the
-calling thread with <code class="docutils literal notranslate"><span class="pre">pthread_sigmask</span></code>. <code class="docutils literal notranslate"><span class="pre">SIGTTOU</span></code> is the critical
-one; without the block, <code class="docutils literal notranslate"><span class="pre">tcsetpgrp</span></code> below would send <code class="docutils literal notranslate"><span class="pre">SIGTTOU</span></code>
-to xonsh itself and suspend it immediately.</p></li>
-<li><p>Short-circuits to success if the TTY’s foreground group is already
-our process group — the handshake is not needed and the restorer is
-<em>not</em> registered, so on shutdown we don’t race with the parent
-shell’s own <code class="docutils literal notranslate"><span class="pre">tcsetpgrp</span></code>.</p></li>
-<li><p>Otherwise calls <code class="docutils literal notranslate"><span class="pre">setpgid(0,</span> <span class="pre">0)</span></code> followed by
-<code class="docutils literal notranslate"><span class="pre">tcsetpgrp(tty_fd,</span> <span class="pre">getpgrp())</span></code>, remembers the previous foreground
-group, and records the fact that the handshake succeeded.</p></li>
-<li><p>Restores the signal mask in a <code class="docutils literal notranslate"><span class="pre">finally</span></code> block so any error path
-leaves the process in a clean state.</p></li>
-</ul>
-<p><code class="docutils literal notranslate"><span class="pre">_setup_controlling_terminal</span></code> orchestrates the handshake with a
-three-step signal policy:</p>
-<p><strong>Step 1 — always install Python no-op handlers.</strong> On any POSIX
-invocation — interactive, script mode, piped input, redirected
-stderr, test runner — <code class="docutils literal notranslate"><span class="pre">_setup_controlling_terminal</span></code> installs a
-Python-level no-op handler for <code class="docutils literal notranslate"><span class="pre">SIGTTIN</span></code> and <code class="docutils literal notranslate"><span class="pre">SIGTTOU</span></code>. This
-matches xonsh’s historical behavior from before the handshake
-existed: script-mode xonsh must not be suspended by default
-<code class="docutils literal notranslate"><span class="pre">SIG_DFL</span></code> when something indirectly touches the TTY, and a Python
-handler (rather than <code class="docutils literal notranslate"><span class="pre">SIG_IGN</span></code>) is preferred because it is <em>not</em>
-inherited across <code class="docutils literal notranslate"><span class="pre">exec</span></code>, so subprocess children keep their normal
-job control.</p>
-<p><strong>Step 2 — run the handshake when stderr is a real TTY.</strong> If
-<code class="docutils literal notranslate"><span class="pre">os.isatty(stderr)</span></code> is true, <code class="docutils literal notranslate"><span class="pre">_setup_controlling_terminal</span></code> calls
-<code class="xref py py-func docutils literal notranslate"><span class="pre">_acquire_controlling_terminal()</span></code>. Non-TTY callers stop after
-step 1; pytest, script mode, and redirected-stderr invocations all
-bail out here and keep the step-1 handlers.</p>
-<p><strong>Step 3 — branch on handshake result.</strong> If the handshake succeeded
-(either the fast path because we were already foreground, or a full
-acquire), the step-1 Python handlers stay in place and
-<code class="docutils literal notranslate"><span class="pre">_setup_controlling_terminal</span></code> registers the <code class="docutils literal notranslate"><span class="pre">atexit</span></code> restorer —
-but only if we <em>actually</em> transferred foreground ownership, so the
-fast path leaves no atexit behind and we never race with the parent
-shell’s own <code class="docutils literal notranslate"><span class="pre">tcsetpgrp</span></code> on exit. If the handshake failed — typical
-in sandboxes that cannot be made foreground —
-<code class="docutils literal notranslate"><span class="pre">_setup_controlling_terminal</span></code> <strong>replaces</strong> the step-1 Python
-handlers with <code class="docutils literal notranslate"><span class="pre">SIG_IGN</span></code>. That is the sandbox fallback: the kernel
-discards <code class="docutils literal notranslate"><span class="pre">SIGTTIN</span></code> / <code class="docutils literal notranslate"><span class="pre">SIGTTOU</span></code> outright, so they never reach
-Python’s asyncio wakeup pipe and the <code class="docutils literal notranslate"><span class="pre">BlockingIOError</span></code> storm
-cannot happen. <code class="docutils literal notranslate"><span class="pre">SIG_IGN</span></code> <em>is</em> inherited across <code class="docutils literal notranslate"><span class="pre">exec</span></code>, but in a
-sandbox the children have the same TTY ownership problem anyway, so
-this is the right default.</p>
-<p><code class="docutils literal notranslate"><span class="pre">_setup_controlling_terminal</span></code> is idempotent. It is also called from
-the top of <a class="reference internal" href="lib/_autosummary/helpers/xonsh.main.html#xonsh.main.main_xonsh" title="xonsh.main.main_xonsh"><code class="xref py py-func docutils literal notranslate"><span class="pre">xonsh.main.main_xonsh()</span></code></a>, so callers that enter the
-shell loop without going through <code class="docutils literal notranslate"><span class="pre">main</span></code> (tests, programmatic
-launches) still end up with the correct signal setup; the second call
-in a normal <code class="docutils literal notranslate"><span class="pre">main</span> <span class="pre">→</span> <span class="pre">main_xonsh</span></code> flow short-circuits on the
-<code class="docutils literal notranslate"><span class="pre">_tty_setup_done</span></code> module flag.</p>
-</section>
-<section id="shutdown-handing-the-tty-back">
-<h3>Shutdown: handing the TTY back<a class="headerlink" href="#shutdown-handing-the-tty-back" title="Link to this heading">¶</a></h3>
-<p>When the handshake actually did change the foreground group, xonsh
-registers <code class="xref py py-func docutils literal notranslate"><span class="pre">xonsh.main._release_controlling_terminal()</span></code> with
-<code class="xref py py-mod docutils literal notranslate"><span class="pre">atexit</span></code>. On shutdown this function calls <code class="docutils literal notranslate"><span class="pre">tcsetpgrp</span></code> to
-restore the previous foreground group — normally the parent shell —
-with <code class="docutils literal notranslate"><span class="pre">SIGTTOU</span></code> blocked during the call. If the parent has already
-reclaimed the TTY, or if the fd is no longer valid, the error is
-swallowed: this runs under <code class="docutils literal notranslate"><span class="pre">atexit</span></code> and raising would just make
-shutdown noisy. In every other case (handshake didn’t run, handshake
-took the fast path because we were already foreground, handshake
-failed), the restorer is a no-op.</p>
-</section>
-<section id="when-the-handshake-is-a-no-op">
-<h3>When the handshake is a no-op<a class="headerlink" href="#when-the-handshake-is-a-no-op" title="Link to this heading">¶</a></h3>
-<p>The <em>handshake itself</em> is skipped in these situations (step 1 still
-installs the historical Python no-op handlers):</p>
-<ul class="simple">
-<li><p><strong>Windows.</strong> POSIX controlling terminals do not apply, and
-<code class="docutils literal notranslate"><span class="pre">_setup_controlling_terminal</span></code> returns immediately after the
-<code class="docutils literal notranslate"><span class="pre">ON_WINDOWS</span></code> check without installing anything.</p></li>
-<li><p><strong>Non-interactive invocations</strong> where stderr is not a TTY:
-<code class="docutils literal notranslate"><span class="pre">xonsh</span> <span class="pre">script.xsh</span></code>, piped input, redirected stderr, script-from-
-stdin mode, and tests under pytest (which captures stderr via a
-pipe). <code class="docutils literal notranslate"><span class="pre">_setup_controlling_terminal</span></code> installs the step-1 Python
-handlers and returns — no handshake, no atexit. This matches the
-pre-handshake xonsh behavior for these modes.</p></li>
-<li><p><strong>xonsh is a session leader</strong> (<code class="docutils literal notranslate"><span class="pre">getsid(0)</span> <span class="pre">==</span> <span class="pre">getpid()</span></code>). A
-session leader cannot change its own process group id, and if it
-is session leader it almost always already owns the TTY. The
-handshake declines and the <code class="docutils literal notranslate"><span class="pre">SIG_IGN</span></code> fallback replaces the
-step-1 handlers.</p></li>
-<li><p><strong>xonsh is already the foreground group</strong> — the fast path returns
-immediately, the step-1 Python handlers stay in place as a safety
-net, and the atexit restorer is <em>not</em> registered (there is
-nothing to restore).</p></li>
-<li><p><strong>Missing</strong> <code class="docutils literal notranslate"><span class="pre">pthread_sigmask</span></code>, which is POSIX-only and absent on
-exotic builds.</p></li>
-</ul>
-</section>
-<section id="disabling-the-handshake">
-<h3>Disabling the handshake<a class="headerlink" href="#disabling-the-handshake" title="Link to this heading">¶</a></h3>
-<p>Set <code class="docutils literal notranslate"><span class="pre">XONSH_NO_FG_TAKEOVER=1</span></code> in the parent environment (before
-launching xonsh) to skip the handshake entirely. This is an escape
-hatch for rare cases where taking over the foreground group
-conflicts with a parent process that expects xonsh to stay in its
-original process group. When the handshake is disabled, xonsh falls
-back to installing <code class="docutils literal notranslate"><span class="pre">SIG_IGN</span></code> for <code class="docutils literal notranslate"><span class="pre">SIGTTIN</span></code> / <code class="docutils literal notranslate"><span class="pre">SIGTTOU</span></code> —
-exactly the behaviour of the historical sandbox wrapper.</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># disable the takeover, e.g. when debugging unusual TTY setups</span>
-<span class="nv">XONSH_NO_FG_TAKEOVER</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>xonsh
-</pre></div>
-</div>
-</section>
 </section>
 </section>
 
@@ -884,16 +724,12 @@ exactly the behaviour of the historical sandbox wrapper.</p>
 <li><a class="reference internal" href="#launching-the-same-xonsh-xxonsh">Launching the Same Xonsh (xxonsh)</a></li>
 <li><a class="reference internal" href="#save-and-load-origin-environment">Save and Load Origin Environment</a></li>
 <li><a class="reference internal" href="#running-from-another-shell">Running from Another Shell</a></li>
-<li><a class="reference internal" href="#see-also">See also</a></li>
 <li><a class="reference internal" href="#controlling-terminal-and-foreground-process-group">Controlling Terminal and Foreground Process Group</a><ul>
-<li><a class="reference internal" href="#background-foreground-process-group">Background: foreground process group</a></li>
-<li><a class="reference internal" href="#why-xonsh-needs-to-do-the-same">Why xonsh needs to do the same</a></li>
-<li><a class="reference internal" href="#what-xonsh-does-now">What xonsh does now</a></li>
-<li><a class="reference internal" href="#shutdown-handing-the-tty-back">Shutdown: handing the TTY back</a></li>
 <li><a class="reference internal" href="#when-the-handshake-is-a-no-op">When the handshake is a no-op</a></li>
 <li><a class="reference internal" href="#disabling-the-handshake">Disabling the handshake</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#see-also">See also</a></li>
 </ul>
 </li>
 </ul>

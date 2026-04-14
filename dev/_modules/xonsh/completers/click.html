@@ -6,7 +6,7 @@
         <link rel="prefetch" href="../../../_static/xonsh_terminal_icon_256.png" as="image">
 
     <link rel="shortcut icon" href="../../../_static/magic_conch.ico"><!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
-        <title>xonsh.lib.lazyjson - xonsh 0.22.8 documentation</title>
+        <title>xonsh.completers.click - xonsh 0.22.8 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css?v=4ae1632d" />
@@ -448,283 +448,230 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <h1>Source code for xonsh.lib.lazyjson</h1><div class="highlight"><pre>
-<span></span><span class="sd">&quot;&quot;&quot;Implements a lazy JSON file class that wraps around json data.&quot;&quot;&quot;</span>
+          <h1>Source code for xonsh.completers.click</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Tab-completion for click-based aliases registered via</span>
+<span class="sd">:func:`xonsh.aliases.Aliases.register_click_command`.</span>
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">cabc</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">contextlib</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">weakref</span>
+<span class="sd">The entry point is :func:`complete_click`, bound per-alias through</span>
+<span class="sd">``functools.partial(complete_click, click_cmd)`` and attached to the</span>
+<span class="sd">alias wrapper as ``xonsh_complete``. The stock alias completer</span>
+<span class="sd">(``xonsh.completers._aliases.complete_aliases``) then picks it up from</span>
+<span class="sd">``alias.func.xonsh_complete`` during normal tab completion.</span>
 
-<span class="k">try</span><span class="p">:</span>
-    <span class="kn">import</span><span class="w"> </span><span class="nn">ujson</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">json</span>
-<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-    <span class="kn">import</span><span class="w"> </span><span class="nn">json</span>  <span class="c1"># type: ignore</span>
+<span class="sd">The ``click`` package is imported lazily — this module is only</span>
+<span class="sd">exercised once a click alias has been registered, which itself requires</span>
+<span class="sd">click to be installed.</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
-
-<span class="k">def</span><span class="w"> </span><span class="nf">_to_json_with_size</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
-        <span class="n">s</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
-        <span class="n">o</span> <span class="o">=</span> <span class="n">offset</span>
-        <span class="n">n</span> <span class="o">=</span> <span class="n">size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
-    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Mapping</span><span class="p">):</span>
-        <span class="n">s</span> <span class="o">=</span> <span class="s2">&quot;{&quot;</span>
-        <span class="n">j</span> <span class="o">=</span> <span class="n">offset</span> <span class="o">+</span> <span class="mi">1</span>
-        <span class="n">o</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="n">size</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="n">items</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">items</span><span class="p">())</span> <span class="k">if</span> <span class="n">sort_keys</span> <span class="k">else</span> <span class="n">obj</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
-        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">items</span><span class="p">:</span>
-            <span class="n">s_k</span><span class="p">,</span> <span class="n">o_k</span><span class="p">,</span> <span class="n">n_k</span><span class="p">,</span> <span class="n">size_k</span> <span class="o">=</span> <span class="n">_to_json_with_size</span><span class="p">(</span>
-                <span class="n">key</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="n">j</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="n">sort_keys</span>
-            <span class="p">)</span>
-            <span class="n">s</span> <span class="o">+=</span> <span class="n">s_k</span> <span class="o">+</span> <span class="s2">&quot;: &quot;</span>
-            <span class="n">j</span> <span class="o">+=</span> <span class="n">n_k</span> <span class="o">+</span> <span class="mi">2</span>
-            <span class="n">s_v</span><span class="p">,</span> <span class="n">o_v</span><span class="p">,</span> <span class="n">n_v</span><span class="p">,</span> <span class="n">size_v</span> <span class="o">=</span> <span class="n">_to_json_with_size</span><span class="p">(</span>
-                <span class="n">val</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="n">j</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="n">sort_keys</span>
-            <span class="p">)</span>
-            <span class="n">o</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">o_v</span>
-            <span class="n">size</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">size_v</span>
-            <span class="n">s</span> <span class="o">+=</span> <span class="n">s_v</span> <span class="o">+</span> <span class="s2">&quot;, &quot;</span>
-            <span class="n">j</span> <span class="o">+=</span> <span class="n">n_v</span> <span class="o">+</span> <span class="mi">2</span>
-        <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;, &quot;</span><span class="p">):</span>
-            <span class="n">s</span> <span class="o">=</span> <span class="n">s</span><span class="p">[:</span><span class="o">-</span><span class="mi">2</span><span class="p">]</span>
-        <span class="n">s</span> <span class="o">+=</span> <span class="s2">&quot;}</span><span class="se">\n</span><span class="s2">&quot;</span>
-        <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
-        <span class="n">o</span><span class="p">[</span><span class="s2">&quot;__total__&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">offset</span>
-        <span class="n">size</span><span class="p">[</span><span class="s2">&quot;__total__&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">n</span>
-    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Sequence</span><span class="p">):</span>
-        <span class="n">s</span> <span class="o">=</span> <span class="s2">&quot;[&quot;</span>
-        <span class="n">j</span> <span class="o">=</span> <span class="n">offset</span> <span class="o">+</span> <span class="mi">1</span>
-        <span class="n">o</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="n">size</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">obj</span><span class="p">:</span>
-            <span class="n">s_x</span><span class="p">,</span> <span class="n">o_x</span><span class="p">,</span> <span class="n">n_x</span><span class="p">,</span> <span class="n">size_x</span> <span class="o">=</span> <span class="n">_to_json_with_size</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="n">j</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="n">sort_keys</span><span class="p">)</span>
-            <span class="n">o</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">o_x</span><span class="p">)</span>
-            <span class="n">size</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">size_x</span><span class="p">)</span>
-            <span class="n">s</span> <span class="o">+=</span> <span class="n">s_x</span> <span class="o">+</span> <span class="s2">&quot;, &quot;</span>
-            <span class="n">j</span> <span class="o">+=</span> <span class="n">n_x</span> <span class="o">+</span> <span class="mi">2</span>
-        <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;, &quot;</span><span class="p">):</span>
-            <span class="n">s</span> <span class="o">=</span> <span class="n">s</span><span class="p">[:</span><span class="o">-</span><span class="mi">2</span><span class="p">]</span>
-        <span class="n">s</span> <span class="o">+=</span> <span class="s2">&quot;]</span><span class="se">\n</span><span class="s2">&quot;</span>
-        <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
-        <span class="n">o</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">offset</span><span class="p">)</span>
-        <span class="n">size</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">s</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="n">sort_keys</span><span class="p">)</span>
-        <span class="n">o</span> <span class="o">=</span> <span class="n">offset</span>
-        <span class="n">n</span> <span class="o">=</span> <span class="n">size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">s</span><span class="p">,</span> <span class="n">o</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">size</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.completers.tools</span><span class="w"> </span><span class="kn">import</span> <span class="n">RichCompletion</span>
 
 
-<div class="viewcode-block" id="index">
-<a class="viewcode-back" href="../../../lib/_autosummary/helpers/xonsh.lib.lazyjson.html#xonsh.lib.lazyjson.index">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">index</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Creates an index for a JSON file.&quot;&quot;&quot;</span>
-    <span class="n">idx</span> <span class="o">=</span> <span class="p">{}</span>
-    <span class="n">json_obj</span> <span class="o">=</span> <span class="n">_to_json_with_size</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="n">sort_keys</span><span class="p">)</span>
-    <span class="n">s</span><span class="p">,</span> <span class="n">idx</span><span class="p">[</span><span class="s2">&quot;offsets&quot;</span><span class="p">],</span> <span class="n">_</span><span class="p">,</span> <span class="n">idx</span><span class="p">[</span><span class="s2">&quot;sizes&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">json_obj</span>
-    <span class="k">return</span> <span class="n">s</span><span class="p">,</span> <span class="n">idx</span></div>
-
-
-
-<span class="n">JSON_FORMAT</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;{{&quot;locs&quot;: [</span><span class="si">{iloc:&gt;10}</span><span class="s2">, </span><span class="si">{ilen:&gt;10}</span><span class="s2">, </span><span class="si">{dloc:&gt;10}</span><span class="s2">, </span><span class="si">{dlen:&gt;10}</span><span class="s2">],</span>
-<span class="s2"> &quot;index&quot;: </span><span class="si">{index}</span><span class="s2">,</span>
-<span class="s2"> &quot;data&quot;: </span><span class="si">{data}</span>
-<span class="s2">}}</span>
-<span class="s2">&quot;&quot;&quot;</span>
-
-
-<div class="viewcode-block" id="dumps">
-<a class="viewcode-back" href="../../../lib/_autosummary/helpers/xonsh.lib.lazyjson.html#xonsh.lib.lazyjson.dumps">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">dumps</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Dumps an object to JSON with an index.&quot;&quot;&quot;</span>
-    <span class="n">data</span><span class="p">,</span> <span class="n">idx</span> <span class="o">=</span> <span class="n">index</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="n">sort_keys</span><span class="p">)</span>
-    <span class="n">jdx</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="n">sort_keys</span><span class="p">)</span>
-    <span class="n">iloc</span> <span class="o">=</span> <span class="mi">69</span>
-    <span class="n">ilen</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">jdx</span><span class="p">)</span>
-    <span class="n">dloc</span> <span class="o">=</span> <span class="n">iloc</span> <span class="o">+</span> <span class="n">ilen</span> <span class="o">+</span> <span class="mi">11</span>
-    <span class="n">dlen</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
-    <span class="n">s</span> <span class="o">=</span> <span class="n">JSON_FORMAT</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
-        <span class="n">index</span><span class="o">=</span><span class="n">jdx</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="n">iloc</span><span class="o">=</span><span class="n">iloc</span><span class="p">,</span> <span class="n">ilen</span><span class="o">=</span><span class="n">ilen</span><span class="p">,</span> <span class="n">dloc</span><span class="o">=</span><span class="n">dloc</span><span class="p">,</span> <span class="n">dlen</span><span class="o">=</span><span class="n">dlen</span>
-    <span class="p">)</span>
-    <span class="k">return</span> <span class="n">s</span></div>
-
-
-
-<div class="viewcode-block" id="ljdump">
-<a class="viewcode-back" href="../../../lib/_autosummary/helpers/xonsh.lib.lazyjson.html#xonsh.lib.lazyjson.ljdump">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">ljdump</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">fp</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Dumps an object to JSON file.&quot;&quot;&quot;</span>
-    <span class="n">s</span> <span class="o">=</span> <span class="n">dumps</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="n">sort_keys</span><span class="p">)</span>
-    <span class="n">fp</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">s</span><span class="p">)</span></div>
-
-
-
-<div class="viewcode-block" id="LJNode">
-<a class="viewcode-back" href="../../../lib/_autosummary/helpers/xonsh.lib.lazyjson.html#xonsh.lib.lazyjson.LJNode">[docs]</a>
-<span class="k">class</span><span class="w"> </span><span class="nc">LJNode</span><span class="p">(</span><span class="n">cabc</span><span class="o">.</span><span class="n">Mapping</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Sequence</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A proxy node for JSON nodes. Acts as both sequence and mapping.&quot;&quot;&quot;</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">sizes</span><span class="p">,</span> <span class="n">root</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Parameters</span>
-<span class="sd">        ----------</span>
-<span class="sd">        offsets : dict, list, or int</span>
-<span class="sd">            offsets of corresponding data structure, in bytes</span>
-<span class="sd">        sizes : dict, list, or int</span>
-<span class="sd">            sizes of corresponding data structure, in bytes</span>
-<span class="sd">        root : weakref.proxy of LazyJSON</span>
-<span class="sd">            weakref back to root node, which should be a LazyJSON object.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">offsets</span> <span class="o">=</span> <span class="n">offsets</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">sizes</span> <span class="o">=</span> <span class="n">sizes</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">root</span> <span class="o">=</span> <span class="n">root</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">is_mapping</span> <span class="o">=</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">offsets</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Mapping</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">is_sequence</span> <span class="o">=</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">offsets</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Sequence</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="c1"># recall that for maps, the &#39;__total__&#39; key is added and for</span>
-        <span class="c1"># sequences the last element represents the total size/offset.</span>
-        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sizes</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
-
-<div class="viewcode-block" id="LJNode.load">
-<a class="viewcode-back" href="../../../lib/_autosummary/helpers/xonsh.lib.lazyjson.html#xonsh.lib.lazyjson.LJNode.load">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">load</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the Python data structure represented by the node.&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_mapping</span><span class="p">:</span>
-            <span class="n">offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">offsets</span><span class="p">[</span><span class="s2">&quot;__total__&quot;</span><span class="p">]</span>
-            <span class="n">size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sizes</span><span class="p">[</span><span class="s2">&quot;__total__&quot;</span><span class="p">]</span>
-        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_sequence</span><span class="p">:</span>
-            <span class="n">offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">offsets</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
-            <span class="n">size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sizes</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
-        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">offsets</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
-            <span class="n">offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">offsets</span>
-            <span class="n">size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sizes</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_load_or_node</span><span class="p">(</span><span class="n">offset</span><span class="p">,</span> <span class="n">size</span><span class="p">)</span></div>
-
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_load_or_node</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">offset</span><span class="p">,</span> <span class="n">size</span><span class="p">):</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">offset</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
-            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">_open</span><span class="p">(</span><span class="n">newline</span><span class="o">=</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-                <span class="n">f</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">dloc</span> <span class="o">+</span> <span class="n">offset</span><span class="p">)</span>
-                <span class="n">s</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">size</span><span class="p">)</span>
-            <span class="n">val</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">offset</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Mapping</span> <span class="o">|</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Sequence</span><span class="p">):</span>
-            <span class="n">val</span> <span class="o">=</span> <span class="n">LJNode</span><span class="p">(</span><span class="n">offset</span><span class="p">,</span> <span class="n">size</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;incorrect types for offset node&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">val</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_getitem_mapping</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
-        <span class="k">if</span> <span class="n">key</span> <span class="o">==</span> <span class="s2">&quot;__total__&quot;</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="s1">&#39;&quot;__total__&quot; is a special LazyJSON key!&#39;</span><span class="p">)</span>
-        <span class="n">offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">offsets</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
-        <span class="n">size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sizes</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_load_or_node</span><span class="p">(</span><span class="n">offset</span><span class="p">,</span> <span class="n">size</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_getitem_sequence</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
-            <span class="n">rtn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_load_or_node</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">offsets</span><span class="p">[</span><span class="n">key</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">sizes</span><span class="p">[</span><span class="n">key</span><span class="p">])</span>
-        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="nb">slice</span><span class="p">):</span>
-            <span class="n">key</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="o">*</span><span class="n">key</span><span class="o">.</span><span class="n">indices</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="p">)))</span>
-            <span class="n">rtn</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_load_or_node</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">offsets</span><span class="p">[</span><span class="n">key</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">sizes</span><span class="p">[</span><span class="n">key</span><span class="p">]))</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;only integer indexing available&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">rtn</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_mapping</span><span class="p">:</span>
-            <span class="n">rtn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_getitem_mapping</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_sequence</span><span class="p">:</span>
-            <span class="n">rtn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_getitem_sequence</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">NotImplementedError</span>
-        <span class="k">return</span> <span class="n">rtn</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_mapping</span><span class="p">:</span>
-            <span class="n">keys</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">offsets</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
-            <span class="n">keys</span><span class="o">.</span><span class="n">discard</span><span class="p">(</span><span class="s2">&quot;__total__&quot;</span><span class="p">)</span>
-            <span class="k">yield from</span> <span class="nb">iter</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_sequence</span><span class="p">:</span>
-            <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
-            <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
-            <span class="k">while</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">n</span><span class="p">:</span>
-                <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">_load_or_node</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">offsets</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">sizes</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
-                <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">NotImplementedError</span></div>
-
-
-
-<div class="viewcode-block" id="LazyJSON">
-<a class="viewcode-back" href="../../../lib/_autosummary/helpers/xonsh.lib.lazyjson.html#xonsh.lib.lazyjson.LazyJSON">[docs]</a>
-<span class="k">class</span><span class="w"> </span><span class="nc">LazyJSON</span><span class="p">(</span><span class="n">LJNode</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Represents a lazy json file. Can be used like a normal Python</span>
-<span class="sd">    dict or list.</span>
+<div class="viewcode-block" id="option_all_opts">
+<a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.completers.click.html#xonsh.completers.click.option_all_opts">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">option_all_opts</span><span class="p">(</span><span class="n">param</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Every flag string declared on a ``click.Option`` — primary +</span>
+<span class="sd">    secondary. ``secondary_opts`` holds the off-switch of flag pairs</span>
+<span class="sd">    like ``--verbose/--quiet``.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">reopen</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Parameters</span>
-<span class="sd">        ----------</span>
-<span class="sd">        f : file handle or str</span>
-<span class="sd">            JSON file to open.</span>
-<span class="sd">        reopen : bool, optional</span>
-<span class="sd">            Whether new file handle should be opened for each load.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_f</span> <span class="o">=</span> <span class="n">f</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">reopen</span> <span class="o">=</span> <span class="n">reopen</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">reopen</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_f</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">newline</span><span class="o">=</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;utf-8&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_load_index</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">root</span> <span class="o">=</span> <span class="n">weakref</span><span class="o">.</span><span class="n">proxy</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">is_mapping</span> <span class="o">=</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">offsets</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Mapping</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">is_sequence</span> <span class="o">=</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">offsets</span><span class="p">,</span> <span class="n">cabc</span><span class="o">.</span><span class="n">Sequence</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__del__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
-
-<div class="viewcode-block" id="LazyJSON.close">
-<a class="viewcode-back" href="../../../lib/_autosummary/helpers/xonsh.lib.lazyjson.html#xonsh.lib.lazyjson.LazyJSON.close">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Close the file handle, if appropriate.&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">reopen</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_f</span><span class="p">,</span> <span class="n">io</span><span class="o">.</span><span class="n">IOBase</span><span class="p">):</span>
-            <span class="k">try</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_f</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
-            <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
-                <span class="k">pass</span></div>
+    <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">opts</span><span class="p">)</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">secondary_opts</span><span class="p">)</span></div>
 
 
-    <span class="nd">@contextlib</span><span class="o">.</span><span class="n">contextmanager</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">_open</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">reopen</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_f</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
-            <span class="n">f</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_f</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;utf-8&quot;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-            <span class="k">try</span><span class="p">:</span>
-                <span class="k">yield</span> <span class="n">f</span>
-            <span class="k">finally</span><span class="p">:</span>
-                <span class="n">f</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+<div class="viewcode-block" id="option_takes_value">
+<a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.completers.click.html#xonsh.completers.click.option_takes_value">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">option_takes_value</span><span class="p">(</span><span class="n">param</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;``True`` if the option consumes a separate argument as its value.</span>
+<span class="sd">    Flags (``--verbose``) and count options (``-vvv``) do not.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="ow">not</span> <span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="s2">&quot;is_flag&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="s2">&quot;count&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="resolve_subcommand">
+<a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.completers.click.html#xonsh.completers.click.resolve_subcommand">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_subcommand</span><span class="p">(</span><span class="n">root_cmd</span><span class="p">,</span> <span class="n">args</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Walk ``click.Group`` → sub-command chain consuming positional tokens.</span>
+
+<span class="sd">    Returns ``(current_cmd, remaining_args)`` where ``remaining_args`` is</span>
+<span class="sd">    the slice of ``args`` belonging to ``current_cmd`` (i.e. everything</span>
+<span class="sd">    after the last recognised sub-command name).</span>
+
+<span class="sd">    Options are skipped when they appear before the sub-command name —</span>
+<span class="sd">    the few that take a separate value consume the next token as well.</span>
+<span class="sd">    An unknown sub-command stops the walk, so the completer can still</span>
+<span class="sd">    offer ``--`` options on the outermost unresolved command.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">click</span>
+
+    <span class="n">current</span> <span class="o">=</span> <span class="n">root_cmd</span>
+    <span class="n">remaining</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+    <span class="k">while</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">current</span><span class="p">,</span> <span class="n">click</span><span class="o">.</span><span class="n">Group</span><span class="p">)</span> <span class="ow">and</span> <span class="n">remaining</span><span class="p">:</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="c1"># Skip leading options belonging to the group.</span>
+        <span class="k">while</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">remaining</span><span class="p">)</span> <span class="ow">and</span> <span class="n">remaining</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;-&quot;</span><span class="p">):</span>
+            <span class="n">opt</span> <span class="o">=</span> <span class="n">remaining</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="s2">&quot;=&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">opt</span> <span class="ow">and</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">remaining</span><span class="p">):</span>
+                <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">current</span><span class="o">.</span><span class="n">params</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">click</span><span class="o">.</span><span class="n">Option</span><span class="p">)</span> <span class="ow">and</span> <span class="n">opt</span> <span class="ow">in</span> <span class="n">option_all_opts</span><span class="p">(</span><span class="n">p</span><span class="p">):</span>
+                        <span class="k">if</span> <span class="n">option_takes_value</span><span class="p">(</span><span class="n">p</span><span class="p">):</span>
+                            <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>
+                        <span class="k">break</span>
+        <span class="k">if</span> <span class="n">i</span> <span class="o">&gt;=</span> <span class="nb">len</span><span class="p">(</span><span class="n">remaining</span><span class="p">):</span>
+            <span class="k">break</span>
+        <span class="n">sub_name</span> <span class="o">=</span> <span class="n">remaining</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+        <span class="n">sub</span> <span class="o">=</span> <span class="n">current</span><span class="o">.</span><span class="n">get_command</span><span class="p">(</span><span class="n">click</span><span class="o">.</span><span class="n">Context</span><span class="p">(</span><span class="n">current</span><span class="p">),</span> <span class="n">sub_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">sub</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Unknown sub-command — stop here so caller can still complete</span>
+            <span class="c1"># against the current group&#39;s options.</span>
+            <span class="k">break</span>
+        <span class="n">current</span> <span class="o">=</span> <span class="n">sub</span>
+        <span class="n">remaining</span> <span class="o">=</span> <span class="n">remaining</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="p">:]</span>
+    <span class="k">return</span> <span class="n">current</span><span class="p">,</span> <span class="n">remaining</span></div>
+
+
+
+<div class="viewcode-block" id="previous_option_waiting_value">
+<a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.completers.click.html#xonsh.completers.click.previous_option_waiting_value">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">previous_option_waiting_value</span><span class="p">(</span><span class="n">current_cmd</span><span class="p">,</span> <span class="n">args_after_cmd</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;If the last token is an option expecting a value, return that</span>
+<span class="sd">    ``click.Option``; otherwise ``None``. Used to drive Choice completion</span>
+<span class="sd">    after things like ``--color &lt;TAB&gt;``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">click</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">args_after_cmd</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">prev</span> <span class="o">=</span> <span class="n">args_after_cmd</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">prev</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;-&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;=&quot;</span> <span class="ow">in</span> <span class="n">prev</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">for</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">current_cmd</span><span class="o">.</span><span class="n">params</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="n">click</span><span class="o">.</span><span class="n">Option</span><span class="p">)</span> <span class="ow">and</span> <span class="n">prev</span> <span class="ow">in</span> <span class="n">option_all_opts</span><span class="p">(</span><span class="n">param</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">option_takes_value</span><span class="p">(</span><span class="n">param</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">param</span>
+            <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="positional_index">
+<a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.completers.click.html#xonsh.completers.click.positional_index">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">positional_index</span><span class="p">(</span><span class="n">current_cmd</span><span class="p">,</span> <span class="n">args_after_cmd</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Count how many positional arguments have been supplied to</span>
+<span class="sd">    ``current_cmd`` so far, skipping options and their values. Used to</span>
+<span class="sd">    pick which ``click.Argument`` slot we&#39;re completing into.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">click</span>
+
+    <span class="n">idx</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">j</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">while</span> <span class="n">j</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">args_after_cmd</span><span class="p">):</span>
+        <span class="n">arg</span> <span class="o">=</span> <span class="n">args_after_cmd</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">arg</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;-&quot;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="s2">&quot;=&quot;</span> <span class="ow">in</span> <span class="n">arg</span><span class="p">:</span>
+                <span class="n">j</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="k">continue</span>
+            <span class="n">takes_value</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="k">for</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">current_cmd</span><span class="o">.</span><span class="n">params</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="n">click</span><span class="o">.</span><span class="n">Option</span><span class="p">)</span> <span class="ow">and</span> <span class="n">arg</span> <span class="ow">in</span> <span class="n">option_all_opts</span><span class="p">(</span><span class="n">param</span><span class="p">):</span>
+                    <span class="n">takes_value</span> <span class="o">=</span> <span class="n">option_takes_value</span><span class="p">(</span><span class="n">param</span><span class="p">)</span>
+                    <span class="k">break</span>
+            <span class="n">j</span> <span class="o">+=</span> <span class="mi">2</span> <span class="k">if</span> <span class="n">takes_value</span> <span class="k">else</span> <span class="mi">1</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">_f</span>
+            <span class="n">idx</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">j</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">idx</span></div>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_load_index</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Loads the index from the start of the file.&quot;&quot;&quot;</span>
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">_open</span><span class="p">(</span><span class="n">newline</span><span class="o">=</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-            <span class="c1"># read in the location data</span>
-            <span class="n">f</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">9</span><span class="p">)</span>
-            <span class="n">locs</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">48</span><span class="p">)</span>
-            <span class="n">locs</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">locs</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">iloc</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ilen</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dloc</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">dlen</span> <span class="o">=</span> <span class="n">locs</span>
-            <span class="c1"># read in the index</span>
-            <span class="n">f</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">iloc</span><span class="p">)</span>
-            <span class="n">idx</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ilen</span><span class="p">)</span>
-            <span class="n">idx</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">offsets</span> <span class="o">=</span> <span class="n">idx</span><span class="p">[</span><span class="s2">&quot;offsets&quot;</span><span class="p">]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">sizes</span> <span class="o">=</span> <span class="n">idx</span><span class="p">[</span><span class="s2">&quot;sizes&quot;</span><span class="p">]</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__exit__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exc_type</span><span class="p">,</span> <span class="n">exc_value</span><span class="p">,</span> <span class="n">traceback</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div>
+<div class="viewcode-block" id="complete_click">
+<a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.completers.click.html#xonsh.completers.click.complete_click">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">complete_click</span><span class="p">(</span><span class="n">click_cmd</span><span class="p">,</span> <span class="n">command</span><span class="p">,</span> <span class="n">alias</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">_</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tab-completer for click-based aliases.</span>
+
+<span class="sd">    Yields completions for, in priority order:</span>
+
+<span class="sd">    1. Option values when the preceding token is an option with a</span>
+<span class="sd">       ``click.Choice`` type (``--color &lt;TAB&gt;`` → ``red green blue``).</span>
+<span class="sd">    2. Option flags when the prefix starts with ``-``</span>
+<span class="sd">       (``--nam&lt;TAB&gt;`` → ``--name``).</span>
+<span class="sd">    3. Sub-command names when the current command is a ``click.Group``.</span>
+<span class="sd">    4. Positional arguments with a ``click.Choice`` type.</span>
+
+<span class="sd">    Bound per-alias via :func:`functools.partial` in</span>
+<span class="sd">    :func:`xonsh.aliases._click_command_alias`, so each wrapper captures</span>
+<span class="sd">    its own ``click.Command`` instance.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">click</span>
+
+    <span class="c1"># Descend click.Group chain to find the command we&#39;re completing into.</span>
+    <span class="n">args_after_cmd</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span><span class="o">.</span><span class="n">value</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">command</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">:]]</span>
+    <span class="n">current_cmd</span><span class="p">,</span> <span class="n">args_after_cmd</span> <span class="o">=</span> <span class="n">resolve_subcommand</span><span class="p">(</span><span class="n">click_cmd</span><span class="p">,</span> <span class="n">args_after_cmd</span><span class="p">)</span>
+
+    <span class="n">prefix</span> <span class="o">=</span> <span class="n">command</span><span class="o">.</span><span class="n">prefix</span>
+
+    <span class="c1"># 1. Value for an option that takes one (only Choice is predictable).</span>
+    <span class="n">pending</span> <span class="o">=</span> <span class="n">previous_option_waiting_value</span><span class="p">(</span><span class="n">current_cmd</span><span class="p">,</span> <span class="n">args_after_cmd</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">pending</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">pending</span><span class="o">.</span><span class="n">type</span><span class="p">,</span> <span class="n">click</span><span class="o">.</span><span class="n">Choice</span><span class="p">):</span>
+            <span class="k">return</span> <span class="p">{</span>
+                <span class="n">RichCompletion</span><span class="p">(</span><span class="n">choice</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">choice</span> <span class="ow">in</span> <span class="n">pending</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">choices</span>
+                <span class="k">if</span> <span class="n">choice</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
+            <span class="p">}</span>
+        <span class="c1"># Opaque type (str, int, path, ...) — no suggestions from us; let</span>
+        <span class="c1"># other completers (path, etc.) try.</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="c1"># 2. Option flag.</span>
+    <span class="k">if</span> <span class="n">prefix</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;-&quot;</span><span class="p">):</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">param</span> <span class="ow">in</span> <span class="n">current_cmd</span><span class="o">.</span><span class="n">params</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="n">click</span><span class="o">.</span><span class="n">Option</span><span class="p">):</span>
+                <span class="k">for</span> <span class="n">opt</span> <span class="ow">in</span> <span class="n">option_all_opts</span><span class="p">(</span><span class="n">param</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="n">opt</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">prefix</span><span class="p">):</span>
+                        <span class="n">results</span><span class="o">.</span><span class="n">add</span><span class="p">(</span>
+                            <span class="n">RichCompletion</span><span class="p">(</span>
+                                <span class="n">opt</span><span class="p">,</span>
+                                <span class="n">description</span><span class="o">=</span><span class="p">(</span><span class="n">param</span><span class="o">.</span><span class="n">help</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span>
+                            <span class="p">)</span>
+                        <span class="p">)</span>
+        <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">current_cmd</span><span class="p">,</span> <span class="s2">&quot;add_help_option&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span> <span class="ow">and</span> <span class="s2">&quot;--help&quot;</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span>
+            <span class="n">prefix</span>
+        <span class="p">):</span>
+            <span class="n">results</span><span class="o">.</span><span class="n">add</span><span class="p">(</span>
+                <span class="n">RichCompletion</span><span class="p">(</span><span class="s2">&quot;--help&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Show this message and exit.&quot;</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">results</span>
+
+    <span class="c1"># 3. Sub-command name for a click.Group.</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">current_cmd</span><span class="p">,</span> <span class="n">click</span><span class="o">.</span><span class="n">Group</span><span class="p">):</span>
+        <span class="n">ctx</span> <span class="o">=</span> <span class="n">click</span><span class="o">.</span><span class="n">Context</span><span class="p">(</span><span class="n">current_cmd</span><span class="p">)</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">sub_name</span> <span class="ow">in</span> <span class="n">current_cmd</span><span class="o">.</span><span class="n">list_commands</span><span class="p">(</span><span class="n">ctx</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">sub_name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">prefix</span><span class="p">):</span>
+                <span class="n">sub</span> <span class="o">=</span> <span class="n">current_cmd</span><span class="o">.</span><span class="n">get_command</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">sub_name</span><span class="p">)</span>
+                <span class="n">desc</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="nb">getattr</span><span class="p">(</span><span class="n">sub</span><span class="p">,</span> <span class="s2">&quot;short_help&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">sub</span><span class="p">,</span> <span class="s2">&quot;help&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="n">results</span><span class="o">.</span><span class="n">add</span><span class="p">(</span>
+                    <span class="n">RichCompletion</span><span class="p">(</span><span class="n">sub_name</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="n">desc</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="p">)</span>
+        <span class="k">return</span> <span class="n">results</span>
+
+    <span class="c1"># 4. Positional arg with a Choice type.</span>
+    <span class="n">click_arguments</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">current_cmd</span><span class="o">.</span><span class="n">params</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">click</span><span class="o">.</span><span class="n">Argument</span><span class="p">)]</span>
+    <span class="n">pos_idx</span> <span class="o">=</span> <span class="n">positional_index</span><span class="p">(</span><span class="n">current_cmd</span><span class="p">,</span> <span class="n">args_after_cmd</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">pos_idx</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">click_arguments</span><span class="p">):</span>
+        <span class="n">arg_param</span> <span class="o">=</span> <span class="n">click_arguments</span><span class="p">[</span><span class="n">pos_idx</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">arg_param</span><span class="o">.</span><span class="n">type</span><span class="p">,</span> <span class="n">click</span><span class="o">.</span><span class="n">Choice</span><span class="p">):</span>
+            <span class="k">return</span> <span class="p">{</span>
+                <span class="n">RichCompletion</span><span class="p">(</span><span class="n">choice</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">choice</span> <span class="ow">in</span> <span class="n">arg_param</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">choices</span>
+                <span class="k">if</span> <span class="n">choice</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
+            <span class="p">}</span>
+
+    <span class="k">return</span> <span class="kc">None</span></div>
 
 </pre></div>
         </article>
