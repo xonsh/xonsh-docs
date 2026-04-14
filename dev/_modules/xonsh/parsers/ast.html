@@ -1096,6 +1096,21 @@
                 <span class="n">col</span><span class="o">=</span><span class="n">node</span><span class="o">.</span><span class="n">col_offset</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="k">return</span> <span class="n">node</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_looks_like_flag_subproc</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">value</span><span class="p">):</span>
+            <span class="c1"># ``zip --help`` / ``id -v`` parse as Python ``BinOp(Sub)`` (the</span>
+            <span class="c1"># LHS name minus ``-flag``). Evaluating that at runtime blows up</span>
+            <span class="c1"># when the RHS name is a non-numeric builtin (``help`` →</span>
+            <span class="c1"># ``_Helper``) or produces nonsense arithmetic. Since the LHS is</span>
+            <span class="c1"># a known alias/command, re-parse the source line as subprocess.</span>
+            <span class="n">newnode</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">try_subproc_toks</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">newnode</span><span class="p">,</span> <span class="n">Expr</span><span class="p">):</span>
+                <span class="n">newnode</span> <span class="o">=</span> <span class="n">Expr</span><span class="p">(</span>
+                    <span class="n">value</span><span class="o">=</span><span class="n">newnode</span><span class="p">,</span> <span class="n">lineno</span><span class="o">=</span><span class="n">node</span><span class="o">.</span><span class="n">lineno</span><span class="p">,</span> <span class="n">col_offset</span><span class="o">=</span><span class="n">node</span><span class="o">.</span><span class="n">col_offset</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="s2">&quot;max_lineno&quot;</span><span class="p">):</span>
+                    <span class="n">newnode</span><span class="o">.</span><span class="n">max_lineno</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">max_lineno</span>
+                    <span class="n">newnode</span><span class="o">.</span><span class="n">max_col</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">max_col</span>
+            <span class="k">return</span> <span class="n">newnode</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_in_scope</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">Lambda</span><span class="p">):</span>
             <span class="k">return</span> <span class="n">node</span>
         <span class="k">else</span><span class="p">:</span>
@@ -1109,6 +1124,47 @@
                     <span class="n">newnode</span><span class="o">.</span><span class="n">max_col</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">max_col</span>
             <span class="k">return</span> <span class="n">newnode</span></div>
 
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_looks_like_flag_subproc</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Heuristic: does this Python expression look like ``cmd -flag``?</span>
+
+<span class="sd">        Matches ``BinOp(Name, Sub, [UnaryOp(USub, …)]*, Name)`` where the LHS</span>
+<span class="sd">        name is a known alias, executable on ``$PATH``, or a Python builtin</span>
+<span class="sd">        that shadows one — i.e. the user clearly typed a subprocess command</span>
+<span class="sd">        with flags but it happened to also be valid Python syntax (e.g.</span>
+<span class="sd">        ``zip --help``, ``id -a``). Expressions involving user-defined</span>
+<span class="sd">        variables are excluded so legitimate arithmetic stays untouched.</span>
+
+<span class="sd">        Gated on ``$XONSH_BUILTINS_TO_CMD``: this is the same experimental</span>
+<span class="sd">        &quot;commands win over Python names&quot; switch that already covers the</span>
+<span class="sd">        bare-builtin case (``zip`` → run ``zip`` if it exists), so the</span>
+<span class="sd">        ``cmd -flag`` behaviour lives under the same opt-in toggle.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_BUILTINS_TO_CMD&quot;</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">BinOp</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">op</span><span class="p">,</span> <span class="n">Sub</span><span class="p">)):</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">left</span><span class="p">,</span> <span class="n">Name</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="c1"># Peel off chained unary minuses on the right to handle ``--flag``,</span>
+        <span class="c1"># ``---flag``, etc.</span>
+        <span class="n">rhs</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">right</span>
+        <span class="k">while</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">rhs</span><span class="p">,</span> <span class="n">UnaryOp</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">rhs</span><span class="o">.</span><span class="n">op</span><span class="p">,</span> <span class="n">USub</span><span class="p">):</span>
+            <span class="n">rhs</span> <span class="o">=</span> <span class="n">rhs</span><span class="o">.</span><span class="n">operand</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">rhs</span><span class="p">,</span> <span class="n">Name</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">left</span><span class="o">.</span><span class="n">id</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_user_names</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">for</span> <span class="n">ctx</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">contexts</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
+            <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">ctx</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">False</span>
+        <span class="n">aliases</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">aliases</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">aliases</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="n">cc</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">commands_cache</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">cc</span> <span class="ow">and</span> <span class="n">cc</span><span class="o">.</span><span class="n">locate_binary</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_is_bare_builtin</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Check if node is a bare Name referencing a Python builtin, or Ellipsis.</span>
