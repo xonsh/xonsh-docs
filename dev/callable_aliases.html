@@ -856,6 +856,38 @@ stream when piped into.  This is the one argument you <strong>must</strong> use 
 <span class="go">HELLO</span>
 </pre></div>
 </div>
+<p><strong>Binary data — bypassing universal newlines</strong></p>
+<p><code class="docutils literal notranslate"><span class="pre">stdin</span></code>, <code class="docutils literal notranslate"><span class="pre">stdout</span></code>, and <code class="docutils literal notranslate"><span class="pre">stderr</span></code> are text streams
+(<code class="docutils literal notranslate"><span class="pre">io.TextIOWrapper</span></code>). Reading them applies <em>universal newlines</em> to
+incoming bytes: <code class="docutils literal notranslate"><span class="pre">\r\n</span></code> and lone <code class="docutils literal notranslate"><span class="pre">\r</span></code> are translated to <code class="docutils literal notranslate"><span class="pre">\n</span></code>. That
+is convenient for text but can corrupts binary data flowing through the
+alias — every CR is silently rewritten.</p>
+<p>To pass bytes through unchanged, use the underlying <code class="docutils literal notranslate"><span class="pre">.buffer</span></code> on both
+ends:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@aliases</span><span class="o">.</span><span class="n">register</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_passthru</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">stdin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">stdout</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Copy stdin to stdout byte-for-byte.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">stdin</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="k">for</span> <span class="n">chunk</span> <span class="ow">in</span> <span class="nb">iter</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="n">stdin</span><span class="o">.</span><span class="n">buffer</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">65536</span><span class="p">),</span> <span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="p">):</span>
+        <span class="n">stdout</span><span class="o">.</span><span class="n">buffer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span>
+    <span class="n">stdout</span><span class="o">.</span><span class="n">buffer</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+</pre></div>
+</div>
+<div class="highlight-xonshcon notranslate"><div class="highlight"><pre><span></span><span class="gp">@ </span><span class="n">cat</span> <span class="o">/</span><span class="n">usr</span><span class="o">/</span><span class="nb">bin</span><span class="o">/</span><span class="n">python</span> <span class="o">|</span> <span class="n">passthru</span> <span class="o">&gt;</span> <span class="o">/</span><span class="n">tmp</span><span class="o">/</span><span class="n">copy</span>
+<span class="gp">@ </span><span class="c1"># bytes preserved exactly — diff /usr/bin/python /tmp/copy is empty</span>
+</pre></div>
+</div>
+<p>This applies symmetrically: <code class="docutils literal notranslate"><span class="pre">stdout.write(text)</span></code> goes through the
+text layer (and on Windows translates <code class="docutils literal notranslate"><span class="pre">\n</span></code> to <code class="docutils literal notranslate"><span class="pre">\r\n</span></code>), while
+<code class="docutils literal notranslate"><span class="pre">stdout.buffer.write(b&quot;...&quot;)</span></code> writes raw bytes. Reach for
+<code class="docutils literal notranslate"><span class="pre">.buffer</span></code> whenever the alias is a passthrough or otherwise
+binary-aware — <code class="docutils literal notranslate"><span class="pre">cat</span></code>-likes, hashing, compression, image/audio
+filters, <code class="docutils literal notranslate"><span class="pre">ssh</span></code>-style streaming.</p>
+<p>Reading a file directly with <code class="docutils literal notranslate"><span class="pre">open(path,</span> <span class="pre">&quot;rb&quot;)</span></code> is also unaffected:
+the text layer only applies to <code class="docutils literal notranslate"><span class="pre">stdin</span></code>/<code class="docutils literal notranslate"><span class="pre">stdout</span></code>/<code class="docutils literal notranslate"><span class="pre">stderr</span></code>. So
+<code class="docutils literal notranslate"><span class="pre">mycat</span> <span class="pre">file</span> <span class="pre">&gt;</span> <span class="pre">out</span></code> (no upstream pipe) is safe; <code class="docutils literal notranslate"><span class="pre">something</span> <span class="pre">|</span> <span class="pre">mycat</span>
+<span class="pre">&gt;</span> <span class="pre">out</span></code> needs <code class="docutils literal notranslate"><span class="pre">stdin.buffer</span></code> to stay byte-clean.</p>
 </section>
 <section id="threading">
 <h2>Threading<a class="headerlink" href="#threading" title="Link to this heading">¶</a></h2>
