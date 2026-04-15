@@ -477,6 +477,26 @@ discussion on GitHub.</p>
 load xontribs and rc files, and drive the execer / shell from their
 own code. The public entry point for this is <a class="reference internal" href="lib/_autosummary/helpers/xonsh.main.html#xonsh.main.setup" title="xonsh.main.setup"><code class="xref py py-func docutils literal notranslate"><span class="pre">xonsh.main.setup()</span></code></a>,
 documented in <a class="reference internal" href="lib/_autosummary/helpers/xonsh.main.html#module-xonsh.main" title="xonsh.main"><code class="xref py py-mod docutils literal notranslate"><span class="pre">xonsh.main</span></code></a>.</p>
+<section id="calling-setup-off-the-main-thread">
+<h2>Calling <code class="docutils literal notranslate"><span class="pre">setup()</span></code> Off the Main Thread<a class="headerlink" href="#calling-setup-off-the-main-thread" title="Link to this heading">¶</a></h2>
+<p><a class="reference internal" href="lib/_autosummary/helpers/xonsh.main.html#xonsh.main.setup" title="xonsh.main.setup"><code class="xref py py-func docutils literal notranslate"><span class="pre">xonsh.main.setup()</span></code></a> is safe to call from a non-main thread. Python
+disallows installing signal handlers from worker threads, so xonsh skips
+that step when it detects it is not on the main thread. Historically this
+path raised <code class="docutils literal notranslate"><span class="pre">ValueError:</span> <span class="pre">signal</span> <span class="pre">only</span> <span class="pre">works</span> <span class="pre">in</span> <span class="pre">main</span> <span class="pre">thread</span></code> during load
+(see <a class="reference external" href="https://github.com/xonsh/xonsh/issues/3689">xonsh#3689</a>).</p>
+<p>Consequences for embedders:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">setup()</span></code> completes normally from any thread; the execer, session,
+environment and aliases work as expected.</p></li>
+<li><p>The <code class="xref py py-func docutils literal notranslate"><span class="pre">atexit()</span></code> history-flush registration still runs, so history is
+flushed on normal interpreter shutdown.</p></li>
+<li><p>Termination-signal handlers that would flush history on <code class="docutils literal notranslate"><span class="pre">SIGTERM</span></code>,
+<code class="docutils literal notranslate"><span class="pre">SIGHUP</span></code>, <code class="docutils literal notranslate"><span class="pre">SIGQUIT</span></code>, <code class="docutils literal notranslate"><span class="pre">SIGTSTP</span></code> etc. are <strong>not</strong> installed in this
+case — the host process owns signals in embedded scenarios. If you need
+signal-driven flushes, call <code class="docutils literal notranslate"><span class="pre">setup()</span></code> once on the main thread at
+startup or install your own handlers there.</p></li>
+</ul>
+</section>
 <section id="controlling-terminal-handshake-for-embedded-interactive-shells">
 <h2>Controlling Terminal Handshake for Embedded Interactive Shells<a class="headerlink" href="#controlling-terminal-handshake-for-embedded-interactive-shells" title="Link to this heading">¶</a></h2>
 <p>When xonsh runs as the standalone <code class="docutils literal notranslate"><span class="pre">xonsh</span></code> command, its entry point
@@ -641,6 +661,7 @@ test session.</p></li>
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Embedding Xonsh</a><ul>
+<li><a class="reference internal" href="#calling-setup-off-the-main-thread">Calling <code class="docutils literal notranslate"><span class="pre">setup()</span></code> Off the Main Thread</a></li>
 <li><a class="reference internal" href="#controlling-terminal-handshake-for-embedded-interactive-shells">Controlling Terminal Handshake for Embedded Interactive Shells</a><ul>
 <li><a class="reference internal" href="#when-the-handshake-runs">When the handshake runs</a></li>
 <li><a class="reference internal" href="#how-to-invoke-it-from-embedded-code">How to invoke it from embedded code</a></li>
