@@ -1074,6 +1074,27 @@
         <span class="k">return</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">arg</span> <span class="k">for</span> <span class="n">arg</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">args</span><span class="p">)</span></div>
 
 
+<div class="viewcode-block" id="SubprocSpec.close">
+<a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.procs.specs.html#xonsh.procs.specs.SubprocSpec.close">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Release any pipe wrappers and channels held by this spec.</span>
+
+<span class="sd">        Required when a spec is created via ``cmds_to_specs`` but never</span>
+<span class="sd">        executed (no ``CommandPipeline._close_proc`` is invoked). The</span>
+<span class="sd">        wrappers from ``PipeChannel.open_writer/open_reader`` use</span>
+<span class="sd">        ``closefd=False``, so leaving them for GC produces a</span>
+<span class="sd">        ``ResourceWarning: unclosed file`` on Python 3.12+. Idempotent.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">safe_close</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_stdin</span><span class="p">)</span>
+        <span class="n">safe_close</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_stdout</span><span class="p">)</span>
+        <span class="n">safe_close</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_stderr</span><span class="p">)</span>
+        <span class="n">safe_close</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">captured_stdout</span><span class="p">)</span>
+        <span class="n">safe_close</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">captured_stderr</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">pipe_channels</span><span class="p">:</span>
+            <span class="n">ch</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pipe_channels</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span></div>
+
+
     <span class="c1">#</span>
     <span class="c1"># Execution methods</span>
     <span class="c1">#</span>
@@ -1748,76 +1769,83 @@
     <span class="c1"># first build the subprocs independently and separate from the redirects</span>
     <span class="n">specs</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="n">redirects</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">cmds</span><span class="p">):</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
-            <span class="n">redirects</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">env</span> <span class="o">=</span> <span class="n">envs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">if</span> <span class="n">envs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
-            <span class="n">spec</span> <span class="o">=</span> <span class="n">SubprocSpec</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="n">captured</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">env</span><span class="p">)</span>
-            <span class="n">spec</span><span class="o">.</span><span class="n">pipeline_index</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">specs</span><span class="p">)</span>
-            <span class="n">spec</span><span class="o">.</span><span class="n">in_boolop</span> <span class="o">=</span> <span class="n">in_boolop</span>
-            <span class="n">specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span>
-    <span class="c1"># now modify the subprocs based on the redirects.</span>
-    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">redirect</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">redirects</span><span class="p">):</span>
-        <span class="k">if</span> <span class="n">redirect</span> <span class="o">==</span> <span class="s2">&quot;|&quot;</span><span class="p">:</span>
-            <span class="c1"># these should remain integer file descriptors, and not Python</span>
-            <span class="c1"># file objects since they connect processes.</span>
-            <span class="n">pipe</span> <span class="o">=</span> <span class="n">PipeChannel</span><span class="o">.</span><span class="n">from_pipe</span><span class="p">()</span>
-            <span class="n">upstream</span> <span class="o">=</span> <span class="n">specs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
-            <span class="c1"># `e&gt;p` adds stderr to the pipe; stdout still goes through the</span>
-            <span class="c1"># pipe by default, unless the user diverted it with `o&gt;`/`&gt;`.</span>
-            <span class="k">if</span> <span class="n">upstream</span><span class="o">.</span><span class="n">_stderr</span> <span class="ow">is</span> <span class="n">_PIPE_ERR</span><span class="p">:</span>
-                <span class="n">upstream</span><span class="o">.</span><span class="n">_stderr</span> <span class="o">=</span> <span class="kc">None</span>
-                <span class="n">upstream</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">write_fd</span>
-                <span class="c1"># Skip wiring stdout if it is already redirected elsewhere</span>
-                <span class="c1"># (e.g. `cmd o&gt; file e&gt;p | grep` — stdout to file, pipe gets</span>
-                <span class="c1"># only stderr).</span>
-                <span class="n">skip_stdout</span> <span class="o">=</span> <span class="n">upstream</span><span class="o">.</span><span class="n">_stdout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">cmds</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                <span class="n">redirects</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">skip_stdout</span> <span class="o">=</span> <span class="kc">False</span>
-            <span class="c1"># `a&gt;p`: stdout goes to the pipe and stderr is merged into it</span>
-            <span class="c1"># (stderr was already set to subprocess.STDOUT by _redirect_streams).</span>
-            <span class="k">if</span> <span class="n">upstream</span><span class="o">.</span><span class="n">_stdout</span> <span class="ow">is</span> <span class="n">_PIPE_ALL</span><span class="p">:</span>
-                <span class="n">upstream</span><span class="o">.</span><span class="n">_stdout</span> <span class="o">=</span> <span class="kc">None</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">skip_stdout</span><span class="p">:</span>
-                <span class="n">upstream</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">write_fd</span>
-            <span class="n">specs</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">stdin</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">read_fd</span>
-            <span class="n">upstream</span><span class="o">.</span><span class="n">pipe_channels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pipe</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="n">redirect</span> <span class="o">==</span> <span class="s2">&quot;&amp;&quot;</span> <span class="ow">and</span> <span class="n">i</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">redirects</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
-            <span class="n">specs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">background</span> <span class="o">=</span> <span class="kc">True</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="n">xt</span><span class="o">.</span><span class="n">XonshError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;unrecognized redirect </span><span class="si">{</span><span class="n">redirect</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="c1"># Any pipe-redirect sentinel still present means `a&gt;p`/`e&gt;p` was used</span>
-    <span class="c1"># without a following `|` pipe.</span>
-    <span class="k">for</span> <span class="n">spec</span> <span class="ow">in</span> <span class="n">specs</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">spec</span><span class="o">.</span><span class="n">_stdout</span> <span class="ow">is</span> <span class="n">_PIPE_ALL</span> <span class="ow">or</span> <span class="n">spec</span><span class="o">.</span><span class="n">_stderr</span> <span class="ow">is</span> <span class="n">_PIPE_ERR</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="n">xt</span><span class="o">.</span><span class="n">XonshError</span><span class="p">(</span>
-                <span class="s2">&quot;xonsh: redirect &#39;a&gt;p&#39;/&#39;e&gt;p&#39; requires a following pipe &#39;|&#39;&quot;</span>
-            <span class="p">)</span>
-
-    <span class="c1"># Apply boundary conditions</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_CAPTURE_ALWAYS&quot;</span><span class="p">):</span>
-        <span class="c1"># Make sure sub-specs are always captured in case:</span>
-        <span class="c1"># `![some_alias | grep x]`, `$(some_alias)`, `some_alias &gt; file`.</span>
-        <span class="n">last</span> <span class="o">=</span> <span class="n">spec</span>
-        <span class="n">is_redirected_stdout</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">last</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
-        <span class="n">specs_to_capture</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">specs</span>
-            <span class="k">if</span> <span class="n">captured</span> <span class="ow">in</span> <span class="n">STDOUT_CAPTURE_KINDS</span> <span class="ow">or</span> <span class="n">is_redirected_stdout</span>
-            <span class="k">else</span> <span class="n">specs</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
-        <span class="p">)</span>
-        <span class="n">_set_specs_capture_always</span><span class="p">(</span><span class="n">specs_to_capture</span><span class="p">)</span>
-
-    <span class="c1"># Validate: unthreadable callable aliases cannot be used in pipelines</span>
-    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">specs</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">env</span> <span class="o">=</span> <span class="n">envs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">if</span> <span class="n">envs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+                <span class="n">spec</span> <span class="o">=</span> <span class="n">SubprocSpec</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">captured</span><span class="o">=</span><span class="n">captured</span><span class="p">,</span> <span class="n">env</span><span class="o">=</span><span class="n">env</span><span class="p">)</span>
+                <span class="n">spec</span><span class="o">.</span><span class="n">pipeline_index</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">specs</span><span class="p">)</span>
+                <span class="n">spec</span><span class="o">.</span><span class="n">in_boolop</span> <span class="o">=</span> <span class="n">in_boolop</span>
+                <span class="n">specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span>
+        <span class="c1"># now modify the subprocs based on the redirects.</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">redirect</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">redirects</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">redirect</span> <span class="o">==</span> <span class="s2">&quot;|&quot;</span><span class="p">:</span>
+                <span class="c1"># these should remain integer file descriptors, and not Python</span>
+                <span class="c1"># file objects since they connect processes.</span>
+                <span class="n">pipe</span> <span class="o">=</span> <span class="n">PipeChannel</span><span class="o">.</span><span class="n">from_pipe</span><span class="p">()</span>
+                <span class="n">upstream</span> <span class="o">=</span> <span class="n">specs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+                <span class="c1"># `e&gt;p` adds stderr to the pipe; stdout still goes through the</span>
+                <span class="c1"># pipe by default, unless the user diverted it with `o&gt;`/`&gt;`.</span>
+                <span class="k">if</span> <span class="n">upstream</span><span class="o">.</span><span class="n">_stderr</span> <span class="ow">is</span> <span class="n">_PIPE_ERR</span><span class="p">:</span>
+                    <span class="n">upstream</span><span class="o">.</span><span class="n">_stderr</span> <span class="o">=</span> <span class="kc">None</span>
+                    <span class="n">upstream</span><span class="o">.</span><span class="n">stderr</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">write_fd</span>
+                    <span class="c1"># Skip wiring stdout if it is already redirected elsewhere</span>
+                    <span class="c1"># (e.g. `cmd o&gt; file e&gt;p | grep` — stdout to file, pipe gets</span>
+                    <span class="c1"># only stderr).</span>
+                    <span class="n">skip_stdout</span> <span class="o">=</span> <span class="n">upstream</span><span class="o">.</span><span class="n">_stdout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">skip_stdout</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="c1"># `a&gt;p`: stdout goes to the pipe and stderr is merged into it</span>
+                <span class="c1"># (stderr was already set to subprocess.STDOUT by _redirect_streams).</span>
+                <span class="k">if</span> <span class="n">upstream</span><span class="o">.</span><span class="n">_stdout</span> <span class="ow">is</span> <span class="n">_PIPE_ALL</span><span class="p">:</span>
+                    <span class="n">upstream</span><span class="o">.</span><span class="n">_stdout</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">skip_stdout</span><span class="p">:</span>
+                    <span class="n">upstream</span><span class="o">.</span><span class="n">stdout</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">write_fd</span>
+                <span class="n">specs</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">stdin</span> <span class="o">=</span> <span class="n">pipe</span><span class="o">.</span><span class="n">read_fd</span>
+                <span class="n">upstream</span><span class="o">.</span><span class="n">pipe_channels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pipe</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">redirect</span> <span class="o">==</span> <span class="s2">&quot;&amp;&quot;</span> <span class="ow">and</span> <span class="n">i</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">redirects</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">specs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">background</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">xt</span><span class="o">.</span><span class="n">XonshError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;unrecognized redirect </span><span class="si">{</span><span class="n">redirect</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="c1"># Any pipe-redirect sentinel still present means `a&gt;p`/`e&gt;p` was used</span>
+        <span class="c1"># without a following `|` pipe.</span>
         <span class="k">for</span> <span class="n">spec</span> <span class="ow">in</span> <span class="n">specs</span><span class="p">:</span>
-            <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">spec</span><span class="o">.</span><span class="n">alias</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">spec</span><span class="o">.</span><span class="n">threadable</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">spec</span><span class="o">.</span><span class="n">_stdout</span> <span class="ow">is</span> <span class="n">_PIPE_ALL</span> <span class="ow">or</span> <span class="n">spec</span><span class="o">.</span><span class="n">_stderr</span> <span class="ow">is</span> <span class="n">_PIPE_ERR</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="n">xt</span><span class="o">.</span><span class="n">XonshError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Callable alias </span><span class="si">{</span><span class="n">spec</span><span class="o">.</span><span class="n">alias_name</span><span class="si">!r}</span><span class="s2"> is explicitly marked as unthreadable and is not supported in pipelines.</span><span class="se">\n</span><span class="s2">&quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;If it&#39;s really threadable try to add command decorator `@thread </span><span class="si">{</span><span class="n">spec</span><span class="o">.</span><span class="n">alias_name</span><span class="si">}</span><span class="s2">`.&quot;</span>
+                    <span class="s2">&quot;xonsh: redirect &#39;a&gt;p&#39;/&#39;e&gt;p&#39; requires a following pipe &#39;|&#39;&quot;</span>
                 <span class="p">)</span>
 
-    <span class="n">_update_last_spec</span><span class="p">(</span><span class="n">specs</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="c1"># Apply boundary conditions</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_CAPTURE_ALWAYS&quot;</span><span class="p">):</span>
+            <span class="c1"># Make sure sub-specs are always captured in case:</span>
+            <span class="c1"># `![some_alias | grep x]`, `$(some_alias)`, `some_alias &gt; file`.</span>
+            <span class="n">last</span> <span class="o">=</span> <span class="n">spec</span>
+            <span class="n">is_redirected_stdout</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">last</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+            <span class="n">specs_to_capture</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">specs</span>
+                <span class="k">if</span> <span class="n">captured</span> <span class="ow">in</span> <span class="n">STDOUT_CAPTURE_KINDS</span> <span class="ow">or</span> <span class="n">is_redirected_stdout</span>
+                <span class="k">else</span> <span class="n">specs</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="p">)</span>
+            <span class="n">_set_specs_capture_always</span><span class="p">(</span><span class="n">specs_to_capture</span><span class="p">)</span>
+
+        <span class="c1"># Validate: unthreadable callable aliases cannot be used in pipelines</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">specs</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">spec</span> <span class="ow">in</span> <span class="n">specs</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">spec</span><span class="o">.</span><span class="n">alias</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">spec</span><span class="o">.</span><span class="n">threadable</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">xt</span><span class="o">.</span><span class="n">XonshError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;Callable alias </span><span class="si">{</span><span class="n">spec</span><span class="o">.</span><span class="n">alias_name</span><span class="si">!r}</span><span class="s2"> is explicitly marked as unthreadable and is not supported in pipelines.</span><span class="se">\n</span><span class="s2">&quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;If it&#39;s really threadable try to add command decorator `@thread </span><span class="si">{</span><span class="n">spec</span><span class="o">.</span><span class="n">alias_name</span><span class="si">}</span><span class="s2">`.&quot;</span>
+                    <span class="p">)</span>
+
+        <span class="n">_update_last_spec</span><span class="p">(</span><span class="n">specs</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+    <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+        <span class="c1"># Any pipes/files opened during spec construction would otherwise</span>
+        <span class="c1"># leak as `ResourceWarning: unclosed file` once GC reaps them.</span>
+        <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">specs</span><span class="p">:</span>
+            <span class="n">s</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="k">raise</span>
     <span class="k">return</span> <span class="n">specs</span></div>
 
 
