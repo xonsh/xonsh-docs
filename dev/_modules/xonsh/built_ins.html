@@ -499,6 +499,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ast</span><span class="w"> </span><span class="kn">import</span> <span class="n">AST</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Iterator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">operator</span><span class="w"> </span><span class="kn">import</span> <span class="n">attrgetter</span> <span class="k">as</span> <span class="n">_attrgetter</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.lib.inspectors</span><span class="w"> </span><span class="kn">import</span> <span class="n">Inspector</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.lib.lazyasd</span><span class="w"> </span><span class="kn">import</span> <span class="n">lazyobject</span>
@@ -1908,12 +1909,15 @@
 <span class="sd">        Uses ``object.__getattribute__`` to read *objname* so that the</span>
 <span class="sd">        lookup never falls through to ``__getattr__`` — which would</span>
 <span class="sd">        create an infinite loop under Nuitka-compiled builds.</span>
+
+<span class="sd">        Uses :func:`operator.attrgetter` instead of an explicit ``getattr``</span>
+<span class="sd">        loop: the loop form compiled under Nuitka 4.0 produces wrong</span>
+<span class="sd">        results for ``getattr(builtins, &quot;__xonsh__&quot;)`` (it doesn&#39;t advance</span>
+<span class="sd">        ``obj`` on the first iteration), yielding ``AttributeError:</span>
+<span class="sd">        module &#39;builtins&#39; has no attribute &#39;builtins&#39;``. ``attrgetter``</span>
+<span class="sd">        delegates the whole walk to a C builtin and sidesteps the bug.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">names</span> <span class="o">=</span> <span class="nb">object</span><span class="o">.</span><span class="fm">__getattribute__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;objname&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)</span>
-        <span class="n">obj</span> <span class="o">=</span> <span class="n">builtins</span>
-        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">names</span><span class="p">:</span>
-            <span class="n">obj</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">obj</span>
+        <span class="k">return</span> <span class="n">_attrgetter</span><span class="p">(</span><span class="nb">object</span><span class="o">.</span><span class="fm">__getattribute__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;objname&quot;</span><span class="p">))(</span><span class="n">builtins</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__getattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
         <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_obj</span><span class="p">(),</span> <span class="n">name</span><span class="p">)</span>
