@@ -315,6 +315,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../lib/_autosummary/cmd/xonsh.completers.dirs.html">xonsh.completers.dirs</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../lib/_autosummary/cmd/xonsh.completers.emoji.html">xonsh.completers.emoji</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../lib/_autosummary/cmd/xonsh.completers.environment.html">xonsh.completers.environment</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../lib/_autosummary/cmd/xonsh.completers.git.html">xonsh.completers.git</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../lib/_autosummary/cmd/xonsh.completers.imports.html">xonsh.completers.imports</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../lib/_autosummary/cmd/xonsh.completers.init.html">xonsh.completers.init</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../lib/_autosummary/cmd/xonsh.completers.man.html">xonsh.completers.man</a></li>
@@ -522,7 +523,7 @@
 <span class="nd">@functools</span><span class="o">.</span><span class="n">cache</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">_man_option_string_regex</span><span class="p">():</span>
     <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
-        <span class="sa">r</span><span class="s2">&quot;(?:(,\s?)|^|(\sor\s))(?P&lt;option&gt;-[\w]|--[\w-]+)(?=\[?(\s|,|=\w+|$))&quot;</span>
+        <span class="sa">r</span><span class="s2">&quot;(?:(,\s?)|^|(\sor\s))(?P&lt;option&gt;-[\w]|--[\w-]+)(?=\[?(\s|,|=|$))&quot;</span>
     <span class="p">)</span>
 
 
@@ -539,7 +540,7 @@
             <span class="k">return</span>
         <span class="n">header</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
         <span class="n">body</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">textwrap</span><span class="o">.</span><span class="n">dedent</span><span class="p">(</span><span class="n">text</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n\t</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">    &quot;</span><span class="p">))</span><span class="o">.</span><span class="n">splitlines</span><span class="p">():</span>
+        <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">textwrap</span><span class="o">.</span><span class="n">dedent</span><span class="p">(</span><span class="n">text</span><span class="o">.</span><span class="n">expandtabs</span><span class="p">(</span><span class="mi">8</span><span class="p">))</span><span class="o">.</span><span class="n">splitlines</span><span class="p">():</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
                 <span class="k">continue</span>
             <span class="k">if</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">((</span><span class="s2">&quot; &quot;</span><span class="p">,</span> <span class="s2">&quot;</span><span class="se">\t</span><span class="s2">&quot;</span><span class="p">)):</span>
@@ -572,6 +573,7 @@
         <span class="k">for</span> <span class="n">head</span> <span class="ow">in</span> <span class="p">(</span>
             <span class="s2">&quot;options&quot;</span><span class="p">,</span>
             <span class="s2">&quot;command options&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;command line options&quot;</span><span class="p">,</span>
             <span class="s2">&quot;description&quot;</span><span class="p">,</span>
         <span class="p">):</span>  <span class="c1"># prefer sections in this order</span>
             <span class="k">if</span> <span class="n">head</span> <span class="ow">in</span> <span class="n">small_names</span><span class="p">:</span>
@@ -639,10 +641,20 @@
         <span class="k">return</span>
     <span class="n">cmd</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">value</span>
 
+    <span class="c1"># Tools like cargo, docker use per-subcommand man pages</span>
+    <span class="c1"># (e.g. cargo-build). Try the hyphenated form first.</span>
+    <span class="k">if</span> <span class="n">context</span><span class="o">.</span><span class="n">arg_index</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="n">subcmd_man</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">cmd</span><span class="si">}</span><span class="s2">-</span><span class="si">{</span><span class="n">context</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">if</span> <span class="n">_man_page_path</span><span class="p">(</span><span class="n">subcmd_man</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">cmd</span> <span class="o">=</span> <span class="n">subcmd_man</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">completions</span><span class="p">():</span>
         <span class="k">for</span> <span class="n">desc</span><span class="p">,</span> <span class="n">opts</span> <span class="ow">in</span> <span class="n">_parse_man_page_options</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">yield</span> <span class="n">RichCompletion</span><span class="p">(</span>
-                <span class="n">value</span><span class="o">=</span><span class="n">opts</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">display</span><span class="o">=</span><span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">opts</span><span class="p">),</span> <span class="n">description</span><span class="o">=</span><span class="n">desc</span>
+                <span class="n">value</span><span class="o">=</span><span class="n">opts</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+                <span class="n">display</span><span class="o">=</span><span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">opts</span><span class="p">),</span>
+                <span class="n">description</span><span class="o">=</span><span class="n">desc</span><span class="p">,</span>
+                <span class="n">provider</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;man:</span><span class="si">{</span><span class="n">cmd</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
             <span class="p">)</span>
 
     <span class="k">return</span> <span class="n">completions</span><span class="p">(),</span> <span class="kc">False</span></div>
