@@ -540,6 +540,24 @@
 <span class="n">_RL_PREV_COMPLETION_CASE_SENSITIVE</span> <span class="o">=</span> <span class="s2">&quot;to-be-set&quot;</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_parse_dsr_cursor_column</span><span class="p">(</span><span class="n">resp</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;int | None&quot;</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the column number from a DSR cursor-position reply.</span>
+
+<span class="sd">    A DSR reply has the form ``ESC [ &lt;row&gt; ; &lt;col&gt; R``.  Returns ``None``</span>
+<span class="sd">    when the reply is incomplete or malformed.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">end</span> <span class="o">=</span> <span class="n">resp</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;R&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">end</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">semi</span> <span class="o">=</span> <span class="n">resp</span><span class="o">.</span><span class="n">rfind</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;;&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">end</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">semi</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">resp</span><span class="p">[</span><span class="n">semi</span> <span class="o">+</span> <span class="mi">1</span> <span class="p">:</span> <span class="n">end</span><span class="p">])</span>
+    <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_ensure_newline</span><span class="p">():</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Print a newline if the cursor is not at column 1.</span>
 
@@ -561,27 +579,30 @@
         <span class="c1"># Ask the terminal: &quot;where is the cursor?&quot;</span>
         <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\033</span><span class="s2">[6n&quot;</span><span class="p">)</span>
         <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
-        <span class="c1"># Read response: ESC [ row ; col R</span>
-        <span class="kn">import</span><span class="w"> </span><span class="nn">select</span>
-
-        <span class="n">resp</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
-        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
-            <span class="n">ready</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">select</span><span class="o">.</span><span class="n">select</span><span class="p">([</span><span class="n">sys</span><span class="o">.</span><span class="n">stdin</span><span class="p">],</span> <span class="p">[],</span> <span class="p">[],</span> <span class="mf">0.5</span><span class="p">)</span>
+        <span class="c1"># Read the reply straight from the file descriptor.  Going through</span>
+        <span class="c1"># sys.stdin would route bytes via a TextIOWrapper buffer: a single</span>
+        <span class="c1"># read(1) can pull several bytes into that buffer, then select()</span>
+        <span class="c1"># on the fd reports &quot;not ready&quot; and the tail of the reply leaks</span>
+        <span class="c1"># into the next input() call as phantom user input (issue #6344).</span>
+        <span class="n">resp</span> <span class="o">=</span> <span class="sa">b</span><span class="s2">&quot;&quot;</span>
+        <span class="n">timeout</span> <span class="o">=</span> <span class="mf">0.5</span>
+        <span class="k">while</span> <span class="sa">b</span><span class="s2">&quot;R&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">resp</span><span class="p">:</span>
+            <span class="n">ready</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">select</span><span class="o">.</span><span class="n">select</span><span class="p">([</span><span class="n">fd</span><span class="p">],</span> <span class="p">[],</span> <span class="p">[],</span> <span class="n">timeout</span><span class="p">)</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">ready</span><span class="p">:</span>
                 <span class="k">break</span>
-            <span class="n">ch</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdin</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-            <span class="n">resp</span> <span class="o">+=</span> <span class="n">ch</span>
-            <span class="k">if</span> <span class="n">ch</span> <span class="o">==</span> <span class="s2">&quot;R&quot;</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">chunk</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="mi">32</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
                 <span class="k">break</span>
-        <span class="c1"># Parse &quot;;col&quot; from the response  e.g. &quot;\033[42;1R&quot;</span>
-        <span class="k">if</span> <span class="s2">&quot;;&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">resp</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">resp</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;R&quot;</span><span class="p">):</span>
-            <span class="k">return</span>
-        <span class="n">semi</span> <span class="o">=</span> <span class="n">resp</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">&quot;;&quot;</span><span class="p">)</span>
-        <span class="n">col</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">resp</span><span class="p">[</span><span class="n">semi</span> <span class="o">+</span> <span class="mi">1</span> <span class="p">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">])</span>  <span class="c1"># between &quot;;&quot; and &quot;R&quot;</span>
-        <span class="k">if</span> <span class="n">col</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">chunk</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="n">resp</span> <span class="o">+=</span> <span class="n">chunk</span>
+            <span class="n">timeout</span> <span class="o">=</span> <span class="mf">0.05</span>  <span class="c1"># the rest of a reply arrives back-to-back</span>
+        <span class="n">col</span> <span class="o">=</span> <span class="n">_parse_dsr_cursor_column</span><span class="p">(</span><span class="n">resp</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">col</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">col</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
             <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
             <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
-    <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">IndexError</span><span class="p">,</span> <span class="ne">OSError</span><span class="p">,</span> <span class="n">termios</span><span class="o">.</span><span class="n">error</span><span class="p">):</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">OSError</span><span class="p">,</span> <span class="n">termios</span><span class="o">.</span><span class="n">error</span><span class="p">):</span>
         <span class="k">pass</span>
     <span class="k">finally</span><span class="p">:</span>
         <span class="n">termios</span><span class="o">.</span><span class="n">tcsetattr</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">termios</span><span class="o">.</span><span class="n">TCSADRAIN</span><span class="p">,</span> <span class="n">old</span><span class="p">)</span>
