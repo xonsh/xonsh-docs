@@ -662,6 +662,18 @@
     <span class="k">return</span> <span class="nb">any</span><span class="p">(</span><span class="nb">chr</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="ow">in</span> <span class="n">s</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">_CONTROL_CHAR_ESCAPE</span><span class="p">)</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_raw_quote</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Wrap *s* in r&#39;...&#39; with a trailing-backslash fix.</span>
+
+<span class="sd">    Raw strings can&#39;t end with an odd number of backslashes before the</span>
+<span class="sd">    closing quote (``r&#39;path\\&#39;`` is valid, ``r&#39;path\\&#39;`` is not).  Double</span>
+<span class="sd">    a lone trailing backslash so the result is always valid syntax.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">s</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\\\</span><span class="s2">&quot;</span><span class="p">):</span>
+        <span class="n">s</span> <span class="o">+=</span> <span class="s2">&quot;</span><span class="se">\\</span><span class="s2">&quot;</span>
+    <span class="k">return</span> <span class="s2">&quot;r&#39;&quot;</span> <span class="o">+</span> <span class="n">s</span> <span class="o">+</span> <span class="s2">&quot;&#39;&quot;</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_quote_paths</span><span class="p">(</span><span class="n">paths</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">append_end</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">cdpath</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
     <span class="n">expand_path</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">expand_path</span>
     <span class="n">out</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
@@ -820,6 +832,17 @@
     <span class="n">env</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span>
     <span class="n">glob_sorted</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;GLOB_SORTED&quot;</span><span class="p">)</span>
     <span class="n">prefix</span> <span class="o">=</span> <span class="n">glob</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
+    <span class="c1"># On Windows, bare ~ is not expanded by windows_expanduser (it requires</span>
+    <span class="c1"># a trailing separator).  Append os.sep so that iglobpath lists the</span>
+    <span class="c1"># home directory contents, matching the behavior of ~\ and ~/.</span>
+    <span class="c1"># Skip when a literal file/dir named ~ exists in cwd (PR #6339).</span>
+    <span class="k">if</span> <span class="p">(</span>
+        <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span>
+        <span class="ow">and</span> <span class="n">prefix</span> <span class="o">==</span> <span class="n">tilde</span>
+        <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_raw_string</span>
+        <span class="ow">and</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">tilde</span><span class="p">)</span>
+    <span class="p">):</span>
+        <span class="n">prefix</span> <span class="o">=</span> <span class="n">tilde</span> <span class="o">+</span> <span class="n">os</span><span class="o">.</span><span class="n">sep</span>
     <span class="n">_prefix_is_dir_listing</span> <span class="o">=</span> <span class="n">prefix</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">sep</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
         <span class="n">os</span><span class="o">.</span><span class="n">altsep</span> <span class="ow">and</span> <span class="n">prefix</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">altsep</span><span class="p">)</span>
     <span class="p">)</span>
@@ -895,25 +918,39 @@
     <span class="k">if</span> <span class="n">cdpath</span> <span class="ow">and</span> <span class="n">cd_in_command</span><span class="p">(</span><span class="n">line</span><span class="p">):</span>
         <span class="n">_add_cdpaths</span><span class="p">(</span><span class="n">paths</span><span class="p">,</span> <span class="n">prefix</span><span class="p">)</span>
     <span class="n">paths</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="nb">filter</span><span class="p">(</span><span class="n">filtfunc</span><span class="p">,</span> <span class="n">paths</span><span class="p">))</span>
-    <span class="k">if</span> <span class="n">tilde</span> <span class="ow">in</span> <span class="n">prefix</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">tilde</span> <span class="ow">in</span> <span class="n">prefix</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
         <span class="n">home</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="n">tilde</span><span class="p">)</span>
         <span class="n">paths</span> <span class="o">=</span> <span class="p">{</span><span class="n">s</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">home</span><span class="p">,</span> <span class="n">tilde</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">}</span>
     <span class="n">paths</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_quote_paths</span><span class="p">(</span>
         <span class="p">{</span><span class="n">_normpath</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">},</span> <span class="n">path_str_start</span><span class="p">,</span> <span class="n">path_str_end</span><span class="p">,</span> <span class="n">append_end</span><span class="p">,</span> <span class="n">cdpath</span>
     <span class="p">)</span>
-    <span class="c1"># When a literal file/directory named ~ exists in cwd and the prefix</span>
-    <span class="c1"># starts with ~, add r&#39;~...&#39; completions so the user can select the</span>
-    <span class="c1"># local file instead of $HOME.  The bare ~/... entries are kept for</span>
-    <span class="c1"># home directory access.</span>
-    <span class="k">if</span> <span class="n">prefix</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">tilde</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_raw_string</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">tilde</span><span class="p">):</span>
-        <span class="n">tilde_local</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="c1"># When a literal file/directory named ~ exists in cwd, add r&#39;~...&#39;</span>
+    <span class="c1"># completions so the user can select the local file instead of $HOME.</span>
+    <span class="c1"># This handles both &quot;cd ~&lt;Tab&gt;&quot; (prefix starts with ~) and &quot;cd &lt;Tab&gt;&quot;</span>
+    <span class="c1"># (empty prefix, ~ found by glob in cwd).</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">is_raw_string</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">tilde</span><span class="p">):</span>
+        <span class="n">tilde_remove</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
         <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">paths</span><span class="p">):</span>
             <span class="n">raw</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">raw</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">tilde</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">raw</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;r&quot;</span><span class="p">):</span>
-                <span class="n">quoted</span> <span class="o">=</span> <span class="s2">&quot;r&#39;&quot;</span> <span class="o">+</span> <span class="n">raw</span> <span class="o">+</span> <span class="s2">&quot;&#39;&quot;</span>
-                <span class="n">tilde_local</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">quoted</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">tilde_local</span><span class="p">:</span>
-            <span class="n">paths</span> <span class="o">|=</span> <span class="n">tilde_local</span>
+            <span class="c1"># Skip entries already wrapped as r&#39;...&#39;.</span>
+            <span class="k">if</span> <span class="n">raw</span><span class="o">.</span><span class="n">startswith</span><span class="p">((</span><span class="s2">&quot;r&#39;&quot;</span><span class="p">,</span> <span class="s1">&#39;r&quot;&#39;</span><span class="p">)):</span>
+                <span class="k">continue</span>
+            <span class="c1"># Strip optional quotes to inspect the path content.</span>
+            <span class="n">inner</span> <span class="o">=</span> <span class="n">raw</span>
+            <span class="k">if</span> <span class="n">inner</span><span class="p">[:</span><span class="mi">1</span><span class="p">]</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;&#39;&quot;</span><span class="p">,</span> <span class="s1">&#39;&quot;&#39;</span><span class="p">):</span>
+                <span class="n">inner</span> <span class="o">=</span> <span class="n">inner</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+            <span class="k">if</span> <span class="n">inner</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">:]</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;&#39;&quot;</span><span class="p">,</span> <span class="s1">&#39;&quot;&#39;</span><span class="p">):</span>
+                <span class="n">inner</span> <span class="o">=</span> <span class="n">inner</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="c1"># Unescape and strip trailing separator to compare.</span>
+            <span class="n">inner</span> <span class="o">=</span> <span class="n">inner</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\\\</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot;</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">/ &quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">inner</span> <span class="o">==</span> <span class="n">tilde</span><span class="p">:</span>
+                <span class="n">tilde_remove</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+        <span class="c1"># Add the correct r&#39;~...&#39; entry for the literal ~ path.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">filtfunc</span> <span class="ow">or</span> <span class="n">filtfunc</span><span class="p">(</span><span class="n">tilde</span><span class="p">):</span>
+            <span class="n">slash</span> <span class="o">=</span> <span class="n">xt</span><span class="o">.</span><span class="n">get_sep</span><span class="p">()</span>
+            <span class="n">entry</span> <span class="o">=</span> <span class="n">tilde</span> <span class="o">+</span> <span class="n">slash</span> <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">tilde</span><span class="p">)</span> <span class="k">else</span> <span class="n">tilde</span>
+            <span class="n">paths</span> <span class="o">-=</span> <span class="n">tilde_remove</span>
+            <span class="n">paths</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">_raw_quote</span><span class="p">(</span><span class="n">entry</span><span class="p">))</span>
     <span class="n">paths</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">filter</span><span class="p">(</span><span class="n">filtfunc</span><span class="p">,</span> <span class="n">_dots</span><span class="p">(</span><span class="n">prefix</span><span class="p">)))</span>
     <span class="k">return</span> <span class="n">paths</span><span class="p">,</span> <span class="n">lprefix</span>
 
@@ -960,17 +997,24 @@
         <span class="n">filtfunc</span><span class="o">=</span><span class="n">filtfunc</span><span class="p">,</span>
     <span class="p">)</span>
 
-    <span class="c1"># r&#39;...&#39; entries (for literal ~ or $VAR files) get an explicit</span>
-    <span class="c1"># display so the ptk menu shows them distinctly from their</span>
-    <span class="c1"># expanded counterparts.</span>
+    <span class="c1"># Set an explicit display on completions whose text no longer</span>
+    <span class="c1"># starts with the typed prefix (e.g. expanded tilde on Windows:</span>
+    <span class="c1"># prefix &quot;~&quot; → completion &quot;C:/Users/...&quot;).  Without this, the ptk</span>
+    <span class="c1"># completer strips ``len(prefix)`` chars from the front of the</span>
+    <span class="c1"># display, eating the drive letter.</span>
     <span class="n">rich_completions</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
     <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="n">completions</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">comp</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;r&#39;&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">comp</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;r&quot;&#39;</span><span class="p">):</span>
-            <span class="n">rich_completions</span><span class="o">.</span><span class="n">add</span><span class="p">(</span>
-                <span class="n">RichCompletion</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="n">display</span><span class="o">=</span><span class="n">comp</span><span class="p">,</span> <span class="n">append_closing_quote</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-            <span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">rich_completions</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">RichCompletion</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="n">append_closing_quote</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
+        <span class="c1"># Strip quote prefix (r&#39;, r&quot;, &#39;, &quot;) to get the path content.</span>
+        <span class="n">inner</span> <span class="o">=</span> <span class="n">comp</span>
+        <span class="k">if</span> <span class="n">inner</span><span class="p">[:</span><span class="mi">2</span><span class="p">]</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;r&#39;&quot;</span><span class="p">,</span> <span class="s1">&#39;r&quot;&#39;</span><span class="p">,</span> <span class="s2">&quot;R&#39;&quot;</span><span class="p">,</span> <span class="s1">&#39;R&quot;&#39;</span><span class="p">):</span>
+            <span class="n">inner</span> <span class="o">=</span> <span class="n">inner</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span>
+        <span class="k">elif</span> <span class="n">inner</span><span class="p">[:</span><span class="mi">1</span><span class="p">]</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;&#39;&quot;</span><span class="p">,</span> <span class="s1">&#39;&quot;&#39;</span><span class="p">):</span>
+            <span class="n">inner</span> <span class="o">=</span> <span class="n">inner</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+        <span class="n">needs_display</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">inner</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span>
+        <span class="n">display</span> <span class="o">=</span> <span class="n">comp</span> <span class="k">if</span> <span class="n">needs_display</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="n">rich_completions</span><span class="o">.</span><span class="n">add</span><span class="p">(</span>
+            <span class="n">RichCompletion</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="n">display</span><span class="o">=</span><span class="n">display</span><span class="p">,</span> <span class="n">append_closing_quote</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="p">)</span>
 
     <span class="k">return</span> <span class="n">rich_completions</span><span class="p">,</span> <span class="n">lprefix</span></div>
 
