@@ -1,0 +1,510 @@
+Platform notes
+==============
+
+\*nix
+-----
+
+Tips that apply to Unix-like systems in general (Linux, macOS, BSD, WSL).
+Platform-specific notes live in their own sections below.
+
+Tab completion
+^^^^^^^^^^^^^^
+
+Xonsh has support for using bash completion files on the shell. To use it
+you need to install the bash-completion package. The regular bash-completion
+package uses v1 which mostly works, but we recommend using
+`bash-completion v2 <https://github.com/xonsh/xonsh/issues/2111>`_.
+
+Bash completion comes from the
+`bash-completion project <https://github.com/scop/bash-completion>`_ which
+suggests you use a package manager to install it. The package manager will
+also install a new version of bash without affecting ``/bin/bash``. Xonsh
+also needs to be told where the bash completion file is — add it to
+``$BASH_COMPLETIONS``. The package includes completions for many Unix
+commands.
+
+Common packaging systems for macOS:
+
+- **Homebrew** — install the ``bash-completion2`` package:
+
+  .. code-block:: xonshcon
+
+     @ brew install bash-completion2
+
+  This will install the completion file to
+  ``/usr/local/share/bash-completion/bash_completion`` (Intel Mac) or
+  ``/opt/homebrew/share/bash-completion/bash_completion`` (Apple Silicon)
+  — both are in the default xonsh search path and should just work.
+
+- **MacPorts** — install the ``bash-completion`` port
+  (`docs <https://trac.macports.org/wiki/howto/bash-completion>`_):
+
+  .. code-block:: xonshcon
+
+     @ sudo port install bash-completion
+
+  This includes a completion file that needs to be added to the environment:
+
+  .. code-block:: xonshcon
+
+     @ $BASH_COMPLETIONS.insert(0, '/opt/local/share/bash-completion/bash_completion')
+
+
+The `bash-completion project page <https://github.com/scop/bash-completion>`_
+refers to ``.../profile.d/bash_completion.sh`` which in turn sources the
+main completion script mentioned above and one in ``$XDG_CONFIG_HOME``.
+
+Alternatively, take a look at
+`xontrib-fish-completer <https://github.com/xonsh/xontrib-fish-completer>`_
+for a modern fish-style approach.
+
+
+Linux
+------
+
+Colored man pages
+^^^^^^^^^^^^^^^^^
+
+You can add `man page color support`_ using ``less`` environment variables —
+these work on any POSIX system with ``less`` as the pager:
+
+.. code-block:: xonsh
+
+    # format is '\E[<brightness>;<colour>m'
+    $LESS_TERMCAP_mb = "\033[01;31m"     # begin blinking
+    $LESS_TERMCAP_md = "\033[01;31m"     # begin bold
+    $LESS_TERMCAP_me = "\033[0m"         # end mode
+    $LESS_TERMCAP_so = "\033[01;44;36m"  # begin standout-mode
+    $LESS_TERMCAP_se = "\033[0m"         # end standout-mode
+    $LESS_TERMCAP_us = "\033[00;36m"     # begin underline
+    $LESS_TERMCAP_ue = "\033[0m"         # end underline
+
+.. _man page color support:
+    https://wiki.archlinux.org/index.php/Color_output_in_console#less
+
+.. _fix_libgcc_core_dump:
+
+``libgcc_s.so.1`` error on startup
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+On certain (mostly older or stripped) Linux distributions you may
+occasionally see this error when starting xonsh:
+
+.. code-block:: xonshcon
+
+   libgcc_s.so.1 must be installed for pthread_cancel to work
+   Aborted (core dumped)
+
+This is an upstream CPython issue — libgcc must already be loaded at the
+time a thread is cancelled. Preloading it fixes the crash:
+
+.. code-block:: bash
+
+   $ env LD_PRELOAD=libgcc_s.so.1 xonsh
+
+.. _unicode_troubles:
+
+UTF-8 characters and locale
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If UTF-8 characters fail with errors like::
+
+    @ echo "ßðđ"
+    UnicodeEncodeError: 'ascii' codec can't encode characters in position 0-2...
+
+your process locale is not UTF-8. Usually seen in minimal containers,
+stripped SSH sessions, systemd units, or cron jobs where ``LANG`` / ``LC_ALL``
+are set to ``C`` or ``POSIX``.
+
+The locale must be set **before** xonsh starts — setting ``$LC_ALL`` from
+your `xonsh RC <xonshrc.html>`_ is too late for subprocesses that already
+inherited the broken environment. Fix it at the OS level (``~/.pam_environment``,
+``/etc/locale.conf``, the container image's base layer, or the systemd unit's
+``Environment=`` directive). As a temporary workaround, ``PYTHONUTF8=1``
+forces Python into UTF-8 mode regardless of locale.
+
+Bash module warnings on startup
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Depending on how your installation of Bash is configured, xonsh may show
+warnings when loading certain shell modules. If you see errors similar to
+this when launching xonsh:
+
+.. code-block:: console
+
+    bash: module: line 1: syntax error: unexpected end of file
+    bash: error importing function definition for 'BASH_FUNC_module'
+    bash: scl: line 1: syntax error: unexpected end of file
+    bash: error importing function definition for 'BASH_FUNC_scl'
+
+Unset the affected functions in your ``~/.bashrc``:
+
+.. code-block:: console
+
+    $ unset module
+    $ unset scl
+
+
+"Open Terminal Here" action in Thunar (XFCE)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If you use Thunar and the "Open Terminal Here" action does not work with
+xonsh, you can replace the command for this action:
+
+.. code-block:: sh
+
+    exo-open --working-directory %f --launch TerminalEmulator xonsh --shell-type=best
+
+Open ``Edit > Configure custom actions...``, select ``Open Terminal Here``,
+and click ``Edit currently selected action``.
+
+
+macOS
+-----
+
+Path Helper
+^^^^^^^^^^^
+
+macOS provides a `path helper
+<http://www.softec.lu/site/DevelopersCorner/MasteringThePathHelper>`_,
+which by default configures paths in bash and other POSIX or C  shells. Without
+including these paths, common tools including those installed by Homebrew
+may be unavailable. See ``/etc/profile`` for details on how it is done.
+To ensure the path helper is invoked on xonsh (for all users), add the
+following to ``/etc/xonsh/xonshrc``:
+
+.. code-block:: xonshcon
+
+    source-bash $(/usr/libexec/path_helper -s)
+
+To incorporate the whole functionality of ``/etc/profile``:
+
+.. code-block:: xonshcon
+
+    source-bash --seterrprevcmd "" /etc/profile
+
+
+
+GNU Coreutils
+^^^^^^^^^^^^^
+
+macOS ships with BSD versions of common utilities (``ls``, ``grep``, ``sed``,
+etc.) which have different flags and behaviour compared to the GNU versions
+found on Linux. If you work across both platforms or prefer GNU behaviour,
+install GNU coreutils and grep via Homebrew:
+
+.. code-block:: xonshcon
+
+    @ brew install coreutils grep findutils gnu-sed gnu-tar gawk
+
+Homebrew installs GNU tools with a ``g`` prefix (e.g. ``gls``, ``ggrep``).
+To use them without the prefix, add the GNU paths to your ``$PATH`` in
+``~/.xonshrc``:
+
+.. code-block:: python
+
+    brew_prefix = $(brew --prefix).strip()
+    gnu_paths = [
+        f"{brew_prefix}/opt/coreutils/libexec/gnubin",
+        f"{brew_prefix}/opt/grep/libexec/gnubin",
+        f"{brew_prefix}/opt/findutils/libexec/gnubin",
+        f"{brew_prefix}/opt/gnu-sed/libexec/gnubin",
+        f"{brew_prefix}/opt/gnu-tar/libexec/gnubin",
+    ]
+    for p in gnu_paths:
+        if @.imp.os.path.isdir(p):
+            $PATH.insert(0, p)
+
+After this, ``ls``, ``grep``, ``sed``, etc. will be the GNU versions.
+
+
+Windows
+-------
+
+Windows Terminal
+^^^^^^^^^^^^^^^^
+
+If you are running a supported version of Windows (which is now Windows 10, version 2004 or later),
+we recommend the Windows Terminal (``wt.exe``) rather than the time-honored ``cmd.exe``.  This provides
+unicode rendering, better ansi terminal compatibility and all the conveniences you expect
+from the terminal application in other platforms.
+
+You can install it from the `Microsoft Store <https://www.microsoft.com/en-us/p/windows-terminal/9n0dx20hk701>`_
+or from `Github <https://github.com/microsoft/terminal>`_.
+
+By default Windows Terminal runs Powershell, but you can add a profile tab to run Xonsh and even configure it
+to open automatically in xonsh. Here is a sample settings.json:
+
+.. code-block::
+
+    {
+        "$schema": "https://aka.ms/terminal-profiles-schema",
+
+        "defaultProfile": "{61c54bbd-c2c6-5271-96e7-009a87ff44bf}",
+
+        // To learn more about global settings, visit https://aka.ms/terminal-global-settings
+        // To learn more about profiles, visit https://aka.ms/terminal-profile-settings
+        "profiles":
+        {
+            "defaults":
+            {
+                // Put settings here that you want to apply to all profiles.
+            },
+            "list":
+            [
+                {
+                    // Guid from https://guidgen.com
+                    "guid": "{02639f1c-9437-4b34-a383-2df49b5ed5c5}",
+                    "name": "Xonsh",
+                    "commandline": "c:\\users\\bobhy\\src\\xonsh\\.venv\\scripts\\xonsh.exe",
+                    "hidden": false
+                },
+                {
+                    // Make changes here to the powershell.exe profile.
+                    "guid": "{61c54bbd-c2c6-5271-96e7-009a87ff44bf}",
+                    "name": "Windows PowerShell",
+                    "commandline": "powershell.exe",
+                    "hidden": false
+                }
+            ]
+        },
+
+        . . .
+
+
+How to add xonsh into the context menu for Windows?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In Windows, there's a context menu support for opening a folder in a shell, such as `Open PowerShell window here`. You might want to have a similar menu that opens a folder in xonsh:
+
+.. image:: _static/context_menu_windows.png
+   :width: 80 %
+   :alt: context_menu_windows
+   :align: center
+
+Usually it involves modifying registry to get it, but `a contributed script <https://gist.github.com/nedsociety/91041691d0ac18bc8fd9e937ad21b055>`_ can be used for automating chores for you.
+
+.. code-block:: xonshcon
+
+    # Open xonsh and copy-paste the following line:
+    @ exec(__import__('urllib.request').request.urlopen(r'https://gist.githubusercontent.com/nedsociety/91041691d0ac18bc8fd9e937ad21b055/raw/xonsh_context_menu.py').read());xonsh_register_right_click()
+
+    # To remove the menu, use following line instead:
+    @ exec(__import__('urllib.request').request.urlopen(r'https://gist.githubusercontent.com/nedsociety/91041691d0ac18bc8fd9e937ad21b055/raw/xonsh_context_menu.py').read());xonsh_unregister_right_click()
+
+
+Nice colors
+^^^^^^^^^^^
+
+The dark red and blue colors are completely unreadable in `cmd.exe`.
+
+.. image:: _static/intensify-colors-on-win-false.png
+   :width: 396 px
+   :alt: intensify-colors-win-false
+   :align: center
+
+Xonsh has some tricks to fix colors. This is controlled by the
+:ref:`$INTENSIFY_COLORS_ON_WIN <intensify_colors_on_win>`
+environment variable which is ``True`` by default.
+
+
+:ref:`$INTENSIFY_COLORS_ON_WIN <intensify_colors_on_win>` has the following effect:b
+
+On Windows 10:
+    Windows 10 supports true color in the terminal, so on Windows 10 Xonsh will use
+    a style with hard coded colors instead of the terminal colors.
+
+On older Windows:
+    Xonsh replaces some of the unreadable dark colors with more readable
+    alternatives (e.g. blue becomes cyan).
+
+
+Avoid locking the working directory
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Python (like other processes on Windows) locks the current working directory so
+it can't be deleted or renamed. ``cmd.exe`` has this behaviour as well, but it
+is quite annoying for a shell.
+
+The :ref:`free_cwd <free_cwd>` xontrib (add-on) for xonsh solves some of this problem. It
+works by hooking the prompt to reset the current working directory to the root
+drive folder whenever the shell is idle. It only works with the prompt-toolkit
+back-end. To enable that behaviour run the following:
+
+.. code-block:: xonshcon
+
+   @ xpip install xontrib-free-cwd
+
+Add this line to your ``~/.xonshrc`` file to have it always enabled.
+
+.. code-block:: xonshcon
+
+   @ xontrib load free_cwd
+
+
+Name space shadowing
+^^^^^^^^^^^^^^^^^^^^
+
+Due to ambiguity with the Python ``dir`` builtin, to list the current directory
+you must explicitly request the ``dir .``, create an alias
+or set `$XONSH_BUILTINS_TO_CMD <envvars.html#XONSH_BUILTINS_TO_CMD>`_.
+
+Many people create a ``d`` alias for the ``dir`` command to save
+typing and avoid the ambiguity altogether:
+
+.. code-block:: xonshcon
+
+   @ aliases['d'] = ['cmd', '/c', 'dir']
+
+You can add aliases to your `xonshrc <xonshrc.rst>`_ to have it always
+available when xonsh starts.
+
+Alternatively, the experimental ``$XONSH_BUILTINS_TO_CMD`` setting makes bare
+Python builtin names (``dir``, ``zip``, ``type``, etc.) run as subprocess
+commands when a matching alias or executable exists:
+
+.. code-block:: xonshcon
+
+    @ $XONSH_BUILTINS_TO_CMD = True
+    @ dir
+     Volume in drive C is Windows
+     ...
+
+
+Working Directory on PATH
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Windows users, particularly those coming from the ``cmd.exe`` shell,
+might be accustomed to being able to run executables from the current
+directory by simply typing the program name.
+
+Since version 0.16, ``xonsh`` follows the more secure and modern
+approach of not including the current working directory in the search
+path, similar to Powershell and popular Unix shells. To invoke commands
+in the current directory on any platform, include the current directory
+explicitly:
+
+.. code-block:: xonshcon
+
+    @ ./my-program
+
+Although not recommended, to restore the behavior found in the
+``cmd.exe`` shell, simply append ``.`` to the ``PATH``:
+
+.. code-block:: xonshcon
+
+    @ $PATH.append('.')
+
+Add that to ``~/.xonshrc`` to enable that as the default behavior.
+
+
+Updating xonsh
+^^^^^^^^^^^^^^
+
+On Windows the running ``xonsh.exe`` is locked by the OS, so pip cannot
+replace it from inside xonsh itself. Use
+:ref:`xcontext <aliases-xcontext>` to find the interpreter path, exit
+the shell, then run pip from another terminal (``cmd``, PowerShell, or
+Windows Terminal):
+
+.. code-block:: xonshcon
+
+   @ xcontext            # note the "xpython" path
+   @ exit                # release the lock on xonsh.exe
+
+.. code-block:: console
+
+   > <xpython> -m pip install --upgrade xonsh
+
+If you installed xonsh via the
+`WinGet installer <https://github.com/xonsh/xonsh-winget/releases>`_,
+download the latest installer and run it — it will upgrade in place.
+
+See also :ref:`Updating xonsh <updating_xonsh>` in the installation guide
+for more details.
+
+
+Commands Cache
+^^^^^^^^^^^^^^
+
+Windows filesystem access can be slow, especially on network drives or
+directories like ``C:\Windows\System32`` with thousands of executables. Xonsh
+scans ``$PATH`` directories to resolve commands, which may cause noticeable
+lag.
+
+The ``$XONSH_COMMANDS_CACHE_READ_DIR_ONCE`` variable tells xonsh to cache
+directory listings on first access and never re-read them within the session.
+On Windows it defaults to ``C:\Windows`` (via ``%WINDIR%``), meaning
+``C:\Windows\System32`` and all other subdirectories are scanned once and
+cached for the rest of the session. You can extend it with additional slow
+directories:
+
+.. code-block:: xonshcon
+
+    @ $XONSH_COMMANDS_CACHE_READ_DIR_ONCE += ['C:\\Program Files', 'C:\\Program Files (x86)']
+
+On WSL, xonsh auto-detects ``/mnt/*/Windows`` directories.
+
+To debug command resolution, enable:
+
+.. code-block:: xonshcon
+
+    @ $XONSH_COMMANDS_CACHE_TRACE = True
+
+
+Drive letter shortcut for path completion
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Windows paths are long. You can define a short environment variable for a
+drive root and use it with tab completion to navigate quickly:
+
+.. code-block:: xonsh
+
+    # Simple assignment
+    $C = 'c:\\'
+
+    # Or register with a description
+    @.env.register('C', type='str', default='c:\\', doc='Drive C root')
+
+Now ``cd $C\<Tab>`` expands ``$C`` and completes paths on the ``C:\`` drive —
+the same way ``cd ~/`` completes paths in the home directory.
+
+To register all drives present on the system at once:
+
+.. code-block:: xonsh
+
+    for letter in @.imp.string.ascii_uppercase:
+        root = f'{letter}:\\'
+        if @.imp.os.path.isdir(root):
+            @.env.register(letter, type='str', default=root,
+                           doc=f'Drive {letter} root')
+
+Add this to your `xonsh RC <xonshrc.rst>`_ to have drive shortcuts available
+in every session.
+
+
+Forward-slash paths (``$FORCE_POSIX_PATHS``)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Set ``$FORCE_POSIX_PATHS = True`` to make xonsh display and complete paths
+with forward slashes (``/``) instead of backslashes (``\``):
+
+.. code-block:: xonsh
+
+    $FORCE_POSIX_PATHS = True
+    cd ~/Documents
+    # prompt shows: C:/Users/me/Documents
+
+Most modern Windows applications accept forward-slash paths, but not all do
+(notably ``cmd.exe`` does not). In practice Git, Python, VS Code, and many
+other tools work fine with ``/``.
+
+
+.. _open_terminal_here:
+
+
+
+See Also
+-----------
+
+- `Bash to Xonsh <bash_to_xsh.html>`_
