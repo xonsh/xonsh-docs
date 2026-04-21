@@ -894,6 +894,15 @@
     <span class="n">toks</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="n">lparens</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="n">saw_macro</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="c1"># True while the current toks window is prefixed by a ``(`` that</span>
+    <span class="c1"># was skipped via BEG_TOK_SKIPS — i.e. a statement-wrapping paren</span>
+    <span class="c1"># that will be preserved in the output (via ``line[:beg]``) rather</span>
+    <span class="c1"># than folded into the subproc wrap.  When set, the final ``)`` at</span>
+    <span class="c1"># end-of-input balances that skipped paren and must be popped from</span>
+    <span class="c1"># ``toks`` so it ends up in ``line[end:]`` instead of the wrap.</span>
+    <span class="c1"># When unset, the final ``)`` balances an in-toks ``(`` (a function</span>
+    <span class="c1"># call or sub-expression) and must stay in the wrap.</span>
+    <span class="n">leading_paren_skipped</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">end_offset</span> <span class="o">=</span> <span class="mi">0</span>
     <span class="k">for</span> <span class="n">tok</span> <span class="ow">in</span> <span class="n">lexer</span><span class="p">:</span>
         <span class="n">pos</span> <span class="o">=</span> <span class="n">tok</span><span class="o">.</span><span class="n">lexpos</span>
@@ -912,15 +921,34 @@
                 <span class="n">lparens</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
             <span class="k">continue</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">toks</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="ow">in</span> <span class="n">BEG_TOK_SKIPS</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;LPAREN&quot;</span><span class="p">:</span>
+                <span class="n">leading_paren_skipped</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="k">continue</span>  <span class="c1"># handle indentation</span>
         <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">toks</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">toks</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">type</span> <span class="ow">in</span> <span class="n">END_TOK_TYPES</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">_is_not_lparen_and_rparen</span><span class="p">(</span><span class="n">lparens</span><span class="p">,</span> <span class="n">toks</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]):</span>
                 <span class="n">lparens</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>  <span class="c1"># don&#39;t continue or break</span>
             <span class="k">elif</span> <span class="n">pos</span> <span class="o">&lt;</span> <span class="n">maxcol</span> <span class="ow">and</span> <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;NEWLINE&quot;</span><span class="p">,</span> <span class="s2">&quot;DEDENT&quot;</span><span class="p">,</span> <span class="s2">&quot;WS&quot;</span><span class="p">):</span>
-                <span class="k">if</span> <span class="ow">not</span> <span class="n">greedy</span><span class="p">:</span>
+                <span class="c1"># The ``)`` at ``toks[-1]`` is treated as a statement</span>
+                <span class="c1"># terminator (RPAREN is in END_TOK_TYPES) and would trigger</span>
+                <span class="c1"># a restart of token collection.  However if that ``)``</span>
+                <span class="c1"># balances an LPAREN that was actually kept in ``toks`` —</span>
+                <span class="c1"># i.e. a function-call or sub-expression paren, not an</span>
+                <span class="c1"># outer statement-wrapping paren that BEG_TOK_SKIPS skipped</span>
+                <span class="c1"># on the way in — the ``)`` is part of the expression,</span>
+                <span class="c1"># not a terminator.  Without this guard ``q()[0]`` would</span>
+                <span class="c1"># be re-tokenized as just ``![[0]]``, silently losing the</span>
+                <span class="c1"># function call (GH-6354).</span>
+                <span class="k">if</span> <span class="n">toks</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;RPAREN&quot;</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span>
+                    <span class="n">t</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;LPAREN&quot;</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">toks</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+                <span class="p">):</span>
+                    <span class="k">pass</span>
+                <span class="k">elif</span> <span class="ow">not</span> <span class="n">greedy</span><span class="p">:</span>
                     <span class="n">toks</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
                     <span class="n">lparens</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+                    <span class="n">leading_paren_skipped</span> <span class="o">=</span> <span class="kc">False</span>
                 <span class="k">if</span> <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="ow">in</span> <span class="n">BEG_TOK_SKIPS</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;LPAREN&quot;</span><span class="p">:</span>
+                        <span class="n">leading_paren_skipped</span> <span class="o">=</span> <span class="kc">True</span>
                     <span class="k">continue</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">break</span>
@@ -952,6 +980,12 @@
             <span class="k">if</span> <span class="n">_is_not_lparen_and_rparen</span><span class="p">(</span><span class="n">lparens</span><span class="p">,</span> <span class="n">toks</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]):</span>
                 <span class="k">pass</span>
             <span class="k">elif</span> <span class="n">greedy</span> <span class="ow">and</span> <span class="n">toks</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;RPAREN&quot;</span><span class="p">:</span>
+                <span class="k">pass</span>
+            <span class="k">elif</span> <span class="n">toks</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;RPAREN&quot;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">leading_paren_skipped</span><span class="p">:</span>
+                <span class="c1"># The trailing ``)`` balances an in-toks LPAREN (a</span>
+                <span class="c1"># function call or sub-expression such as ``q()[0]``&#39;s</span>
+                <span class="c1"># final ``]`` case where the line ends with ``)``).</span>
+                <span class="c1"># Keep it in the wrap — see GH-6354.</span>
                 <span class="k">pass</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">toks</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
