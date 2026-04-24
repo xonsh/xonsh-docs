@@ -378,6 +378,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../../lib/_autosummary/helpers/xonsh.events.html">xonsh.events</a></li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../../lib/_autosummary/helpers/xonsh.lib.html">xonsh.lib</a><input aria-label="Toggle navigation of xonsh.lib" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../lib/_autosummary/helpers/xonsh.lib.collections.html">xonsh.lib.collections</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../lib/_autosummary/helpers/xonsh.lib.completion_quoting.html">xonsh.lib.completion_quoting</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../lib/_autosummary/helpers/xonsh.lib.inspectors.html">xonsh.lib.inspectors</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../lib/_autosummary/helpers/xonsh.lib.itertools.html">xonsh.lib.itertools</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../lib/_autosummary/helpers/xonsh.lib.jsonutils.html">xonsh.lib.jsonutils</a></li>
@@ -486,12 +487,11 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pathlib</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">platform</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">shlex</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">tp</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.lib.completion_quoting</span><span class="w"> </span><span class="kn">import</span> <span class="n">name_needs_quotes</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.lib.string</span><span class="w"> </span><span class="kn">import</span> <span class="n">commonprefix</span>
 
 <span class="n">__version__</span> <span class="o">=</span> <span class="s2">&quot;0.2.8&quot;</span>
@@ -592,21 +592,6 @@
         <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">sep</span>
 
 
-<span class="n">_BASH_PATTERN_NEED_QUOTES</span><span class="p">:</span> <span class="n">tp</span><span class="o">.</span><span class="n">Pattern</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">_bash_pattern_need_quotes</span><span class="p">():</span>
-    <span class="k">global</span> <span class="n">_BASH_PATTERN_NEED_QUOTES</span>
-    <span class="k">if</span> <span class="n">_BASH_PATTERN_NEED_QUOTES</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">_BASH_PATTERN_NEED_QUOTES</span>
-    <span class="n">pattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;\s`\$\{\}\,\*\(\)&quot;</span><span class="se">\&#39;</span><span class="s1">\?&amp;&#39;</span>
-    <span class="k">if</span> <span class="n">platform</span><span class="o">.</span><span class="n">system</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;Windows&quot;</span><span class="p">:</span>
-        <span class="n">pattern</span> <span class="o">+=</span> <span class="s2">&quot;%&quot;</span>
-    <span class="n">pattern</span> <span class="o">=</span> <span class="s2">&quot;[&quot;</span> <span class="o">+</span> <span class="n">pattern</span> <span class="o">+</span> <span class="s2">&quot;]&quot;</span> <span class="o">+</span> <span class="sa">r</span><span class="s2">&quot;|\band\b|\bor\b&quot;</span>
-    <span class="n">_BASH_PATTERN_NEED_QUOTES</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">pattern</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">_BASH_PATTERN_NEED_QUOTES</span>
-
-
 <span class="k">def</span><span class="w"> </span><span class="nf">_bash_expand_path</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Takes a string path and expands ~ to home and environment vars.&quot;&quot;&quot;</span>
     <span class="c1"># expand ~ according to Bash unquoted rules &quot;Each variable assignment is</span>
@@ -639,19 +624,22 @@
     <span class="n">slash</span> <span class="o">=</span> <span class="n">_bash_get_sep</span><span class="p">()</span>
     <span class="n">orig_start</span> <span class="o">=</span> <span class="n">start</span>
     <span class="n">orig_end</span> <span class="o">=</span> <span class="n">end</span>
-    <span class="c1"># quote on all or none, to make readline completes to max prefix</span>
-    <span class="n">need_quotes</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span>
-        <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">_bash_pattern_need_quotes</span><span class="p">(),</span> <span class="n">x</span><span class="p">)</span>
-        <span class="ow">or</span> <span class="p">(</span><span class="n">backslash</span> <span class="ow">in</span> <span class="n">x</span> <span class="ow">and</span> <span class="n">slash</span> <span class="o">!=</span> <span class="n">backslash</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">paths</span>
-    <span class="p">)</span>
+    <span class="c1"># Decide per-path whether to quote: a plain ``file`` should stay</span>
+    <span class="c1"># unquoted even when a sibling ``fi$le`` needs ``&#39;fi$le&#39;``. The</span>
+    <span class="c1"># prompt-toolkit menu renders mixed quote/no-quote entries fine.</span>
+    <span class="n">need_quotes</span> <span class="o">=</span> <span class="kc">False</span>
 
     <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">:</span>
+        <span class="n">orig_s</span> <span class="o">=</span> <span class="n">s</span>
         <span class="n">start</span> <span class="o">=</span> <span class="n">orig_start</span>
         <span class="n">end</span> <span class="o">=</span> <span class="n">orig_end</span>
-        <span class="k">if</span> <span class="n">start</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span> <span class="ow">and</span> <span class="n">need_quotes</span><span class="p">:</span>
+        <span class="n">path_needs_quotes</span> <span class="o">=</span> <span class="n">name_needs_quotes</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">sep</span><span class="o">=</span><span class="n">slash</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">path_needs_quotes</span><span class="p">:</span>
+            <span class="n">need_quotes</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="n">start</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span> <span class="ow">and</span> <span class="n">path_needs_quotes</span><span class="p">:</span>
             <span class="n">start</span> <span class="o">=</span> <span class="n">end</span> <span class="o">=</span> <span class="n">_bash_quote_to_use</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">_bash_expand_path</span><span class="p">(</span><span class="n">s</span><span class="p">)):</span>
+        <span class="n">is_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">_bash_expand_path</span><span class="p">(</span><span class="n">s</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">is_dir</span><span class="p">:</span>
             <span class="n">_tail</span> <span class="o">=</span> <span class="n">slash</span>
         <span class="k">elif</span> <span class="n">end</span> <span class="o">==</span> <span class="s2">&quot;&quot;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">s</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="p">):</span>
             <span class="n">_tail</span> <span class="o">=</span> <span class="n">space</span>
@@ -667,7 +655,14 @@
                 <span class="n">s</span> <span class="o">+=</span> <span class="n">backslash</span>
         <span class="k">if</span> <span class="n">end</span> <span class="ow">in</span> <span class="n">s</span><span class="p">:</span>
             <span class="n">s</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">end</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\\</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">end</span><span class="p">))</span>
-        <span class="n">out</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">start</span> <span class="o">+</span> <span class="n">s</span> <span class="o">+</span> <span class="n">end</span><span class="p">)</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">start</span> <span class="o">+</span> <span class="n">s</span> <span class="o">+</span> <span class="n">end</span>
+        <span class="c1"># Append a trailing space AFTER the closing quote for file</span>
+        <span class="c1"># completions so ``ls &#39;f&lt;Tab&gt;`` advances to the next arg just</span>
+        <span class="c1"># like ``ls f&lt;Tab&gt;``. Skip option-value args (``--opt=``) so the</span>
+        <span class="c1"># user can continue typing the value inline.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">is_dir</span> <span class="ow">and</span> <span class="n">end</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">orig_s</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="p">):</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="n">s</span> <span class="o">+</span> <span class="n">space</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">need_quotes</span>
 
 

@@ -3,11 +3,11 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="../../../genindex.html"><link rel="search" title="Search" href="../../../search.html">
-        <link rel="canonical" href="https://xon.sh/_modules/xonsh/webconfig/main.html">
+        <link rel="canonical" href="https://xon.sh/_modules/xonsh/lib/completion_quoting.html">
         <link rel="prefetch" href="../../../_static/xonsh_terminal_icon_256.png" as="image">
 
     <link rel="shortcut icon" href="../../../_static/magic_conch.ico"><!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
-        <title>xonsh.webconfig.main - xonsh 0.23.1 documentation</title>
+        <title>xonsh.lib.completion_quoting - xonsh 0.23.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css?v=4ae1632d" />
@@ -44,9 +44,9 @@
     "@graph": [
       {
         "@type": "TechArticle",
-        "@id": "https://xon.sh/_modules/xonsh/webconfig/main.html#techarticle",
-        "headline": "xonsh.webconfig.main",
-        "url": "https://xon.sh/_modules/xonsh/webconfig/main.html",
+        "@id": "https://xon.sh/_modules/xonsh/lib/completion_quoting.html#techarticle",
+        "headline": "xonsh.lib.completion_quoting",
+        "url": "https://xon.sh/_modules/xonsh/lib/completion_quoting.html",
         "isPartOf": {"@id": "https://xon.sh/#website"},
         "about": {"@id": "https://xon.sh/#software"},
         "inLanguage": "en",
@@ -57,7 +57,7 @@
         "@type": "BreadcrumbList",
         "itemListElement": [
           {"@type": "ListItem", "position": 1, "name": "Home", "item": "https://xon.sh/"},{"@type": "ListItem", "position": 2, "name": "Contents", "item": "https://xon.sh/contents.html"}
-          ,{"@type": "ListItem", "position": 3, "name": "xonsh.webconfig.main", "item": "https://xon.sh/_modules/xonsh/webconfig/main.html"}
+          ,{"@type": "ListItem", "position": 3, "name": "xonsh.lib.completion_quoting", "item": "https://xon.sh/_modules/xonsh/lib/completion_quoting.html"}
         ]
       }
     ]
@@ -476,202 +476,67 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <h1>Source code for xonsh.webconfig.main</h1><div class="highlight"><pre>
-<span></span><span class="ch">#!/usr/bin/env python3</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">contextlib</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+          <h1>Source code for xonsh.lib.completion_quoting</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Shared helper for deciding whether a completion candidate needs</span>
+<span class="sd">shell-quoting in xonsh.</span>
+
+<span class="sd">Used by both the built-in path completer</span>
+<span class="sd">(:mod:`xonsh.completers.path`) and the bash-completion bridge</span>
+<span class="sd">(:mod:`xonsh.completers.bash_completion`), which historically carried</span>
+<span class="sd">near-identical copies of this regex that drifted over time.</span>
+
+<span class="sd">Pure-Python, no side effects on import — safe for standalone use, as</span>
+<span class="sd">:mod:`xonsh.completers.bash_completion` requires.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">socketserver</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">string</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">tp</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">email.message</span><span class="w"> </span><span class="kn">import</span> <span class="n">EmailMessage</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">http</span><span class="w"> </span><span class="kn">import</span> <span class="n">HTTPStatus</span><span class="p">,</span> <span class="n">server</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">pprint</span><span class="w"> </span><span class="kn">import</span> <span class="n">pprint</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">urllib</span><span class="w"> </span><span class="kn">import</span> <span class="n">parse</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">platform</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.built_ins</span><span class="w"> </span><span class="kn">import</span> <span class="n">XSH</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.webconfig</span><span class="w"> </span><span class="kn">import</span> <span class="n">tags</span> <span class="k">as</span> <span class="n">t</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.webconfig.file_writes</span><span class="w"> </span><span class="kn">import</span> <span class="n">insert_into_xonshrc</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.webconfig.routes</span><span class="w"> </span><span class="kn">import</span> <span class="n">Routes</span>
-
-<span class="n">RENDERERS</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">tp</span><span class="o">.</span><span class="n">Callable</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-
-
-<div class="viewcode-block" id="XonshConfigHTTPRequestHandler">
-<a class="viewcode-back" href="../../../lib/_autosummary/helpers/xonsh.webconfig.main.html#xonsh.webconfig.main.XonshConfigHTTPRequestHandler">[docs]</a>
-<span class="k">class</span><span class="w"> </span><span class="nc">XonshConfigHTTPRequestHandler</span><span class="p">(</span><span class="n">server</span><span class="o">.</span><span class="n">SimpleHTTPRequestHandler</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-        <span class="n">kwargs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;directory&quot;</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_write_headers</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">headers</span><span class="p">:</span> <span class="s2">&quot;tuple[str, str]&quot;</span><span class="p">):</span>
-        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">headers</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">send_header</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">val</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">end_headers</span><span class="p">()</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_write_data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="s2">&quot;bytes|dict|str&quot;</span><span class="p">):</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">):</span>
-            <span class="n">content_type</span> <span class="o">=</span> <span class="s2">&quot;text/html&quot;</span>
-        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-            <span class="n">content_type</span> <span class="o">=</span> <span class="s2">&quot;application/json&quot;</span>
-            <span class="n">data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">()</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">content_type</span> <span class="o">=</span> <span class="s2">&quot;text/html&quot;</span>
-            <span class="n">data</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="n">encode</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_write_headers</span><span class="p">(</span>
-            <span class="p">(</span><span class="s2">&quot;Content-type&quot;</span><span class="p">,</span> <span class="n">content_type</span><span class="p">),</span>
-            <span class="p">(</span><span class="s2">&quot;Content-Length&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">))),</span>
-        <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">wfile</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">wfile</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_send</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">data</span><span class="p">:</span> <span class="s2">&quot;bytes|dict|str|None&quot;</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">status</span><span class="p">:</span> <span class="s2">&quot;None|int&quot;</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">redirect</span><span class="p">:</span> <span class="s2">&quot;str|None&quot;</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">):</span>
-        <span class="n">status</span> <span class="o">=</span> <span class="n">status</span> <span class="ow">or</span> <span class="p">(</span><span class="n">HTTPStatus</span><span class="o">.</span><span class="n">FOUND</span> <span class="k">if</span> <span class="n">redirect</span> <span class="k">else</span> <span class="n">HTTPStatus</span><span class="o">.</span><span class="n">OK</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">send_response</span><span class="p">(</span><span class="n">status</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">data</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_write_data</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="n">redirect</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_write_headers</span><span class="p">(</span>
-                <span class="p">(</span><span class="s2">&quot;Location&quot;</span><span class="p">,</span> <span class="n">redirect</span><span class="p">),</span>
-            <span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_read</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="n">content_len</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">headers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;content-length&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">rfile</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">content_len</span><span class="p">)</span>
-
-<div class="viewcode-block" id="XonshConfigHTTPRequestHandler.render_get">
-<a class="viewcode-back" href="../../../lib/_autosummary/helpers/xonsh.webconfig.main.html#xonsh.webconfig.main.XonshConfigHTTPRequestHandler.render_get">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">render_get</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">route</span><span class="p">):</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">webconfig</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span>
-        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
-            <span class="c1"># in case of thread missing __file__ definition</span>
-            <span class="n">webconfig</span> <span class="o">=</span> <span class="n">Path</span><span class="o">.</span><span class="n">cwd</span><span class="p">()</span>
-        <span class="n">path</span> <span class="o">=</span> <span class="n">webconfig</span> <span class="o">/</span> <span class="s2">&quot;index.html&quot;</span>
-        <span class="n">tmpl</span> <span class="o">=</span> <span class="n">string</span><span class="o">.</span><span class="n">Template</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">read_text</span><span class="p">())</span>
-        <span class="n">navlinks</span> <span class="o">=</span> <span class="n">t</span><span class="o">.</span><span class="n">to_str</span><span class="p">(</span><span class="n">route</span><span class="o">.</span><span class="n">get_nav_links</span><span class="p">())</span>
-        <span class="n">msgs</span> <span class="o">=</span> <span class="n">t</span><span class="o">.</span><span class="n">to_str</span><span class="p">(</span><span class="n">route</span><span class="o">.</span><span class="n">get_err_msgs</span><span class="p">())</span>
-        <span class="n">body</span> <span class="o">=</span> <span class="n">t</span><span class="o">.</span><span class="n">to_str</span><span class="p">(</span><span class="n">route</span><span class="o">.</span><span class="n">get</span><span class="p">())</span>  <span class="c1"># type: ignore</span>
-        <span class="n">data</span> <span class="o">=</span> <span class="n">tmpl</span><span class="o">.</span><span class="n">substitute</span><span class="p">(</span><span class="n">navlinks</span><span class="o">=</span><span class="n">navlinks</span><span class="p">,</span> <span class="n">body</span><span class="o">=</span><span class="n">msgs</span> <span class="o">+</span> <span class="n">body</span><span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_send</span><span class="p">(</span><span class="n">data</span><span class="p">)</span></div>
+<span class="c1"># Characters the xonsh parser would treat specially in a subprocess</span>
+<span class="c1"># argument, verified by feeding ``ls fi&lt;ch&gt;le`` through</span>
+<span class="c1"># ``CompletionContextParser``:</span>
+<span class="c1">#</span>
+<span class="c1">#   whitespace, ``|`` ``;`` ``&lt;`` ``&gt;`` ``&amp;``      — split the token</span>
+<span class="c1">#   ``(`` ``)`` ``[`` ``]`` ``{`` ``}`` ``,``      — grouping / glob syntax</span>
+<span class="c1">#   ``*`` ``?``                                     — glob wildcards</span>
+<span class="c1">#   `` ` `` ``$``                                   — command/var substitution</span>
+<span class="c1">#   ``&quot;`` ``&#39;``                                     — string boundaries</span>
+<span class="c1">#   ``#``                                           — comment</span>
+<span class="c1">#   ``%`` (Windows only)                            — env var reference</span>
+<span class="c1">#</span>
+<span class="c1"># The word boundaries catch ``and``/``or`` appearing as whole tokens,</span>
+<span class="c1"># since those are xonsh keywords.</span>
+<span class="n">_PATTERN</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;[\s`$\{\}\[\]\,\*\(\)&quot;&#39;\?&amp;#|;&lt;&gt;&quot;&quot;&quot;</span>
+    <span class="o">+</span> <span class="p">(</span><span class="s2">&quot;%&quot;</span> <span class="k">if</span> <span class="n">platform</span><span class="o">.</span><span class="n">system</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;Windows&quot;</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+    <span class="o">+</span> <span class="sa">r</span><span class="s2">&quot;]|\band\b|\bor\b&quot;</span>
+<span class="p">)</span>
 
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_get_route</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-        <span class="n">url</span> <span class="o">=</span> <span class="n">parse</span><span class="o">.</span><span class="n">urlparse</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
-        <span class="n">route_cls</span> <span class="o">=</span> <span class="n">Routes</span><span class="o">.</span><span class="n">registry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">route_cls</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">route_cls</span><span class="p">,</span> <span class="n">method</span><span class="p">):</span>
-            <span class="n">params</span> <span class="o">=</span> <span class="n">parse</span><span class="o">.</span><span class="n">parse_qs</span><span class="p">(</span><span class="n">url</span><span class="o">.</span><span class="n">query</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">route_cls</span><span class="p">(</span><span class="n">url</span><span class="o">=</span><span class="n">url</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">,</span> <span class="n">xsh</span><span class="o">=</span><span class="n">XSH</span><span class="p">)</span>
+<div class="viewcode-block" id="name_needs_quotes">
+<a class="viewcode-back" href="../../../lib/_autosummary/helpers/xonsh.lib.completion_quoting.html#xonsh.lib.completion_quoting.name_needs_quotes">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">name_needs_quotes</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">sep</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return True if *name* would be mangled by the xonsh parser and</span>
+<span class="sd">    therefore needs to be wrapped in quotes when emitted as a completion.</span>
 
-<div class="viewcode-block" id="XonshConfigHTTPRequestHandler.do_GET">
-<a class="viewcode-back" href="../../../lib/_autosummary/helpers/xonsh.webconfig.main.html#xonsh.webconfig.main.XonshConfigHTTPRequestHandler.do_GET">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">do_GET</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">route</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_route</span><span class="p">(</span><span class="s2">&quot;get&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">route</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">render_get</span><span class="p">(</span><span class="n">route</span><span class="p">)</span>
-        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">do_GET</span><span class="p">()</span></div>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    name :</span>
+<span class="sd">        The candidate completion string (a path, an executable name, …).</span>
+<span class="sd">    sep :</span>
+<span class="sd">        The path separator the caller treats as safe (``os.sep`` on</span>
+<span class="sd">        POSIX, ``os.altsep`` in forced-POSIX mode on Windows). When a</span>
+<span class="sd">        backslash appears in *name* but *sep* is not backslash, the</span>
+<span class="sd">        backslash is a shell metacharacter and forces quoting. Defaults</span>
+<span class="sd">        to :data:`os.sep`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">sep</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">sep</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">sep</span>
+    <span class="k">if</span> <span class="n">_PATTERN</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">return</span> <span class="s2">&quot;</span><span class="se">\\</span><span class="s2">&quot;</span> <span class="ow">in</span> <span class="n">name</span> <span class="ow">and</span> <span class="n">sep</span> <span class="o">!=</span> <span class="s2">&quot;</span><span class="se">\\</span><span class="s2">&quot;</span></div>
 
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_read_form</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="n">msg</span> <span class="o">=</span> <span class="n">EmailMessage</span><span class="p">()</span>
-        <span class="n">msg</span><span class="p">[</span><span class="s2">&quot;Content-Type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">headers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;content-type&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">msg</span><span class="o">.</span><span class="n">get_content_type</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;application/x-www-form-urlencoded&quot;</span><span class="p">:</span>
-            <span class="n">data</span> <span class="o">=</span> <span class="n">parse</span><span class="o">.</span><span class="n">parse_qs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_read</span><span class="p">(),</span> <span class="n">keep_blank_values</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">values</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-                <span class="n">value</span> <span class="o">=</span> <span class="kc">None</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">):</span>
-                    <span class="n">name</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;utf-8&quot;</span><span class="p">)</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="n">values</span><span class="p">:</span>
-                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">values</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="nb">bytes</span><span class="p">):</span>
-                        <span class="n">value</span> <span class="o">=</span> <span class="n">values</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;utf-8&quot;</span><span class="p">)</span>
-                <span class="k">yield</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span>
-
-<div class="viewcode-block" id="XonshConfigHTTPRequestHandler.do_POST">
-<a class="viewcode-back" href="../../../lib/_autosummary/helpers/xonsh.webconfig.main.html#xonsh.webconfig.main.XonshConfigHTTPRequestHandler.do_POST">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">do_POST</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Reads post request body&quot;&quot;&quot;</span>
-        <span class="n">route</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_route</span><span class="p">(</span><span class="s2">&quot;post&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">route</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="c1"># redirect after form submission</span>
-            <span class="n">data</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_read_form</span><span class="p">())</span>
-
-            <span class="n">new_route</span> <span class="o">=</span> <span class="n">route</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="ow">or</span> <span class="n">route</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_send</span><span class="p">(</span><span class="n">redirect</span><span class="o">=</span><span class="n">new_route</span><span class="o">.</span><span class="n">path</span><span class="p">)</span>
-        <span class="n">post_body</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read</span><span class="p">()</span>
-        <span class="n">config</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">post_body</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Web Config Values:&quot;</span><span class="p">)</span>
-        <span class="n">pprint</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
-        <span class="n">fname</span> <span class="o">=</span> <span class="n">insert_into_xonshrc</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Wrote out to &quot;</span> <span class="o">+</span> <span class="n">fname</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_send</span><span class="p">(</span><span class="sa">b</span><span class="s2">&quot;received post request:&lt;br&gt;&quot;</span> <span class="o">+</span> <span class="n">post_body</span><span class="p">)</span></div>
-</div>
-
-
-
-<div class="viewcode-block" id="bind_server_to">
-<a class="viewcode-back" href="../../../lib/_autosummary/helpers/xonsh.webconfig.main.html#xonsh.webconfig.main.bind_server_to">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">bind_server_to</span><span class="p">(</span>
-    <span class="n">port</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">8421</span><span class="p">,</span> <span class="n">handler_cls</span><span class="o">=</span><span class="n">XonshConfigHTTPRequestHandler</span><span class="p">,</span> <span class="n">browser</span><span class="o">=</span><span class="kc">False</span>
-<span class="p">):</span>
-    <span class="bp">cls</span> <span class="o">=</span> <span class="n">socketserver</span><span class="o">.</span><span class="n">TCPServer</span>
-    <span class="c1"># cls = socketserver.ThreadingTCPServer  # required ctrl+c twice ?</span>
-
-    <span class="bp">cls</span><span class="o">.</span><span class="n">allow_reuse_address</span> <span class="o">=</span> <span class="kc">True</span>
-
-    <span class="k">while</span> <span class="n">port</span> <span class="o">&lt;=</span> <span class="mi">9310</span><span class="p">:</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="bp">cls</span><span class="o">.</span><span class="n">allow_reuse_address</span> <span class="o">=</span> <span class="kc">True</span>
-
-            <span class="n">httpd</span> <span class="o">=</span> <span class="bp">cls</span><span class="p">((</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">port</span><span class="p">),</span> <span class="n">handler_cls</span><span class="p">)</span>
-            <span class="n">url</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;http://localhost:</span><span class="si">{</span><span class="n">port</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Web config started at &#39;</span><span class="si">{</span><span class="n">url</span><span class="si">}</span><span class="s2">&#39;. Hit Ctrl+C to stop.&quot;</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">browser</span><span class="p">:</span>
-                <span class="kn">import</span><span class="w"> </span><span class="nn">webbrowser</span>
-
-                <span class="n">webbrowser</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">httpd</span>
-        <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
-            <span class="nb">type</span><span class="p">,</span> <span class="n">value</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">exc_info</span><span class="p">()[:</span><span class="mi">2</span><span class="p">]</span>
-            <span class="k">if</span> <span class="s2">&quot;Address already in use&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
-                <span class="k">raise</span>
-        <span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
-            <span class="k">break</span>
-        <span class="n">port</span> <span class="o">+=</span> <span class="mi">1</span></div>
-
-
-
-<div class="viewcode-block" id="serve">
-<a class="viewcode-back" href="../../../lib/_autosummary/helpers/xonsh.webconfig.main.html#xonsh.webconfig.main.serve">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">serve</span><span class="p">(</span><span class="n">browser</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
-    <span class="n">httpd</span> <span class="o">=</span> <span class="n">bind_server_to</span><span class="p">(</span><span class="n">browser</span><span class="o">=</span><span class="n">browser</span><span class="p">)</span>
-
-    <span class="k">with</span> <span class="n">contextlib</span><span class="o">.</span><span class="n">suppress</span><span class="p">(</span><span class="ne">KeyboardInterrupt</span><span class="p">):</span>
-        <span class="k">with</span> <span class="n">httpd</span><span class="p">:</span>
-            <span class="n">httpd</span><span class="o">.</span><span class="n">serve_forever</span><span class="p">()</span></div>
-
-
-
-<div class="viewcode-block" id="main">
-<a class="viewcode-back" href="../../../lib/_autosummary/helpers/xonsh.webconfig.main.html#xonsh.webconfig.main.main">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">browser</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;standalone entry point for webconfig.&quot;&quot;&quot;</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.main</span><span class="w"> </span><span class="kn">import</span> <span class="n">setup</span>
-
-    <span class="n">setup</span><span class="p">()</span>
-    <span class="n">serve</span><span class="p">(</span><span class="n">browser</span><span class="p">)</span></div>
-
-
-
-<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
-    <span class="c1"># watchexec -r -e py -- python -m xonsh.webconfig --no-browser</span>
-    <span class="n">main</span><span class="p">()</span>
 </pre></div>
         </article>
       </div>
