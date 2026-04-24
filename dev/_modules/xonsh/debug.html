@@ -3,11 +3,11 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html">
-        <link rel="canonical" href="https://xon.sh/_modules/xompletions/rmdir.html">
+        <link rel="canonical" href="https://xon.sh/_modules/xonsh/debug.html">
         <link rel="prefetch" href="../../_static/xonsh_terminal_icon_256.png" as="image">
 
     <link rel="shortcut icon" href="../../_static/magic_conch.ico"><!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
-        <title>xompletions.rmdir - xonsh 0.23.1 documentation</title>
+        <title>xonsh.debug - xonsh 0.23.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
@@ -44,9 +44,9 @@
     "@graph": [
       {
         "@type": "TechArticle",
-        "@id": "https://xon.sh/_modules/xompletions/rmdir.html#techarticle",
-        "headline": "xompletions.rmdir",
-        "url": "https://xon.sh/_modules/xompletions/rmdir.html",
+        "@id": "https://xon.sh/_modules/xonsh/debug.html#techarticle",
+        "headline": "xonsh.debug",
+        "url": "https://xon.sh/_modules/xonsh/debug.html",
         "isPartOf": {"@id": "https://xon.sh/#website"},
         "about": {"@id": "https://xon.sh/#software"},
         "inLanguage": "en",
@@ -57,7 +57,7 @@
         "@type": "BreadcrumbList",
         "itemListElement": [
           {"@type": "ListItem", "position": 1, "name": "Home", "item": "https://xon.sh/"},{"@type": "ListItem", "position": 2, "name": "Contents", "item": "https://xon.sh/contents.html"}
-          ,{"@type": "ListItem", "position": 3, "name": "xompletions.rmdir", "item": "https://xon.sh/_modules/xompletions/rmdir.html"}
+          ,{"@type": "ListItem", "position": 3, "name": "xonsh.debug", "item": "https://xon.sh/_modules/xonsh/debug.html"}
         ]
       }
     ]
@@ -475,25 +475,295 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <h1>Source code for xompletions.rmdir</h1><div class="highlight"><pre>
-<span></span><span class="sd">&quot;&quot;&quot;Completion for &quot;rmdir&quot;, includes only valid directory names.&quot;&quot;&quot;</span>
+          <h1>Source code for xonsh.debug</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Debug utilities for a running xonsh session.</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.completers.path</span><span class="w"> </span><span class="kn">import</span> <span class="n">complete_dir</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.parsers.completion_context</span><span class="w"> </span><span class="kn">import</span> <span class="n">CommandContext</span>
+<span class="sd">Provides :class:`XonshDebug`, which is attached to the session as</span>
+<span class="sd">``__xonsh__.debug`` and exposed to user code through the ``@.`` interface</span>
+<span class="sd">as ``@.debug``. The main entry point is :meth:`XonshDebug.breakpoint`.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">builtins</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">importlib</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">importlib.util</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">traceback</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+
+<span class="n">CANONIC_BREAKPOINT_ENGINES</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span>
+    <span class="p">{</span><span class="s2">&quot;auto&quot;</span><span class="p">,</span> <span class="s2">&quot;pdbp&quot;</span><span class="p">,</span> <span class="s2">&quot;ipdb&quot;</span><span class="p">,</span> <span class="s2">&quot;pdb&quot;</span><span class="p">,</span> <span class="s2">&quot;execer&quot;</span><span class="p">,</span> <span class="s2">&quot;eval&quot;</span><span class="p">}</span>
+<span class="p">)</span>
 
 
-<div class="viewcode-block" id="xonsh_complete">
-<a class="viewcode-back" href="../../lib/_autosummary/xompletions/xompletions.rmdir.html#xompletions.rmdir.xonsh_complete">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">xonsh_complete</span><span class="p">(</span><span class="n">ctx</span><span class="p">:</span> <span class="n">CommandContext</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Completion for &quot;rmdir&quot;, includes only valid directory names.</span>
+<div class="viewcode-block" id="XonshDebugQuit">
+<a class="viewcode-back" href="../../debug.html#xonsh.debug.XonshDebugQuit">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">XonshDebugQuit</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Raised from the ``eval`` REPL when the user types ``exit``/``quit``/``q``.</span>
+
+<span class="sd">    Propagates out of :meth:`XonshDebug.breakpoint` so that execution at</span>
+<span class="sd">    the breakpoint site is aborted rather than resumed. Catch it</span>
+<span class="sd">    explicitly if you want to handle user-initiated aborts.</span>
+<span class="sd">    &quot;&quot;&quot;</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">is_breakpoint_engine</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Enumerated values of $XONSH_DEBUG_BREAKPOINT_ENGINE.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">CANONIC_BREAKPOINT_ENGINES</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">to_breakpoint_engine</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Convert user input to value of $XONSH_DEBUG_BREAKPOINT_ENGINE.&quot;&quot;&quot;</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">casefold</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">y</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">CANONIC_BREAKPOINT_ENGINES</span><span class="p">:</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">x</span><span class="si">}</span><span class="s2">&#39; is not valid for $XONSH_DEBUG_BREAKPOINT_ENGINE, &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;must be one of </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">CANONIC_BREAKPOINT_ENGINES</span><span class="p">)</span><span class="si">}</span><span class="s2">. Using &#39;auto&#39;.&quot;</span><span class="p">,</span>
+            <span class="ne">RuntimeWarning</span><span class="p">,</span>
+            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="s2">&quot;auto&quot;</span>
+    <span class="k">return</span> <span class="n">y</span>
+
+
+<div class="viewcode-block" id="XonshDebug">
+<a class="viewcode-back" href="../../debug.html#xonsh.debug.XonshDebug">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">XonshDebug</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Debug helpers for a running xonsh session.</span>
+
+<span class="sd">    Accessible from xonsh code as ``@.debug``.</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+<span class="sd">    Drop into the default debugger at the call site::</span>
+
+<span class="sd">        @.debug.breakpoint()</span>
+
+<span class="sd">    Force a specific engine::</span>
+
+<span class="sd">        @.debug.breakpoint(engine=&#39;ipdb&#39;)</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># if starts with the given prefix then it will get completions from man page</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">ctx</span><span class="o">.</span><span class="n">prefix</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;-&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">ctx</span><span class="o">.</span><span class="n">arg_index</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="n">comps</span><span class="p">,</span> <span class="n">lprefix</span> <span class="o">=</span> <span class="n">complete_dir</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">comps</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">StopIteration</span>  <span class="c1"># no further file completions</span>
-        <span class="k">return</span> <span class="n">comps</span><span class="p">,</span> <span class="n">lprefix</span></div>
+
+    <span class="n">AUTO_ENGINES</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;pdbp&quot;</span><span class="p">,</span> <span class="s2">&quot;ipdb&quot;</span><span class="p">,</span> <span class="s2">&quot;pdb&quot;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="XonshDebug.breakpoint">
+<a class="viewcode-back" href="../../debug.html#xonsh.debug.XonshDebug.breakpoint">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">breakpoint</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">engine</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;auto&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Drop into a debugger at the caller&#39;s frame.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        engine : str, optional</span>
+<span class="sd">            Which debugger to use. One of ``&quot;auto&quot;``, ``&quot;pdbp&quot;``,</span>
+<span class="sd">            ``&quot;ipdb&quot;``, ``&quot;pdb&quot;``, ``&quot;execer&quot;``, or ``&quot;eval&quot;``. When</span>
+<span class="sd">            ``&quot;auto&quot;`` (the default), ``$XONSH_DEBUG_BREAKPOINT_ENGINE``</span>
+<span class="sd">            is consulted first; if it is also ``&quot;auto&quot;``, the first</span>
+<span class="sd">            available engine is chosen in priority order: ``pdbp`` -&gt;</span>
+<span class="sd">            ``ipdb`` -&gt; ``pdb`` -&gt; ``execer`` (if a xonsh session is</span>
+<span class="sd">            loaded) -&gt; ``eval`` (always).</span>
+
+<span class="sd">            The ``&quot;execer&quot;`` engine starts a REPL at the caller&#39;s</span>
+<span class="sd">            frame, backed by the session&#39;s :class:`~xonsh.execer.Execer`</span>
+<span class="sd">            (prompt ``&quot;execer&gt; &quot;``) — xonsh syntax such as</span>
+<span class="sd">            subprocesses, env lookups, and aliases is available.</span>
+<span class="sd">            Raises :class:`RuntimeError` if no execer is attached.</span>
+
+<span class="sd">            The ``&quot;eval&quot;`` engine starts a REPL at the caller&#39;s frame</span>
+<span class="sd">            using plain Python ``eval``/``exec`` (prompt</span>
+<span class="sd">            ``&quot;(xdebug) &quot;``) — it has no dependency on a xonsh session.</span>
+
+<span class="sd">            In both REPLs, type ``c``/``cont``/``continue`` (or hit</span>
+<span class="sd">            EOF/Ctrl-C) to resume execution, or ``exit``/``quit``/``q``</span>
+<span class="sd">            to abort — the latter raises :class:`XonshDebugQuit`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">__tracebackhide__</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>  <span class="c1"># hidden from pdbp/pytest frame walks</span>
+        <span class="n">caller</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">_getframe</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_break_at</span><span class="p">(</span><span class="n">caller</span><span class="p">,</span> <span class="n">engine</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="c1"># Break the reference to the caller frame so locals are</span>
+            <span class="c1"># not pinned any longer than necessary.</span>
+            <span class="k">del</span> <span class="n">caller</span></div>
+
+
+    <span class="n">_HINTS</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;pdb&quot;</span><span class="p">:</span> <span class="s2">&quot;[xonsh-debug] pdb: &#39;c&#39; continue | &#39;q&#39; quit&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;ipdb&quot;</span><span class="p">:</span> <span class="s2">&quot;[xonsh-debug] ipdb: &#39;c&#39; continue | &#39;q&#39; quit&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;pdbp&quot;</span><span class="p">:</span> <span class="s2">&quot;[xonsh-debug] pdbp: &#39;c&#39; continue | &#39;q&#39; quit&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;execer&quot;</span><span class="p">:</span> <span class="p">(</span>
+            <span class="s2">&quot;[xonsh-debug] execer REPL: &#39;c&#39;/&#39;continue&#39; resume | &#39;q&#39;/&#39;quit&#39;/&#39;exit&#39; abort&quot;</span>
+        <span class="p">),</span>
+        <span class="s2">&quot;eval&quot;</span><span class="p">:</span> <span class="p">(</span>
+            <span class="s2">&quot;[xonsh-debug] eval REPL: &#39;c&#39;/&#39;continue&#39; resume | &#39;q&#39;/&#39;quit&#39;/&#39;exit&#39; abort&quot;</span>
+        <span class="p">),</span>
+    <span class="p">}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_break_at</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">frame</span><span class="p">,</span> <span class="n">engine</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">__tracebackhide__</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">resolved</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_engine</span><span class="p">(</span><span class="n">engine</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;BREAKPOINT WITH </span><span class="si">{</span><span class="n">resolved</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_HINTS</span><span class="p">[</span><span class="n">resolved</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">resolved</span> <span class="o">==</span> <span class="s2">&quot;execer&quot;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_execer_repl</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">resolved</span> <span class="o">==</span> <span class="s2">&quot;eval&quot;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_eval_repl</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_start_debugger</span><span class="p">(</span><span class="n">resolved</span><span class="p">,</span> <span class="n">frame</span><span class="p">)</span>
+
+<div class="viewcode-block" id="XonshDebug.replace_builtin_breakpoint">
+<a class="viewcode-back" href="../../debug.html#xonsh.debug.XonshDebug.replace_builtin_breakpoint">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">replace_builtin_breakpoint</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">engine</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;auto&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Route Python&#39;s builtin ``breakpoint()`` through this debugger.</span>
+
+<span class="sd">        After this call, any ``breakpoint()`` or PEP 553 breakpoint</span>
+<span class="sd">        statement — whether in xonsh code or in plain Python modules</span>
+<span class="sd">        loaded from xonsh — drops into the engine chosen by this</span>
+<span class="sd">        object. Call it from ``~/.xonshrc`` to make the integration</span>
+<span class="sd">        persistent.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        engine : str, optional</span>
+<span class="sd">            Engine to use when the builtin ``breakpoint()`` fires.</span>
+<span class="sd">            Accepts the same values as :meth:`breakpoint`. Captured by</span>
+<span class="sd">            the installed hook; call again with a different value to</span>
+<span class="sd">            change it, or assign ``sys.breakpointhook =</span>
+<span class="sd">            sys.__breakpointhook__`` to restore the default.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">hook</span><span class="p">(</span><span class="o">*</span><span class="n">_args</span><span class="p">,</span> <span class="o">**</span><span class="n">_kwargs</span><span class="p">):</span>
+            <span class="n">__tracebackhide__</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="c1"># Python&#39;s breakpoint() builtin is a C function, so</span>
+            <span class="c1"># sys._getframe(1) from inside this hook is the user&#39;s</span>
+            <span class="c1"># Python frame that invoked breakpoint().</span>
+            <span class="n">caller</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">_getframe</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_break_at</span><span class="p">(</span><span class="n">caller</span><span class="p">,</span> <span class="n">engine</span><span class="p">)</span>
+            <span class="k">finally</span><span class="p">:</span>
+                <span class="k">del</span> <span class="n">caller</span>
+
+        <span class="n">sys</span><span class="o">.</span><span class="n">breakpointhook</span> <span class="o">=</span> <span class="n">hook</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_engine</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">engine</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">engine</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">CANONIC_BREAKPOINT_ENGINES</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Unknown breakpoint engine </span><span class="si">{</span><span class="n">engine</span><span class="si">!r}</span><span class="s2">. &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;Must be one of </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">CANONIC_BREAKPOINT_ENGINES</span><span class="p">)</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">engine</span> <span class="o">==</span> <span class="s2">&quot;auto&quot;</span><span class="p">:</span>
+            <span class="n">env_engine</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_env_default</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">env_engine</span> <span class="o">!=</span> <span class="s2">&quot;auto&quot;</span><span class="p">:</span>
+                <span class="n">engine</span> <span class="o">=</span> <span class="n">env_engine</span>
+        <span class="k">if</span> <span class="n">engine</span> <span class="o">!=</span> <span class="s2">&quot;auto&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">engine</span>
+        <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">AUTO_ENGINES</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">name</span>
+        <span class="c1"># No external debugger available — prefer execer if we have a</span>
+        <span class="c1"># session, else fall through to the plain-Python eval REPL.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_has_execer</span><span class="p">():</span>
+            <span class="k">return</span> <span class="s2">&quot;execer&quot;</span>
+        <span class="k">return</span> <span class="s2">&quot;eval&quot;</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_has_execer</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="n">xsh</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s2">&quot;__xonsh__&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">xsh</span><span class="p">,</span> <span class="s2">&quot;execer&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_env_default</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">xsh</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s2">&quot;__xonsh__&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">env</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">xsh</span><span class="p">,</span> <span class="s2">&quot;env&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">if</span> <span class="n">xsh</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">env</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;auto&quot;</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_DEBUG_BREAKPOINT_ENGINE&quot;</span><span class="p">,</span> <span class="s2">&quot;auto&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">CANONIC_BREAKPOINT_ENGINES</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;auto&quot;</span>
+        <span class="k">return</span> <span class="n">value</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_start_debugger</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">frame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">__tracebackhide__</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">module</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">import_module</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;pdb&quot;</span><span class="p">:</span>
+            <span class="n">module</span><span class="o">.</span><span class="n">Pdb</span><span class="p">()</span><span class="o">.</span><span class="n">set_trace</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;ipdb&quot;</span><span class="p">:</span>
+            <span class="n">module</span><span class="o">.</span><span class="n">set_trace</span><span class="p">(</span><span class="n">frame</span><span class="o">=</span><span class="n">frame</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;pdbp&quot;</span><span class="p">:</span>
+            <span class="n">module</span><span class="o">.</span><span class="n">set_trace</span><span class="p">(</span><span class="n">frame</span><span class="o">=</span><span class="n">frame</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported debugger engine: </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">_CONTINUE_COMMANDS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;c&quot;</span><span class="p">,</span> <span class="s2">&quot;cont&quot;</span><span class="p">,</span> <span class="s2">&quot;continue&quot;</span><span class="p">)</span>
+    <span class="n">_ABORT_COMMANDS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;exit&quot;</span><span class="p">,</span> <span class="s2">&quot;quit&quot;</span><span class="p">,</span> <span class="s2">&quot;q&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_execer_repl</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">frame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;REPL that dispatches each line through the session&#39;s Execer.&quot;&quot;&quot;</span>
+        <span class="n">xsh</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">builtins</span><span class="p">,</span> <span class="s2">&quot;__xonsh__&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">execer</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">xsh</span><span class="p">,</span> <span class="s2">&quot;execer&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">if</span> <span class="n">xsh</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">execer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;The &#39;execer&#39; breakpoint engine requires an active xonsh &quot;</span>
+                <span class="s2">&quot;session with an Execer attached. Use engine=&#39;eval&#39; for a &quot;</span>
+                <span class="s2">&quot;plain-Python REPL, or run inside a xonsh session.&quot;</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_interactive_repl</span><span class="p">(</span>
+            <span class="n">frame</span><span class="p">,</span>
+            <span class="n">banner_backend</span><span class="o">=</span><span class="s2">&quot;execer&quot;</span><span class="p">,</span>
+            <span class="n">prompt</span><span class="o">=</span><span class="s2">&quot;execer&gt; &quot;</span><span class="p">,</span>
+            <span class="n">runner</span><span class="o">=</span><span class="k">lambda</span> <span class="n">line</span><span class="p">,</span> <span class="n">g</span><span class="p">,</span> <span class="n">loc</span><span class="p">:</span> <span class="n">execer</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span>
+                <span class="n">line</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;single&quot;</span><span class="p">,</span> <span class="n">glbs</span><span class="o">=</span><span class="n">g</span><span class="p">,</span> <span class="n">locs</span><span class="o">=</span><span class="n">loc</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_eval_repl</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">frame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;REPL that evaluates each line with plain Python eval/exec.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_interactive_repl</span><span class="p">(</span>
+            <span class="n">frame</span><span class="p">,</span>
+            <span class="n">banner_backend</span><span class="o">=</span><span class="s2">&quot;python&quot;</span><span class="p">,</span>
+            <span class="n">prompt</span><span class="o">=</span><span class="s2">&quot;(xdebug) &quot;</span><span class="p">,</span>
+            <span class="n">runner</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_python_eval</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_interactive_repl</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">frame</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">banner_backend</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">runner</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">location</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">frame</span><span class="o">.</span><span class="n">f_code</span><span class="o">.</span><span class="n">co_filename</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">frame</span><span class="o">.</span><span class="n">f_lineno</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[xonsh-debug] </span><span class="si">{</span><span class="n">banner_backend</span><span class="si">}</span><span class="s2"> REPL at </span><span class="si">{</span><span class="n">location</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">globs</span><span class="p">,</span> <span class="n">locs</span> <span class="o">=</span> <span class="n">frame</span><span class="o">.</span><span class="n">f_globals</span><span class="p">,</span> <span class="n">frame</span><span class="o">.</span><span class="n">f_locals</span>
+        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">line</span> <span class="o">=</span> <span class="nb">input</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">EOFError</span><span class="p">,</span> <span class="ne">KeyboardInterrupt</span><span class="p">):</span>
+                <span class="c1"># EOF / Ctrl-C behave like &#39;continue&#39; — least destructive.</span>
+                <span class="nb">print</span><span class="p">()</span>
+                <span class="k">return</span>
+            <span class="n">stripped</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">stripped</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_CONTINUE_COMMANDS</span><span class="p">:</span>
+                <span class="k">return</span>
+            <span class="k">if</span> <span class="n">stripped</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ABORT_COMMANDS</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">XonshDebugQuit</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;aborted from </span><span class="si">{</span><span class="n">banner_backend</span><span class="si">}</span><span class="s2"> REPL at </span><span class="si">{</span><span class="n">location</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">stripped</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">runner</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">globs</span><span class="p">,</span> <span class="n">locs</span><span class="p">)</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">SystemExit</span><span class="p">,</span> <span class="n">XonshDebugQuit</span><span class="p">):</span>
+                <span class="k">raise</span>
+            <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+                <span class="n">traceback</span><span class="o">.</span><span class="n">print_exc</span><span class="p">()</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_python_eval</span><span class="p">(</span><span class="n">line</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">globs</span><span class="p">,</span> <span class="n">locs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="nb">eval</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">globs</span><span class="p">,</span> <span class="n">locs</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">SyntaxError</span><span class="p">:</span>
+            <span class="n">exec</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">globs</span><span class="p">,</span> <span class="n">locs</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="n">result</span><span class="p">))</span></div>
 
 </pre></div>
         </article>
