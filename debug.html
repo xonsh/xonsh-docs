@@ -8,7 +8,7 @@
         <link rel="prefetch" href="_static/xonsh_terminal_icon_256.png" as="image">
 
     <link rel="shortcut icon" href="_static/magic_conch.ico"><!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
-        <title>Debug - xonsh 0.23.2 documentation</title>
+        <title>Debug - xonsh 0.23.3 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="_static/graphviz.css?v=4ae1632d" />
@@ -190,7 +190,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="contents.html"><div class="brand">xonsh 0.23.2 documentation</div></a>
+      <a href="contents.html"><div class="brand">xonsh 0.23.3 documentation</div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -214,7 +214,7 @@
     <img class="sidebar-logo" src="_static/xonsh_terminal_icon_256.png" alt="Logo"/>
   </div>
   
-  <span class="sidebar-brand-text">xonsh 0.23.2 documentation</span>
+  <span class="sidebar-brand-text">xonsh 0.23.3 documentation</span>
   
 </a><form class="sidebar-search-container" method="get" action="search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -539,6 +539,25 @@ change the default used when <code class="docutils literal notranslate"><span cl
 <code class="docutils literal notranslate"><span class="pre">'execer'</span></code>, <code class="docutils literal notranslate"><span class="pre">'eval'</span></code>.</p>
 <p>An explicit argument to <code class="docutils literal notranslate"><span class="pre">breakpoint()</span></code> always beats the env var.</p>
 </section>
+<section id="wrapping-breakpoint-in-a-helper">
+<h3>Wrapping breakpoint() in a helper<a class="headerlink" href="#wrapping-breakpoint-in-a-helper" title="Link to this heading">¶</a></h3>
+<p>If you build your own dev-helper that calls <code class="docutils literal notranslate"><span class="pre">&#64;.debug.breakpoint()</span></code> for
+you, the debugger would normally stop <em>inside</em> the helper, which is
+rarely what you want. Pass an explicit <code class="docutils literal notranslate"><span class="pre">frame=</span></code> to relocate the stop
+site to any frame on the stack — typically the helper’s caller. This
+mirrors <code class="docutils literal notranslate"><span class="pre">pdbp.set_trace(frame=...)</span></code>.</p>
+<div itemscope itemtype="https://schema.org/SoftwareSourceCode" class="highlight-xonshcon notranslate"><meta itemprop="programmingLanguage" content="xonsh"><meta itemprop="name" content="Wrapping breakpoint() in a helper example"><div class="highlight"><pre><code itemprop="text"><span></span><span class="gp">@ </span><span class="k">def</span><span class="w"> </span><span class="nf">my_dev_helper</span><span class="p">():</span>
+<span class="gp">  </span>   <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;dropping in…&quot;</span><span class="p">)</span>
+<span class="gp">  </span>   <span class="o">@.</span><span class="n">debug</span><span class="o">.</span><span class="n">breakpoint</span><span class="p">(</span><span class="n">frame</span><span class="o">=@.</span><span class="n">imp</span><span class="o">.</span><span class="n">sys</span><span class="o">.</span><span class="n">_getframe</span><span class="p">()</span><span class="o">.</span><span class="n">f_back</span><span class="p">)</span>
+<span class="gp">@ </span><span class="n">my_dev_helper</span><span class="p">()</span>
+<span class="go">dropping in…</span>
+<span class="go">BREAKPOINT WITH &#39;pdbp&#39;</span>
+<span class="go"># …debugger now sits at my_dev_helper&#39;s caller, not inside the helper.</span>
+</code></pre></div>
+</div>
+<p>When <code class="docutils literal notranslate"><span class="pre">frame=</span></code> is omitted (the default), the debugger uses the
+immediate caller’s frame, exactly as before.</p>
+</section>
 <section id="engines">
 <h3>Engines<a class="headerlink" href="#engines" title="Link to this heading">¶</a></h3>
 <div class="table-wrapper colwidths-given docutils container">
@@ -582,6 +601,25 @@ tests) the same as inside an interactive shell.</p></td>
 <p>When <code class="docutils literal notranslate"><span class="pre">engine='auto'</span></code> resolves to an engine, <code class="docutils literal notranslate"><span class="pre">&#64;.debug</span></code> prints a short
 banner identifying the choice and a one-line hint about how to continue or
 abort, then drops into that engine.</p>
+</section>
+<section id="tab-completion-in-callable-aliases">
+<h3>Tab completion in callable aliases<a class="headerlink" href="#tab-completion-in-callable-aliases" title="Link to this heading">¶</a></h3>
+<p>xonsh runs callable aliases (registered via <code class="docutils literal notranslate"><span class="pre">&#64;aliases.register</span></code>) in
+worker threads. CPython only wires <code class="docutils literal notranslate"><span class="pre">readline</span></code> into the main thread, so
+the <code class="docutils literal notranslate"><span class="pre">pdbp</span></code>, <code class="docutils literal notranslate"><span class="pre">ipdb</span></code>, and <code class="docutils literal notranslate"><span class="pre">pdb</span></code> engines lose tab completion when
+invoked from inside an alias — the <code class="docutils literal notranslate"><span class="pre">TAB</span></code> key inserts a literal tab
+into the underlying <code class="docutils literal notranslate"><span class="pre">input()</span></code> call instead of triggering completion.</p>
+<p>When <code class="docutils literal notranslate"><span class="pre">engine='auto'</span></code> is resolved from a non-main thread, <code class="docutils literal notranslate"><span class="pre">&#64;.debug</span></code>
+auto-walks past the readline-based engines and selects <code class="docutils literal notranslate"><span class="pre">execer</span></code> (or
+<code class="docutils literal notranslate"><span class="pre">eval</span></code> if no session is attached). Both REPLs use <code class="docutils literal notranslate"><span class="pre">input()</span></code> directly
+with no completion, so the missing <code class="docutils literal notranslate"><span class="pre">TAB</span></code> matches the prompt and there
+is no false expectation.</p>
+<p>If you set <code class="docutils literal notranslate"><span class="pre">$XONSH_DEBUG_BREAKPOINT_ENGINE</span></code> or pass <code class="docutils literal notranslate"><span class="pre">engine=</span></code> to one
+of the readline-based engines, <code class="docutils literal notranslate"><span class="pre">&#64;.debug</span></code> still honours your choice
+from a worker thread but prints a <code class="xref py py-class docutils literal notranslate"><span class="pre">UserWarning</span></code> so the broken
+<code class="docutils literal notranslate"><span class="pre">TAB</span></code> is not surprising. The warning is informational — pdbp/ipdb/pdb
+still work, just without tab completion.</p>
+<p>This is a CPython limitation, not a xonsh bug.</p>
 </section>
 <section id="repl-commands-execer-and-eval-engines">
 <h3>REPL Commands (execer and eval engines)<a class="headerlink" href="#repl-commands-execer-and-eval-engines" title="Link to this heading">¶</a></h3>
@@ -709,7 +747,9 @@ at the call site. To restore Python’s default behavior:</p>
 <li><a class="reference internal" href="#instant-debugging">Instant debugging</a><ul>
 <li><a class="reference internal" href="#quick-start">Quick Start</a></li>
 <li><a class="reference internal" href="#setting-the-default-engine">Setting the Default Engine</a></li>
+<li><a class="reference internal" href="#wrapping-breakpoint-in-a-helper">Wrapping breakpoint() in a helper</a></li>
 <li><a class="reference internal" href="#engines">Engines</a></li>
+<li><a class="reference internal" href="#tab-completion-in-callable-aliases">Tab completion in callable aliases</a></li>
 <li><a class="reference internal" href="#repl-commands-execer-and-eval-engines">REPL Commands (execer and eval engines)</a></li>
 <li><a class="reference internal" href="#routing-python-s-builtin-breakpoint-through-debug">Routing Python’s builtin <code class="docutils literal notranslate"><span class="pre">breakpoint()</span></code> Through <code class="docutils literal notranslate"><span class="pre">&#64;.debug</span></code></a></li>
 </ul>
@@ -725,7 +765,7 @@ at the call site. To restore Python’s default behavior:</p>
       
     </aside>
   </div>
-</div><script src="_static/documentation_options.js?v=b4d3b1f5"></script>
+</div><script src="_static/documentation_options.js?v=10ab35ec"></script>
     <script src="_static/doctools.js?v=fd6eb6e6"></script>
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="_static/scripts/furo.js?v=46bd48cc"></script>

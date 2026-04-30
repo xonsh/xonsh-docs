@@ -7,7 +7,7 @@
         <link rel="prefetch" href="../../../_static/xonsh_terminal_icon_256.png" as="image">
 
     <link rel="shortcut icon" href="../../../_static/magic_conch.ico"><!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
-        <title>xonsh.procs.pipelines - xonsh 0.23.2 documentation</title>
+        <title>xonsh.procs.pipelines - xonsh 0.23.3 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css?v=4ae1632d" />
@@ -189,7 +189,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../../contents.html"><div class="brand">xonsh 0.23.2 documentation</div></a>
+      <a href="../../../contents.html"><div class="brand">xonsh 0.23.3 documentation</div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -213,7 +213,7 @@
     <img class="sidebar-logo" src="../../../_static/xonsh_terminal_icon_256.png" alt="Logo"/>
   </div>
   
-  <span class="sidebar-brand-text">xonsh 0.23.2 documentation</span>
+  <span class="sidebar-brand-text">xonsh 0.23.3 documentation</span>
   
 </a><form class="sidebar-search-container" method="get" action="../../../search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -786,14 +786,29 @@
             <span class="n">stdout</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">spec</span><span class="o">.</span><span class="n">stdout</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">safe_readable</span><span class="p">(</span><span class="n">stdout</span><span class="p">)</span>
         <span class="p">)</span> <span class="ow">and</span> <span class="n">spec</span><span class="o">.</span><span class="n">captured_stdout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">stdout</span> <span class="o">=</span> <span class="n">spec</span><span class="o">.</span><span class="n">captured_stdout</span>
+        <span class="c1"># Callable-alias ``o&gt;e`` redirect leaves ``proc.stdout`` pointing at</span>
+        <span class="c1"># the *write* end of the merged pipe (not a separate reader), with</span>
+        <span class="c1"># ``captured_stdout`` cleared. Spawning a NonBlockingFDReader on</span>
+        <span class="c1"># that fd would deadlock: ``os.read(write_fd, …)`` blocks</span>
+        <span class="c1"># indefinitely on FreeBSD instead of failing with ``EBADF`` like</span>
+        <span class="c1"># Linux. The merged output is read via ``captured_stderr`` below,</span>
+        <span class="c1"># so just skip the bogus stdout reader here.</span>
+        <span class="k">if</span> <span class="n">stdout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">safe_readable</span><span class="p">(</span><span class="n">stdout</span><span class="p">):</span>
+            <span class="n">stdout</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">stdout</span><span class="p">,</span> <span class="s2">&quot;buffer&quot;</span><span class="p">):</span>
             <span class="n">stdout</span> <span class="o">=</span> <span class="n">stdout</span><span class="o">.</span><span class="n">buffer</span>
         <span class="k">if</span> <span class="n">stdout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stdout</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nonblocking</span><span class="p">):</span>
             <span class="n">stdout</span> <span class="o">=</span> <span class="n">NonBlockingFDReader</span><span class="p">(</span><span class="n">stdout</span><span class="o">.</span><span class="n">fileno</span><span class="p">(),</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span>
+        <span class="c1"># Threadable specs that legitimately have no readable stdout</span>
+        <span class="c1"># (callable-alias ``o&gt;e`` captures output through ``captured_stderr``</span>
+        <span class="c1"># only, so the stdout side was zeroed out above) still need to fall</span>
+        <span class="c1"># through to the dual-reader loop below to drain stderr — they</span>
+        <span class="c1"># must not take the synchronous early-return path that&#39;s intended</span>
+        <span class="c1"># for plain ``Popen`` and ``$()`` capture.</span>
         <span class="k">if</span> <span class="p">(</span>
-            <span class="ow">not</span> <span class="n">stdout</span>
+            <span class="p">(</span><span class="ow">not</span> <span class="n">stdout</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">spec</span><span class="o">.</span><span class="n">threadable</span><span class="p">)</span>
             <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">captured</span> <span class="o">==</span> <span class="s2">&quot;stdout&quot;</span>
-            <span class="ow">or</span> <span class="ow">not</span> <span class="n">safe_readable</span><span class="p">(</span><span class="n">stdout</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="p">(</span><span class="n">stdout</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">safe_readable</span><span class="p">(</span><span class="n">stdout</span><span class="p">))</span>
             <span class="ow">or</span> <span class="ow">not</span> <span class="n">spec</span><span class="o">.</span><span class="n">threadable</span>
         <span class="p">):</span>
             <span class="c1"># we get here if the process is not threadable or the</span>
@@ -829,6 +844,11 @@
             <span class="n">stderr</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">spec</span><span class="o">.</span><span class="n">stderr</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">safe_readable</span><span class="p">(</span><span class="n">stderr</span><span class="p">)</span>
         <span class="p">)</span> <span class="ow">and</span> <span class="n">spec</span><span class="o">.</span><span class="n">captured_stderr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">stderr</span> <span class="o">=</span> <span class="n">spec</span><span class="o">.</span><span class="n">captured_stderr</span>
+        <span class="c1"># Mirror the stdout guard above: callable-alias ``e&gt;o`` leaves</span>
+        <span class="c1"># ``proc.stderr`` as a write-end with ``captured_stderr=None``;</span>
+        <span class="c1"># reading it would deadlock on FreeBSD.</span>
+        <span class="k">if</span> <span class="n">stderr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">safe_readable</span><span class="p">(</span><span class="n">stderr</span><span class="p">):</span>
+            <span class="n">stderr</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s2">&quot;buffer&quot;</span><span class="p">):</span>
             <span class="n">stderr</span> <span class="o">=</span> <span class="n">stderr</span><span class="o">.</span><span class="n">buffer</span>
         <span class="k">if</span> <span class="n">stderr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nonblocking</span><span class="p">):</span>
@@ -1732,7 +1752,7 @@
       
     </aside>
   </div>
-</div><script src="../../../_static/documentation_options.js?v=b4d3b1f5"></script>
+</div><script src="../../../_static/documentation_options.js?v=10ab35ec"></script>
     <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
     <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="../../../_static/scripts/furo.js?v=46bd48cc"></script>
