@@ -549,6 +549,46 @@
     <span class="s2">&quot;IN_APPIMAGE&quot;</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="sd">&quot;&quot;&quot;``True`` if in AppImage, else ``False``.&quot;&quot;&quot;</span>
+<span class="n">ON_ANDROID</span> <span class="o">=</span> <span class="n">LazyBool</span><span class="p">(</span>
+    <span class="k">lambda</span><span class="p">:</span> <span class="p">(</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">platform</span> <span class="o">==</span> <span class="s2">&quot;android&quot;</span>
+        <span class="ow">or</span> <span class="n">platform</span><span class="o">.</span><span class="n">system</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;Android&quot;</span>
+        <span class="ow">or</span> <span class="s2">&quot;ANDROID_ROOT&quot;</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span>
+        <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="s2">&quot;/system/build.prop&quot;</span><span class="p">)</span>
+    <span class="p">),</span>
+    <span class="nb">globals</span><span class="p">(),</span>
+    <span class="s2">&quot;ON_ANDROID&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="sd">&quot;&quot;&quot;``True`` on any Android userland — Termux, UserLAnd, proot-distro,</span>
+<span class="sd">Linux Deploy chroot, etc.</span>
+
+<span class="sd">Detection is layered: PEP 738 sets ``sys.platform == &quot;android&quot;`` and</span>
+<span class="sd">``platform.system() == &quot;Android&quot;`` on Python 3.13+; for older Python</span>
+<span class="sd">versions and proot/chroot setups where those checks miss, we fall back</span>
+<span class="sd">to the presence of the ``ANDROID_ROOT`` environment variable (always</span>
+<span class="sd">exported by the Android init) and finally to ``/system/build.prop``.</span>
+
+<span class="sd">Implies the Android app sandbox: ``/`` is typically unlistable,</span>
+<span class="sd">``os.tcsetpgrp`` and ``os.link`` are restricted, the filesystem is</span>
+<span class="sd">non-FHS. Code that needs Android-wide behaviour (e.g. ``skipif`` on</span>
+<span class="sd">tests that walk the FS root) should key off this flag rather than</span>
+<span class="sd">``ON_TERMUX`` so non-Termux Android shells (UserLAnd, …) are covered.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="n">ON_TERMUX</span> <span class="o">=</span> <span class="n">LazyBool</span><span class="p">(</span>
+    <span class="k">lambda</span><span class="p">:</span> <span class="s2">&quot;TERMUX_VERSION&quot;</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">,</span>
+    <span class="nb">globals</span><span class="p">(),</span>
+    <span class="s2">&quot;ON_TERMUX&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="sd">&quot;&quot;&quot;``True`` specifically inside the Termux app (and forks that keep its</span>
+<span class="sd">``TERMUX_VERSION`` env var).</span>
+
+<span class="sd">Detected via ``TERMUX_VERSION`` which Termux exports in every shell it</span>
+<span class="sd">spawns. Implies :data:`ON_ANDROID`, plus the Termux userland layout</span>
+<span class="sd">under ``$PREFIX = /data/data/com.termux/files/usr``. Use this flag for</span>
+<span class="sd">Termux-specific path defaults (``$PREFIX/bin``, completion script</span>
+<span class="sd">locations, etc.); use :data:`ON_ANDROID` for sandbox/bionic concerns</span>
+<span class="sd">that apply to any Android userland.</span>
+<span class="sd">&quot;&quot;&quot;</span>
 <span class="n">IN_FLATPAK</span> <span class="o">=</span> <span class="n">LazyBool</span><span class="p">(</span>
     <span class="k">lambda</span><span class="p">:</span> <span class="s2">&quot;FLATPAK_ID&quot;</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">,</span>
     <span class="nb">globals</span><span class="p">(),</span>
@@ -1034,7 +1074,7 @@
 <span class="sd">    extend ``$BASH_COMPLETIONS`` manually after installing</span>
 <span class="sd">    bash-completion via Homebrew, MacPorts, Linuxbrew, Nix, etc.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="n">ON_LINUX</span> <span class="ow">or</span> <span class="n">ON_CYGWIN</span> <span class="ow">or</span> <span class="n">ON_MSYS</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">ON_LINUX</span> <span class="ow">or</span> <span class="n">ON_CYGWIN</span> <span class="ow">or</span> <span class="n">ON_MSYS</span> <span class="ow">or</span> <span class="n">ON_TERMUX</span><span class="p">:</span>
         <span class="n">bcd</span> <span class="o">=</span> <span class="p">(</span>
             <span class="s2">&quot;/usr/share/bash-completion/bash_completion&quot;</span><span class="p">,</span>  <span class="c1"># FHS, all major distros</span>
             <span class="s2">&quot;/home/linuxbrew/.linuxbrew/share/bash-completion/bash_completion&quot;</span><span class="p">,</span>  <span class="c1"># Linuxbrew</span>
@@ -1043,6 +1083,15 @@
                 <span class="s2">&quot;~/.nix-profile/share/bash-completion/bash_completion&quot;</span>
             <span class="p">),</span>
         <span class="p">)</span>
+        <span class="c1"># Non-FHS userland prefix: Termux on Android sets $PREFIX to its</span>
+        <span class="c1"># sandboxed /usr-equivalent (/data/data/com.termux/files/usr);</span>
+        <span class="c1"># custom ./configure --prefix builds may also set it. Pick up</span>
+        <span class="c1"># bash-completion under that prefix when present.</span>
+        <span class="n">_prefix</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PREFIX&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">_prefix</span><span class="p">:</span>
+            <span class="n">bcd</span> <span class="o">=</span> <span class="n">bcd</span> <span class="o">+</span> <span class="p">(</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">_prefix</span><span class="p">,</span> <span class="s2">&quot;share/bash-completion/bash_completion&quot;</span><span class="p">),</span>
+            <span class="p">)</span>
     <span class="k">elif</span> <span class="n">ON_DARWIN</span><span class="p">:</span>
         <span class="n">bcd</span> <span class="o">=</span> <span class="p">(</span>
             <span class="c1"># Homebrew, Intel</span>
@@ -1091,6 +1140,19 @@
 
 <span class="nd">@lazyobject</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">PATH_DEFAULT</span><span class="p">():</span>
+    <span class="k">if</span> <span class="n">ON_TERMUX</span><span class="p">:</span>
+        <span class="c1"># Android sandbox: there is no /usr; everything userland-installed</span>
+        <span class="c1"># lives under $PREFIX (= /data/data/com.termux/files/usr by default).</span>
+        <span class="c1"># Without this branch ON_LINUX is False on Termux (Python 3.13+ has</span>
+        <span class="c1"># ``platform.system() == &quot;Android&quot;`` per PEP 738) so the generic</span>
+        <span class="c1"># else-branch returns an empty tuple, leaving completers and the</span>
+        <span class="c1"># syntax highlighter unable to recognize any external command.</span>
+        <span class="n">prefix</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;PREFIX&quot;</span><span class="p">,</span> <span class="s2">&quot;/data/data/com.termux/files/usr&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="s2">&quot;~/bin&quot;</span><span class="p">),</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="s2">&quot;bin&quot;</span><span class="p">),</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">prefix</span><span class="p">,</span> <span class="s2">&quot;sbin&quot;</span><span class="p">),</span>
+        <span class="p">)</span>
     <span class="k">if</span> <span class="n">ON_LINUX</span> <span class="ow">or</span> <span class="n">ON_CYGWIN</span> <span class="ow">or</span> <span class="n">ON_MSYS</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">linux_distro</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;arch&quot;</span><span class="p">:</span>
             <span class="n">pd</span> <span class="o">=</span> <span class="p">(</span>

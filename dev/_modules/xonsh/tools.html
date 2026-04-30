@@ -3579,19 +3579,144 @@
 
 
 
+<span class="n">_GLOB_META</span> <span class="o">=</span> <span class="s2">&quot;*?[&quot;</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_case_insensitive_iglob</span><span class="p">(</span><span class="n">pattern</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">include_dotfiles</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">recursive</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Case-insensitive glob, tolerant of unreadable parent directories.</span>
+
+<span class="sd">    Walks ``pattern`` segment by segment. At each segment:</span>
+
+<span class="sd">    1. ``os.listdir`` the current directory and match case-insensitively</span>
+<span class="sd">       (via :mod:`fnmatch` so wildcards still work). Listing returns the</span>
+<span class="sd">       on-disk casing, so matched paths reflect the real filesystem</span>
+<span class="sd">       even on case-insensitive volumes.</span>
+<span class="sd">    2. If ``os.listdir`` raises ``OSError`` (typically ``PermissionError``</span>
+<span class="sd">       on sandboxed setups like Android/Termux), fall back to literal:</span>
+<span class="sd">       yield the user-typed name if it exists on disk, otherwise drop</span>
+<span class="sd">       this branch silently. This is what lets ``cd /data/data/...``</span>
+<span class="sd">       complete on Termux even though ``/`` itself isn&#39;t enumerable.</span>
+
+<span class="sd">    The ``**`` recursive segment is handled when ``recursive=True`` —</span>
+<span class="sd">    it expands to zero or more intermediate directories before the</span>
+<span class="sd">    next segment, again with PermissionError tolerance.</span>
+
+<span class="sd">    On Windows this helper is bypassed (see ``_iglobpath``) because</span>
+<span class="sd">    drive-letter and UNC handling is non-trivial; the original</span>
+<span class="sd">    ``expand_case_matching`` + ``glob.iglob`` path stays in use there.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">fnmatch</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">pattern</span><span class="p">:</span>
+        <span class="k">return</span>
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isabs</span><span class="p">(</span><span class="n">pattern</span><span class="p">):</span>
+        <span class="n">cur</span> <span class="o">=</span> <span class="p">[</span><span class="n">os</span><span class="o">.</span><span class="n">sep</span><span class="p">]</span>
+        <span class="n">parts</span> <span class="o">=</span> <span class="n">pattern</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">sep</span><span class="p">)</span> <span class="p">:]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">sep</span><span class="p">)</span>
+        <span class="n">strip_dot_prefix</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">cur</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;.&quot;</span><span class="p">]</span>
+        <span class="n">parts</span> <span class="o">=</span> <span class="n">pattern</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">sep</span><span class="p">)</span>
+        <span class="c1"># Match glob.iglob: only emit a leading &#39;./&#39; when the pattern</span>
+        <span class="c1"># itself started with one.</span>
+        <span class="n">strip_dot_prefix</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">pattern</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="n">os</span><span class="o">.</span><span class="n">sep</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_entries</span><span class="p">(</span><span class="n">d</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">entries</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">include_dotfiles</span><span class="p">:</span>
+            <span class="n">entries</span> <span class="o">=</span> <span class="p">[</span><span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">entries</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">e</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)]</span>
+        <span class="k">return</span> <span class="n">entries</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">e</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">sep</span> <span class="o">+</span> <span class="n">e</span><span class="p">)</span> <span class="k">if</span> <span class="n">d</span> <span class="o">==</span> <span class="n">os</span><span class="o">.</span><span class="n">sep</span> <span class="k">else</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">part</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">parts</span><span class="p">):</span>
+        <span class="n">is_last</span> <span class="o">=</span> <span class="n">idx</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="c1"># &#39;.&#39; and empty segments are no-ops (e.g. &#39;./foo&#39; splits to</span>
+        <span class="c1"># [&#39;.&#39;, &#39;foo&#39;] — we should stay in cwd rather than look for an</span>
+        <span class="c1"># entry literally named &#39;.&#39;).</span>
+        <span class="k">if</span> <span class="n">part</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;.&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_last</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">nxt</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">recursive</span> <span class="ow">and</span> <span class="n">part</span> <span class="o">==</span> <span class="s2">&quot;**&quot;</span><span class="p">:</span>
+            <span class="n">stack</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">cur</span><span class="p">)</span>
+            <span class="n">seen</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+            <span class="k">while</span> <span class="n">stack</span><span class="p">:</span>
+                <span class="n">d</span> <span class="o">=</span> <span class="n">stack</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">seen</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="n">seen</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+                <span class="n">nxt</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+                <span class="n">entries</span> <span class="o">=</span> <span class="n">_entries</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">entries</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">entries</span><span class="p">:</span>
+                    <span class="n">full</span> <span class="o">=</span> <span class="n">_join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">full</span><span class="p">):</span>
+                        <span class="n">stack</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">full</span><span class="p">)</span>
+            <span class="n">cur</span> <span class="o">=</span> <span class="n">nxt</span>
+            <span class="k">continue</span>
+        <span class="n">has_meta</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="n">c</span> <span class="ow">in</span> <span class="n">part</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">_GLOB_META</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">cur</span><span class="p">:</span>
+            <span class="n">entries</span> <span class="o">=</span> <span class="n">_entries</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">entries</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># Parent unreadable (sandbox, EACCES) — keep the literal</span>
+                <span class="c1"># name if it actually exists on disk, otherwise drop</span>
+                <span class="c1"># this branch silently.</span>
+                <span class="n">literal</span> <span class="o">=</span> <span class="n">_join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">part</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">has_meta</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">lexists</span><span class="p">(</span><span class="n">literal</span><span class="p">):</span>
+                    <span class="n">nxt</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">literal</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="n">part_cf</span> <span class="o">=</span> <span class="n">part</span><span class="o">.</span><span class="n">casefold</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">entries</span><span class="p">:</span>
+                <span class="n">full</span> <span class="o">=</span> <span class="n">_join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">has_meta</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">fnmatch</span><span class="o">.</span><span class="n">fnmatch</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">casefold</span><span class="p">(),</span> <span class="n">part_cf</span><span class="p">):</span>
+                        <span class="n">nxt</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">full</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="n">e</span><span class="o">.</span><span class="n">casefold</span><span class="p">()</span> <span class="o">==</span> <span class="n">part_cf</span><span class="p">:</span>
+                    <span class="n">nxt</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">full</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">is_last</span><span class="p">:</span>
+                <span class="n">nxt</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">nxt</span> <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">p</span><span class="p">)]</span>
+        <span class="n">cur</span> <span class="o">=</span> <span class="n">nxt</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cur</span><span class="p">:</span>
+            <span class="k">return</span>
+    <span class="k">if</span> <span class="n">strip_dot_prefix</span><span class="p">:</span>
+        <span class="n">prefix</span> <span class="o">=</span> <span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="n">os</span><span class="o">.</span><span class="n">sep</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">cur</span><span class="p">:</span>
+            <span class="k">yield</span> <span class="n">p</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span> <span class="p">:]</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">prefix</span><span class="p">)</span> <span class="k">else</span> <span class="n">p</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">yield from</span> <span class="n">cur</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_iglobpath</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">ignore_case</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">sort_result</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">include_dotfiles</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="n">s</span> <span class="o">=</span> <span class="n">xsh</span><span class="o">.</span><span class="n">expand_path</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">sort_result</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">sort_result</span> <span class="o">=</span> <span class="n">xsh</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;GLOB_SORTED&quot;</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">include_dotfiles</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">include_dotfiles</span> <span class="o">=</span> <span class="n">xsh</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;DOTGLOB&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">ignore_case</span><span class="p">:</span>
-        <span class="n">s</span> <span class="o">=</span> <span class="n">expand_case_matching</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
-    <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;recursive&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;include_hidden&quot;</span><span class="p">:</span> <span class="n">include_dotfiles</span> <span class="ow">or</span> <span class="kc">False</span><span class="p">}</span>
-    <span class="k">if</span> <span class="n">sort_result</span><span class="p">:</span>
-        <span class="n">paths</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)))</span>
+    <span class="k">if</span> <span class="n">ignore_case</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
+        <span class="c1"># Walk the path manually so we don&#39;t have to listdir parents</span>
+        <span class="c1"># that the FS may refuse (e.g. &#39;/&#39; on Android/Termux). Also</span>
+        <span class="c1"># gracefully handles the user typing a wrong-case parent on</span>
+        <span class="c1"># listable filesystems.</span>
+        <span class="n">paths</span> <span class="o">=</span> <span class="n">_case_insensitive_iglob</span><span class="p">(</span>
+            <span class="n">s</span><span class="p">,</span>
+            <span class="n">include_dotfiles</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span><span class="n">include_dotfiles</span><span class="p">),</span>
+            <span class="n">recursive</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">ignore_case</span><span class="p">:</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="n">expand_case_matching</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+        <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;recursive&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;include_hidden&quot;</span><span class="p">:</span> <span class="n">include_dotfiles</span> <span class="ow">or</span> <span class="kc">False</span><span class="p">}</span>
+        <span class="k">if</span> <span class="n">sort_result</span><span class="p">:</span>
+            <span class="n">paths</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)))</span>
+            <span class="k">return</span> <span class="n">paths</span><span class="p">,</span> <span class="n">s</span>
         <span class="n">paths</span> <span class="o">=</span> <span class="n">glob</span><span class="o">.</span><span class="n">iglob</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">paths</span><span class="p">,</span> <span class="n">s</span>
+    <span class="k">if</span> <span class="n">sort_result</span><span class="p">:</span>
+        <span class="n">paths</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">paths</span><span class="p">))</span>
     <span class="k">return</span> <span class="n">paths</span><span class="p">,</span> <span class="n">s</span>
 
 
