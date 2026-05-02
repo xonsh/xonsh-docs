@@ -552,7 +552,16 @@
 
 <span class="c1"># style modifiers not handled by pygments (but supported by ptk)</span>
 <span class="n">PTK_SPECIFIC_VALUES</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span>
-    <span class="p">{</span><span class="s2">&quot;reverse&quot;</span><span class="p">,</span> <span class="s2">&quot;noreverse&quot;</span><span class="p">,</span> <span class="s2">&quot;hidden&quot;</span><span class="p">,</span> <span class="s2">&quot;nohidden&quot;</span><span class="p">,</span> <span class="s2">&quot;blink&quot;</span><span class="p">,</span> <span class="s2">&quot;noblink&quot;</span><span class="p">}</span>
+    <span class="p">{</span>
+        <span class="s2">&quot;reverse&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;noreverse&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;hidden&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;nohidden&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;blink&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;noblink&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;strike&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;nostrike&quot;</span><span class="p">,</span>
+    <span class="p">}</span>
 <span class="p">)</span>
 
 <span class="c1"># Generate fallback style dict from non-pygments styles</span>
@@ -956,6 +965,16 @@
 
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_strip_ptk_specific_modifiers</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Drop PTK-specific modifiers (blink, reverse, hidden, strike, ...)</span>
+<span class="sd">    from a style string so pygments&#39; ``colorformat`` does not reject it.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">value</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">value</span>
+    <span class="n">parts</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">value</span><span class="o">.</span><span class="n">split</span><span class="p">()</span> <span class="k">if</span> <span class="n">p</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">PTK_SPECIFIC_VALUES</span><span class="p">]</span>
+    <span class="k">return</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span>
+
+
 <div class="viewcode-block" id="xonsh_style_proxy">
 <a class="viewcode-back" href="../../lib/_autosummary/helpers/xonsh.pyghooks.html#xonsh.pyghooks.xonsh_style_proxy">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">xonsh_style_proxy</span><span class="p">(</span><span class="n">styler</span><span class="p">):</span>
@@ -966,11 +985,21 @@
     <span class="k">if</span> <span class="n">pygments_version_info</span><span class="p">()</span> <span class="ow">and</span> <span class="n">pygments_version_info</span><span class="p">()</span> <span class="o">&lt;</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">0</span><span class="p">):</span>
         <span class="n">pygments</span><span class="o">.</span><span class="n">style</span><span class="o">.</span><span class="n">ansicolors</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">ANSICOLOR_NAMES_MAP</span><span class="p">)</span>
 
+    <span class="c1"># Pygments&#39; StyleMeta validates each style value via ``colorformat`` at</span>
+    <span class="c1"># class-creation time and raises AssertionError on PTK-only modifiers</span>
+    <span class="c1"># (blink/reverse/hidden/strike), which can leak into ``styler.styles``</span>
+    <span class="c1"># via ``LS_COLORS`` entries that carry ANSI codes 5/6/7/8/9. Hand pygments</span>
+    <span class="c1"># a sanitized copy; the live ChainMap stays intact for the PTK path.</span>
+    <span class="n">sanitized_styles</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">token</span><span class="p">:</span> <span class="n">_strip_ptk_specific_modifiers</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">token</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">styler</span><span class="o">.</span><span class="n">styles</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+    <span class="p">}</span>
+
     <span class="k">class</span><span class="w"> </span><span class="nc">XonshStyleProxy</span><span class="p">(</span><span class="n">Style</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Simple proxy class to fool prompt toolkit.&quot;&quot;&quot;</span>
 
         <span class="n">target</span> <span class="o">=</span> <span class="n">styler</span>
-        <span class="n">styles</span> <span class="o">=</span> <span class="n">styler</span><span class="o">.</span><span class="n">styles</span>
+        <span class="n">styles</span> <span class="o">=</span> <span class="n">sanitized_styles</span>
         <span class="n">highlight_color</span> <span class="o">=</span> <span class="n">styler</span><span class="o">.</span><span class="n">highlight_color</span>
         <span class="n">background_color</span> <span class="o">=</span> <span class="n">styler</span><span class="o">.</span><span class="n">background_color</span>
 
