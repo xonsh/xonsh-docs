@@ -622,14 +622,29 @@
         <span class="k">yield</span> <span class="n">entry</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">Xontrib</span><span class="p">(</span><span class="n">entry</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">distribution</span><span class="o">=</span><span class="n">entry</span><span class="o">.</span><span class="n">dist</span><span class="p">)</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_find_xontrib_entrypoint</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the ``xonsh.xontribs`` entry point for ``name`` or ``None``.</span>
+
+<span class="sd">    Reads the live setuptools entry-point registry rather than the</span>
+<span class="sd">    ``XSH.builtins.autoloaded_xontribs`` cache, so xontribs whose only</span>
+<span class="sd">    Python-visible name is an entry point (the wheel ships no</span>
+<span class="sd">    ``xontrib/&lt;name&gt;.py``) are discoverable even when autoload did not</span>
+<span class="sd">    run — e.g. ``xonsh --no-rc`` or ``$XONTRIBS_AUTOLOAD_DISABLED``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">_get_xontrib_entrypoints</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="n">name</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">entry</span>
+    <span class="k">return</span> <span class="kc">None</span>
+
+
 <div class="viewcode-block" id="find_xontrib">
 <a class="viewcode-back" href="../../lib/_autosummary/helpers/xonsh.xontribs.html#xonsh.xontribs.find_xontrib">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">find_xontrib</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">full_module</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Finds a xontribution from its name.&quot;&quot;&quot;</span>
     <span class="n">_patch_in_userdir</span><span class="p">()</span>
 
-    <span class="c1"># here the order is important. We try to run the correct cases first and then later trial cases</span>
-    <span class="c1"># that will likely fail</span>
+    <span class="c1"># Order matters. Try the cheap, exact paths first; fall through to</span>
+    <span class="c1"># broader matches only when the previous lookup did not find anything.</span>
 
     <span class="k">if</span> <span class="n">name</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">package</span><span class="o">=</span><span class="s2">&quot;xontrib&quot;</span><span class="p">)</span>
@@ -637,13 +652,36 @@
     <span class="k">if</span> <span class="n">full_module</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
 
+    <span class="c1"># 1. Cache populated by ``auto_load_xontribs_from_entrypoints`` at</span>
+    <span class="c1">#    startup.  This is the common interactive-shell path.</span>
     <span class="n">autoloaded</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">XSH</span><span class="o">.</span><span class="n">builtins</span><span class="p">,</span> <span class="s2">&quot;autoloaded_xontribs&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
     <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">autoloaded</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="n">autoloaded</span><span class="p">[</span><span class="n">name</span><span class="p">])</span>
 
-    <span class="k">with</span> <span class="n">contextlib</span><span class="o">.</span><span class="n">suppress</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">):</span>
-        <span class="k">return</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="n">name</span><span class="p">,</span> <span class="n">package</span><span class="o">=</span><span class="s2">&quot;xontrib&quot;</span><span class="p">)</span>
+    <span class="c1"># 2. Live entry-point lookup.  Required when autoload did not run</span>
+    <span class="c1">#    (``--no-rc``, ``$XONTRIBS_AUTOLOAD_DISABLED``, embedded use,</span>
+    <span class="c1">#    xontrib installed mid-session): without this step the only</span>
+    <span class="c1">#    Python-visible mapping for entry-point-only xontribs (the</span>
+    <span class="c1">#    ``coconut`` xontrib being the canonical example — its loader</span>
+    <span class="c1">#    lives in ``coconut.integrations`` and the wheel ships no</span>
+    <span class="c1">#    ``xontrib/coconut.py``) is unreachable from ``xontrib load``.</span>
+    <span class="n">entry</span> <span class="o">=</span> <span class="n">_find_xontrib_entrypoint</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">entry</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="n">entry</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
 
+    <span class="c1"># 3. Legacy ``xontrib.&lt;name&gt;`` namespace-package layout.  ``find_spec``</span>
+    <span class="c1">#    only raises ``ValueError`` when ``xontrib`` is not a package at</span>
+    <span class="c1">#    all; otherwise it returns ``None`` for an absent submodule, in</span>
+    <span class="c1">#    which case we must continue to the top-level fallback rather</span>
+    <span class="c1">#    than returning that ``None``.  (The pre-fix code returned ``None``</span>
+    <span class="c1">#    here and never reached step 4.)</span>
+    <span class="n">spec</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">with</span> <span class="n">contextlib</span><span class="o">.</span><span class="n">suppress</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">):</span>
+        <span class="n">spec</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="n">name</span><span class="p">,</span> <span class="n">package</span><span class="o">=</span><span class="s2">&quot;xontrib&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">spec</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">spec</span>
+
+    <span class="c1"># 4. Top-level module fallback (``import &lt;name&gt;``).</span>
     <span class="k">return</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="n">name</span><span class="p">)</span></div>
 
 
