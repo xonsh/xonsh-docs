@@ -7,7 +7,7 @@
         <link rel="prefetch" href="../../_static/xonsh_terminal_icon_256.png" as="image">
 
     <link rel="shortcut icon" href="../../_static/magic_conch.ico"><!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
-        <title>xonsh.tools - xonsh 0.23.3 documentation</title>
+        <title>xonsh.tools - xonsh 0.23.4 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
@@ -189,7 +189,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../contents.html"><div class="brand">xonsh 0.23.3 documentation</div></a>
+      <a href="../../contents.html"><div class="brand">xonsh 0.23.4 documentation</div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -213,7 +213,7 @@
     <img class="sidebar-logo" src="../../_static/xonsh_terminal_icon_256.png" alt="Logo"/>
   </div>
   
-  <span class="sidebar-brand-text">xonsh 0.23.3 documentation</span>
+  <span class="sidebar-brand-text">xonsh 0.23.4 documentation</span>
   
 </a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -906,8 +906,34 @@
     <span class="c1"># call or sub-expression) and must stay in the wrap.</span>
     <span class="n">leading_paren_skipped</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">end_offset</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="c1"># Depth of an already-wrapped uncaptured-subproc block (``![…]`` or</span>
+    <span class="c1"># ``$[…]``) we are skipping.  A line passed to subproc_toks may have</span>
+    <span class="c1"># been partially wrapped by an earlier parse pass (e.g. xonsh phase 1</span>
+    <span class="c1"># turning ``echo &amp;&amp; echo hi`` into ``echo &amp;&amp; ![echo hi]`` before</span>
+    <span class="c1"># phase 2 needs to wrap the remaining bare ``echo`` on the left).</span>
+    <span class="c1"># Re-wrapping such a block would produce ``![![…]]``, which is not</span>
+    <span class="c1"># valid xonsh syntax — neither ``![…]`` nor ``&amp;&amp;``/``||`` may appear</span>
+    <span class="c1"># inside ``![…]``.  Treat the whole already-wrapped block as a single</span>
+    <span class="c1"># opaque token so we never include it in a fresh wrap window.</span>
+    <span class="n">skip_depth</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="c1"># Snapshot of the most-recent collectable region (the tokens just</span>
+    <span class="c1"># before an ``&amp;&amp;``/``||`` cleared ``toks``).  If the *next* region</span>
+    <span class="c1"># turns out to be entirely an already-wrapped ``![…]``/``$[…]`` and</span>
+    <span class="c1"># gets skipped, we restore this snapshot so the bare side preceding</span>
+    <span class="c1"># the skip still gets wrapped.  Without it ``subproc_toks`` would</span>
+    <span class="c1"># return ``None`` for ``echo &amp;&amp; ![echo hi]`` and the caller&#39;s bare</span>
+    <span class="c1"># ``Name(&#39;echo&#39;)`` would survive untransformed (GH-6386).</span>
+    <span class="n">saved_toks</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">saved_lparens</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">saved_leading_paren_skipped</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="k">for</span> <span class="n">tok</span> <span class="ow">in</span> <span class="n">lexer</span><span class="p">:</span>
         <span class="n">pos</span> <span class="o">=</span> <span class="n">tok</span><span class="o">.</span><span class="n">lexpos</span>
+        <span class="k">if</span> <span class="n">skip_depth</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;BANG_LBRACKET&quot;</span><span class="p">,</span> <span class="s2">&quot;DOLLAR_LBRACKET&quot;</span><span class="p">,</span> <span class="s2">&quot;LBRACKET&quot;</span><span class="p">):</span>
+                <span class="n">skip_depth</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">elif</span> <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;RBRACKET&quot;</span><span class="p">:</span>
+                <span class="n">skip_depth</span> <span class="o">-=</span> <span class="mi">1</span>
+            <span class="k">continue</span>
         <span class="k">if</span> <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">END_TOK_TYPES</span> <span class="ow">and</span> <span class="n">pos</span> <span class="o">&gt;=</span> <span class="n">maxcol</span><span class="p">:</span>
             <span class="k">break</span>
         <span class="k">if</span> <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;BANG&quot;</span><span class="p">:</span>
@@ -945,6 +971,14 @@
                 <span class="p">):</span>
                     <span class="k">pass</span>
                 <span class="k">elif</span> <span class="ow">not</span> <span class="n">greedy</span><span class="p">:</span>
+                    <span class="c1"># Save the tokens we are about to drop (everything up</span>
+                    <span class="c1"># to but not including the END_TOK) as a fallback in</span>
+                    <span class="c1"># case the next region is an already-wrapped block we</span>
+                    <span class="c1"># end up skipping.  See GH-6386.</span>
+                    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">toks</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                        <span class="n">saved_toks</span> <span class="o">=</span> <span class="n">toks</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+                        <span class="n">saved_lparens</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">lparens</span><span class="p">)</span>
+                        <span class="n">saved_leading_paren_skipped</span> <span class="o">=</span> <span class="n">leading_paren_skipped</span>
                     <span class="n">toks</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
                     <span class="n">leading_paren_skipped</span> <span class="o">=</span> <span class="kc">False</span>
                 <span class="k">if</span> <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="ow">in</span> <span class="n">BEG_TOK_SKIPS</span><span class="p">:</span>
@@ -953,6 +987,15 @@
                     <span class="k">continue</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">break</span>
+        <span class="c1"># An ``![…]`` / ``$[…]`` opens an uncaptured subproc block that</span>
+        <span class="c1"># is already complete.  Skip it without wrapping (and without</span>
+        <span class="c1"># including its tokens in any other wrap).  Only honour this at</span>
+        <span class="c1"># window start — a bracket appearing after collected tokens is</span>
+        <span class="c1"># part of an expression (e.g. ``foo[0]``) and falls through to</span>
+        <span class="c1"># the normal token append below.</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">toks</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">tok</span><span class="o">.</span><span class="n">type</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;BANG_LBRACKET&quot;</span><span class="p">,</span> <span class="s2">&quot;DOLLAR_LBRACKET&quot;</span><span class="p">):</span>
+            <span class="n">skip_depth</span> <span class="o">=</span> <span class="mi">1</span>
+            <span class="k">continue</span>
         <span class="k">if</span> <span class="n">pos</span> <span class="o">&lt;</span> <span class="n">mincol</span><span class="p">:</span>
             <span class="k">continue</span>
         <span class="n">toks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span>
@@ -990,8 +1033,29 @@
                 <span class="k">pass</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">toks</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+        <span class="c1"># If everything from the last END_TOK onwards was an already-wrapped</span>
+        <span class="c1"># ``![…]``/``$[…]`` block we skipped, ``toks`` is now empty even</span>
+        <span class="c1"># though the bare side preceding the skip is wrappable.  Restore</span>
+        <span class="c1"># the snapshot we took before the END_TOK clear so that side</span>
+        <span class="c1"># gets the wrap (GH-6386).</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">toks</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">saved_toks</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">toks</span> <span class="o">=</span> <span class="n">saved_toks</span>
+            <span class="n">lparens</span> <span class="o">=</span> <span class="n">saved_lparens</span>
+            <span class="n">leading_paren_skipped</span> <span class="o">=</span> <span class="n">saved_leading_paren_skipped</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">toks</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">return</span>  <span class="c1"># handle comment lines</span>
+        <span class="n">tok</span> <span class="o">=</span> <span class="n">toks</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">pos</span> <span class="o">=</span> <span class="n">tok</span><span class="o">.</span><span class="n">lexpos</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">tok</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="n">end_offset</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">tok</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">rstrip</span><span class="p">())</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">el</span> <span class="o">=</span> <span class="n">line</span><span class="p">[</span><span class="n">pos</span><span class="p">:]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;#&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span>
+            <span class="n">end_offset</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">el</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">toks</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">saved_toks</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Same recovery for the ``break``-out-of-loop path.</span>
+        <span class="n">toks</span> <span class="o">=</span> <span class="n">saved_toks</span>
+        <span class="n">lparens</span> <span class="o">=</span> <span class="n">saved_lparens</span>
+        <span class="n">leading_paren_skipped</span> <span class="o">=</span> <span class="n">saved_leading_paren_skipped</span>
         <span class="n">tok</span> <span class="o">=</span> <span class="n">toks</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
         <span class="n">pos</span> <span class="o">=</span> <span class="n">tok</span><span class="o">.</span><span class="n">lexpos</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">tok</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
@@ -4059,7 +4123,7 @@
       
     </aside>
   </div>
-</div><script src="../../_static/documentation_options.js?v=10ab35ec"></script>
+</div><script src="../../_static/documentation_options.js?v=db22a521"></script>
     <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
     <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>
