@@ -502,23 +502,54 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_alias_completion_description</span><span class="p">(</span><span class="n">aliases</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the first non-empty line of the alias docstring, or ``&quot;&quot;``.</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return a one-line description for an alias entry in the dropdown.</span>
 
 <span class="sd">    The completion dropdown&#39;s ``display_meta`` is rendered as a single line</span>
 <span class="sd">    (prompt-toolkit replaces newlines with spaces in</span>
 <span class="sd">    ``PromptToolkitCompleter.get_completions``), so a multi-line docstring is</span>
 <span class="sd">    summarised down to its first non-empty line — typically the docstring&#39;s</span>
 <span class="sd">    one-line summary in PEP 257 style.</span>
+
+<span class="sd">    When the alias has no docstring, fall back to the alias *contents* for</span>
+<span class="sd">    plain string-/list-form aliases — `aliases[&#39;ll&#39;] = &#39;ls -la&#39;` should show</span>
+<span class="sd">    ``ls -la`` next to ``ll`` in the menu so the user remembers what it</span>
+<span class="sd">    expands to. Only single-line content is shown; multi-line / callable /</span>
+<span class="sd">    Click aliases keep an empty description (their behaviour can&#39;t be</span>
+<span class="sd">    meaningfully summarised in one line without a docstring).</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">aliases</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">return</span> <span class="s2">&quot;&quot;</span>
     <span class="n">doc</span> <span class="o">=</span> <span class="n">aliases</span><span class="o">.</span><span class="n">get_doc</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">doc</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">doc</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">doc</span><span class="o">.</span><span class="n">splitlines</span><span class="p">():</span>
+            <span class="n">line</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">line</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">line</span>
         <span class="k">return</span> <span class="s2">&quot;&quot;</span>
-    <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">doc</span><span class="o">.</span><span class="n">splitlines</span><span class="p">():</span>
-        <span class="n">line</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
-        <span class="k">if</span> <span class="n">line</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">line</span>
+    <span class="c1"># No docstring — fall back to alias contents.</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">raw</span> <span class="o">=</span> <span class="n">aliases</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+    <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">raw</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+        <span class="c1"># Plain string aliases (``aliases[&#39;ll&#39;] = &#39;ls -la&#39;``) are stored as</span>
+        <span class="c1"># a token list after being run through the lexer. Re-join for</span>
+        <span class="c1"># display; lists by construction have no newlines.</span>
+        <span class="k">return</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span> <span class="k">for</span> <span class="n">tok</span> <span class="ow">in</span> <span class="n">raw</span><span class="p">)</span>
+    <span class="n">src</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">raw</span><span class="p">,</span> <span class="s2">&quot;src&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="c1"># ``ExecAlias`` — the original source string is on ``.src``. For</span>
+        <span class="c1"># single-line sources show the source as-is; for multi-line ones</span>
+        <span class="c1"># fall back to ``repr`` so newlines/tabs render as ``\n`` / ``\t``</span>
+        <span class="c1"># and the whole body can still fit on one ``display_meta`` line.</span>
+        <span class="n">src</span> <span class="o">=</span> <span class="n">src</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">src</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">if</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span> <span class="ow">in</span> <span class="n">src</span><span class="p">:</span>
+            <span class="c1"># ``repr`` to surface ``\n``/``\t`` as visible escapes, then</span>
+            <span class="c1"># strip the outer quotes — they&#39;re noise in a description slot.</span>
+            <span class="k">return</span> <span class="nb">repr</span><span class="p">(</span><span class="n">src</span><span class="p">)[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">src</span>
     <span class="k">return</span> <span class="s2">&quot;&quot;</span>
 
 
