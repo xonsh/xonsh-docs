@@ -7,7 +7,7 @@
         <link rel="prefetch" href="../../_static/xonsh_terminal_icon_256.png" as="image">
 
     <link rel="shortcut icon" href="../../_static/magic_conch.ico"><!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
-        <title>xonsh.tools - xonsh 0.23.4 documentation</title>
+        <title>xonsh.tools - xonsh 0.23.5 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
@@ -189,7 +189,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../contents.html"><div class="brand">xonsh 0.23.4 documentation</div></a>
+      <a href="../../contents.html"><div class="brand">xonsh 0.23.5 documentation</div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -213,7 +213,7 @@
     <img class="sidebar-logo" src="../../_static/xonsh_terminal_icon_256.png" alt="Logo"/>
   </div>
   
-  <span class="sidebar-brand-text">xonsh 0.23.4 documentation</span>
+  <span class="sidebar-brand-text">xonsh 0.23.5 documentation</span>
   
 </a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -3684,12 +3684,16 @@
         <span class="c1"># itself started with one.</span>
         <span class="n">strip_dot_prefix</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">pattern</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="n">os</span><span class="o">.</span><span class="n">sep</span><span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_entries</span><span class="p">(</span><span class="n">d</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_entries</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">part</span><span class="p">):</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">entries</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
             <span class="k">return</span> <span class="kc">None</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">include_dotfiles</span><span class="p">:</span>
+        <span class="c1"># Mirror stdlib glob: a segment that starts with &#39;.&#39; is treated as</span>
+        <span class="c1"># an explicit request for hidden names (literal &#39;.foo&#39; or wildcard</span>
+        <span class="c1"># &#39;.x*&#39;), so the dotfile filter does not apply. Bare wildcards</span>
+        <span class="c1"># (&#39;*&#39;, &#39;**&#39;, &#39;foo*&#39;) still hide dotfiles unless include_dotfiles.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">include_dotfiles</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">part</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">):</span>
             <span class="n">entries</span> <span class="o">=</span> <span class="p">[</span><span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">entries</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">e</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)]</span>
         <span class="k">return</span> <span class="n">entries</span>
 
@@ -3698,10 +3702,23 @@
 
     <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">part</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">parts</span><span class="p">):</span>
         <span class="n">is_last</span> <span class="o">=</span> <span class="n">idx</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
-        <span class="c1"># &#39;.&#39; and empty segments are no-ops (e.g. &#39;./foo&#39; splits to</span>
-        <span class="c1"># [&#39;.&#39;, &#39;foo&#39;] — we should stay in cwd rather than look for an</span>
-        <span class="c1"># entry literally named &#39;.&#39;).</span>
-        <span class="k">if</span> <span class="n">part</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;.&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_last</span><span class="p">:</span>
+        <span class="c1"># &#39;.&#39; / &#39;&#39; / &#39;..&#39; are never returned by os.listdir, so handle</span>
+        <span class="c1"># them as literal path-walking segments to match stdlib glob:</span>
+        <span class="c1"># &#39;.&#39; / &#39;&#39; stay in the current directory, &#39;..&#39; moves up. Without</span>
+        <span class="c1"># this branch, patterns like &#39;../*&#39;, &#39;/tmp/../etc&#39; or a bare</span>
+        <span class="c1"># &#39;cd ../&#39; (which expands to &#39;../*&#39;) would yield zero matches.</span>
+        <span class="c1"># A trailing &#39;&#39; (empty) segment also preserves the trailing</span>
+        <span class="c1"># separator on the result, so &#39;foo/&#39; yields &#39;foo/&#39; rather than</span>
+        <span class="c1"># &#39;foo&#39;.</span>
+        <span class="k">if</span> <span class="n">part</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;.&quot;</span><span class="p">,</span> <span class="s2">&quot;..&quot;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">part</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;.&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_last</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">nxt</span> <span class="o">=</span> <span class="p">[</span><span class="n">_join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">part</span><span class="p">)</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">cur</span><span class="p">]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">is_last</span><span class="p">:</span>
+                <span class="n">nxt</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">nxt</span> <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">p</span><span class="p">)]</span>
+            <span class="n">cur</span> <span class="o">=</span> <span class="n">nxt</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">cur</span><span class="p">:</span>
+                <span class="k">return</span>
             <span class="k">continue</span>
         <span class="n">nxt</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">if</span> <span class="n">recursive</span> <span class="ow">and</span> <span class="n">part</span> <span class="o">==</span> <span class="s2">&quot;**&quot;</span><span class="p">:</span>
@@ -3713,7 +3730,7 @@
                     <span class="k">continue</span>
                 <span class="n">seen</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
                 <span class="n">nxt</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
-                <span class="n">entries</span> <span class="o">=</span> <span class="n">_entries</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+                <span class="n">entries</span> <span class="o">=</span> <span class="n">_entries</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">part</span><span class="p">)</span>
                 <span class="k">if</span> <span class="n">entries</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                     <span class="k">continue</span>
                 <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">entries</span><span class="p">:</span>
@@ -3724,7 +3741,7 @@
             <span class="k">continue</span>
         <span class="n">has_meta</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="n">c</span> <span class="ow">in</span> <span class="n">part</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">_GLOB_META</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">cur</span><span class="p">:</span>
-            <span class="n">entries</span> <span class="o">=</span> <span class="n">_entries</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+            <span class="n">entries</span> <span class="o">=</span> <span class="n">_entries</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">part</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">entries</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="c1"># Parent unreadable (sandbox, EACCES) — keep the literal</span>
                 <span class="c1"># name if it actually exists on disk, otherwise drop</span>
@@ -4123,7 +4140,7 @@
       
     </aside>
   </div>
-</div><script src="../../_static/documentation_options.js?v=db22a521"></script>
+</div><script src="../../_static/documentation_options.js?v=7f5a2138"></script>
     <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
     <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>
