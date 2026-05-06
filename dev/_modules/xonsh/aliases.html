@@ -2126,6 +2126,58 @@
     <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">canonical</span><span class="p">)</span> <span class="k">if</span> <span class="n">canonical</span><span class="o">.</span><span class="n">is_file</span><span class="p">()</span> <span class="k">else</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;COMSPEC&quot;</span><span class="p">]</span>
 
 
+<span class="n">WINDOWS_CMD_ALIASES</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span>
+    <span class="p">{</span>
+        <span class="s2">&quot;cls&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;copy&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;del&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;dir&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;echo&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;erase&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;md&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;mkdir&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;mklink&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;move&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;rd&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;ren&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;rename&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;rmdir&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;time&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;type&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;vol&quot;</span><span class="p">,</span>
+    <span class="p">}</span>
+<span class="p">)</span>
+<span class="sd">&quot;&quot;&quot;Built-in commands of ``cmd.exe`` that xonsh borrows on Windows.&quot;&quot;&quot;</span>
+
+
+<div class="viewcode-block" id="win_sudo">
+<a class="viewcode-back" href="../../lib/_autosummary/cmd/xonsh.aliases.html#xonsh.aliases.win_sudo">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">win_sudo</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Run a command with Windows UAC elevation.</span>
+
+<span class="sd">    Registered as the ``sudo`` alias on Windows only when no ``sudo`` binary</span>
+<span class="sd">    is found on ``$PATH`` (see issue #5706). Resolves the target via</span>
+<span class="sd">    :func:`xonsh.environ.locate_binary` and re-launches it through</span>
+<span class="sd">    ``ShellExecuteEx`` with the ``runas`` verb; ``cmd.exe`` built-ins</span>
+<span class="sd">    (``dir``, ``copy``, ...) are dispatched via ``cmd /D /C`` from the</span>
+<span class="sd">    current working directory. The elevated process opens in a new console</span>
+<span class="sd">    and does not inherit standard streams, so its output is not piped back.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">xonsh.platforms.winutils</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">winutils</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">args</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;sudo: missing executable to run as Administrator</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">cmd</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">resolved</span> <span class="o">:=</span> <span class="n">locate_binary</span><span class="p">(</span><span class="n">cmd</span><span class="p">))</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">winutils</span><span class="o">.</span><span class="n">sudo</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">normpath</span><span class="p">(</span><span class="n">resolved</span><span class="p">),</span> <span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+    <span class="k">elif</span> <span class="n">cmd</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">WINDOWS_CMD_ALIASES</span><span class="p">:</span>
+        <span class="n">cmd_args</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;/D&quot;</span><span class="p">,</span> <span class="s2">&quot;/C&quot;</span><span class="p">,</span> <span class="s2">&quot;CD&quot;</span><span class="p">,</span> <span class="n">_get_cwd</span><span class="p">(),</span> <span class="s2">&quot;&amp;&amp;&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">args</span>
+        <span class="k">return</span> <span class="n">winutils</span><span class="o">.</span><span class="n">sudo</span><span class="p">(</span><span class="n">_find_cmd_exe</span><span class="p">(),</span> <span class="n">cmd_args</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;sudo: cannot find executable &quot;</span><span class="si">{</span><span class="n">cmd</span><span class="si">}</span><span class="s1">&quot;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">,</span> <span class="mi">127</span><span class="p">)</span></div>
+
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_output_to_path_object</span><span class="p">(</span><span class="n">lines</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Transform first output line into single path. Return None if the output is empty.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">lines</span> <span class="ow">and</span> <span class="p">(</span><span class="n">path_str</span> <span class="o">:=</span> <span class="n">lines</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()):</span>
@@ -2232,26 +2284,7 @@
     <span class="p">}</span>
     <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
         <span class="c1"># Borrow builtin commands from cmd.exe.</span>
-        <span class="n">windows_cmd_aliases</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="s2">&quot;cls&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;copy&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;del&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;dir&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;echo&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;erase&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;md&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;mkdir&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;mklink&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;move&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;rd&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;ren&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;rename&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;rmdir&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;time&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;type&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;vol&quot;</span><span class="p">,</span>
-        <span class="p">}</span>
-        <span class="k">for</span> <span class="n">alias</span> <span class="ow">in</span> <span class="n">windows_cmd_aliases</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">alias</span> <span class="ow">in</span> <span class="n">WINDOWS_CMD_ALIASES</span><span class="p">:</span>
             <span class="n">default_aliases</span><span class="p">[</span><span class="n">alias</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">_find_cmd_exe</span><span class="p">(),</span> <span class="s2">&quot;/c&quot;</span><span class="p">,</span> <span class="n">alias</span><span class="p">]</span>
         <span class="n">default_aliases</span><span class="p">[</span><span class="s2">&quot;call&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;source-cmd&quot;</span><span class="p">]</span>
         <span class="n">default_aliases</span><span class="p">[</span><span class="s2">&quot;source-bat&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;source-cmd&quot;</span><span class="p">]</span>
@@ -2260,25 +2293,8 @@
             <span class="c1"># Add aliases specific to the Anaconda python distribution.</span>
             <span class="n">default_aliases</span><span class="p">[</span><span class="s2">&quot;activate&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;source-cmd&quot;</span><span class="p">,</span> <span class="s2">&quot;activate.bat&quot;</span><span class="p">]</span>
             <span class="n">default_aliases</span><span class="p">[</span><span class="s2">&quot;deactivate&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;source-cmd&quot;</span><span class="p">,</span> <span class="s2">&quot;deactivate.bat&quot;</span><span class="p">]</span>
-        <span class="k">if</span> <span class="n">shutil</span><span class="o">.</span><span class="n">which</span><span class="p">(</span><span class="s2">&quot;sudo&quot;</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get_detyped</span><span class="p">(</span><span class="s2">&quot;PATH&quot;</span><span class="p">)):</span>
-            <span class="c1"># XSH.commands_cache is not available during setup</span>
-            <span class="kn">import</span><span class="w"> </span><span class="nn">xonsh.platforms.winutils</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">winutils</span>
-
-            <span class="k">def</span><span class="w"> </span><span class="nf">sudo</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
-                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
-                    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;You need to provide an executable to run as Administrator.&quot;</span><span class="p">)</span>
-                    <span class="k">return</span>
-                <span class="n">cmd</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-                <span class="k">if</span> <span class="n">locate_binary</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
-                    <span class="k">return</span> <span class="n">winutils</span><span class="o">.</span><span class="n">sudo</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
-                <span class="k">elif</span> <span class="n">cmd</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">windows_cmd_aliases</span><span class="p">:</span>
-                    <span class="n">args</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;/D&quot;</span><span class="p">,</span> <span class="s2">&quot;/C&quot;</span><span class="p">,</span> <span class="s2">&quot;CD&quot;</span><span class="p">,</span> <span class="n">_get_cwd</span><span class="p">(),</span> <span class="s2">&quot;&amp;&amp;&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">args</span>
-                    <span class="k">return</span> <span class="n">winutils</span><span class="o">.</span><span class="n">sudo</span><span class="p">(</span><span class="s2">&quot;cmd&quot;</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span>
-                <span class="k">else</span><span class="p">:</span>
-                    <span class="n">msg</span> <span class="o">=</span> <span class="s1">&#39;Cannot find the path for executable &quot;</span><span class="si">{0}</span><span class="s1">&quot;.&#39;</span>
-                    <span class="nb">print</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">cmd</span><span class="p">))</span>
-
-            <span class="n">default_aliases</span><span class="p">[</span><span class="s2">&quot;sudo&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">sudo</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">shutil</span><span class="o">.</span><span class="n">which</span><span class="p">(</span><span class="s2">&quot;sudo&quot;</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get_detyped</span><span class="p">(</span><span class="s2">&quot;PATH&quot;</span><span class="p">)):</span>
+            <span class="n">default_aliases</span><span class="p">[</span><span class="s2">&quot;sudo&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">win_sudo</span>
     <span class="k">elif</span> <span class="n">ON_DARWIN</span><span class="p">:</span>
         <span class="n">default_aliases</span><span class="p">[</span><span class="s2">&quot;ls&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;ls&quot;</span><span class="p">,</span> <span class="s2">&quot;-G&quot;</span><span class="p">]</span>
     <span class="k">elif</span> <span class="n">ON_FREEBSD</span> <span class="ow">or</span> <span class="n">ON_DRAGONFLY</span><span class="p">:</span>
