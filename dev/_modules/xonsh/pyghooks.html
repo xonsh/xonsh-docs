@@ -2185,21 +2185,33 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_is_plugin_mode</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;True when XonshLexer runs without a live xonsh session.</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;True when XonshLexer should fall back to optimistic tokens</span>
+<span class="sd">    instead of marking unknown ``$VAR`` / commands / ``@()`` names as</span>
+<span class="sd">    Error.</span>
 
-<span class="sd">    The lexer is registered as a pygments entry point and gets imported by</span>
-<span class="sd">    Sphinx, nbconvert, jupyter console, and other tools that never call</span>
-<span class="sd">    ``xonsh.main.setup()``.  In those contexts the singleton is bare —</span>
-<span class="sd">    ``XSH.commands_cache`` is None, ``XSH.env`` is the mock ``{}`` set by</span>
-<span class="sd">    ``XonshLexer.__init__``, ``XSH.ctx`` is None — so runtime checks</span>
-<span class="sd">    against env / commands cache / context return False for everything</span>
-<span class="sd">    and would mark every ``$VAR``, every subprocess command, and every</span>
-<span class="sd">    ``@()``-substituted name as Error.  When this returns True, callbacks</span>
-<span class="sd">    emit the optimistic token (``Name.Variable`` / ``Name.Builtin`` /</span>
-<span class="sd">    ``Name``) instead of Error, so rendered xonsh code reads as plain</span>
-<span class="sd">    syntax highlighting rather than a sea of red error markers.</span>
+<span class="sd">    Two triggers:</span>
+
+<span class="sd">    * **No live session** — the lexer is loaded as a pygments entry</span>
+<span class="sd">      point by Sphinx, nbconvert, jupyter console, etc., none of which</span>
+<span class="sd">      call ``xonsh.main.setup()``.  ``XSH.commands_cache`` is None,</span>
+<span class="sd">      ``XSH.env`` is the mock ``{}`` set by ``XonshLexer.__init__``,</span>
+<span class="sd">      ``XSH.ctx`` is None — every runtime check fails by default and</span>
+<span class="sd">      the rendered output ends up flooded with red Error markers.</span>
+
+<span class="sd">    * **Explicit opt-in via** ``XonshLexer.docs_mode`` — covers the</span>
+<span class="sd">      case where xonsh *is* fully bootstrapped (so ``commands_cache``</span>
+<span class="sd">      is set) but the lexer is still being used for offline rendering</span>
+<span class="sd">      rather than a live prompt: typically a Sphinx ``conf.py`` that</span>
+<span class="sd">      imports xonsh modules during configuration, after which</span>
+<span class="sd">      ``XSH.env`` is the build host&#39;s environment and any ``$VAR``</span>
+<span class="sd">      not present there (``$LD_LIBRARY_PATH``, project-specific vars,</span>
+<span class="sd">      …) would otherwise be marked as Error in the rendered docs.</span>
+
+<span class="sd">    Typo-detection Error tokens are an interactive-shell feature; when</span>
+<span class="sd">    the renderer is offline there is no user to react to the red</span>
+<span class="sd">    underline, so the markers add visual noise without value.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">XSH</span><span class="p">,</span> <span class="s2">&quot;commands_cache&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">XonshLexer</span><span class="o">.</span><span class="n">docs_mode</span> <span class="ow">or</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">XSH</span><span class="p">,</span> <span class="s2">&quot;commands_cache&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span>
 
 
 <span class="nd">@events</span><span class="o">.</span><span class="n">on_pre_prompt</span>
@@ -2444,6 +2456,12 @@
     <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;Xonsh lexer&quot;</span>
     <span class="n">aliases</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;xonsh&quot;</span><span class="p">,</span> <span class="s2">&quot;xsh&quot;</span><span class="p">]</span>
     <span class="n">filenames</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;*.xsh&quot;</span><span class="p">,</span> <span class="s2">&quot;*xonshrc&quot;</span><span class="p">]</span>
+
+    <span class="c1"># Class-level opt-in for offline renderers (Sphinx conf.py,</span>
+    <span class="c1"># nbconvert wrappers, …): when True, callbacks bypass the live-env</span>
+    <span class="c1"># checks and emit the optimistic token instead of Error.  See</span>
+    <span class="c1"># ``_is_plugin_mode`` for the full rationale.</span>
+    <span class="n">docs_mode</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="c1"># If the lexer is loaded as a pygment plugin, we have to mock</span>
