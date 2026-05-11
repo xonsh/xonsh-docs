@@ -7,7 +7,7 @@
         <link rel="prefetch" href="../../_static/xonsh_terminal_icon_256.png" as="image">
 
     <link rel="shortcut icon" href="../../_static/magic_conch.ico"><!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
-        <title>xonsh.xontribs - xonsh 0.23.5 documentation</title>
+        <title>xonsh.xontribs - xonsh 0.23.6 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
@@ -189,7 +189,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../contents.html"><div class="brand">xonsh 0.23.5 documentation</div></a>
+      <a href="../../contents.html"><div class="brand">xonsh 0.23.6 documentation</div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -213,7 +213,7 @@
     <img class="sidebar-logo" src="../../_static/xonsh_terminal_icon_256.png" alt="Logo"/>
   </div>
   
-  <span class="sidebar-brand-text">xonsh 0.23.5 documentation</span>
+  <span class="sidebar-brand-text">xonsh 0.23.6 documentation</span>
   
 </a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -566,8 +566,41 @@
     <span class="n">spec</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="n">module</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">spec</span> <span class="ow">and</span> <span class="n">spec</span><span class="o">.</span><span class="n">has_location</span> <span class="ow">and</span> <span class="n">spec</span><span class="o">.</span><span class="n">origin</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">ast</span><span class="o">.</span><span class="n">get_docstring</span><span class="p">(</span><span class="n">ast</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">spec</span><span class="o">.</span><span class="n">origin</span><span class="p">)</span><span class="o">.</span><span class="n">read_text</span><span class="p">()))</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
+    <span class="c1"># Fall back for ``xontrib.&lt;name&gt;`` modules that ship as ``.xsh`` files —</span>
+    <span class="c1"># importlib&#39;s standard finders don&#39;t know about ``.xsh`` and return</span>
+    <span class="c1"># ``None`` here.</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">_find_xontrib_file</span><span class="p">(</span><span class="n">module</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">path</span><span class="o">.</span><span class="n">suffix</span> <span class="o">==</span> <span class="s2">&quot;.py&quot;</span><span class="p">:</span>
+        <span class="k">with</span> <span class="n">contextlib</span><span class="o">.</span><span class="n">suppress</span><span class="p">(</span><span class="ne">SyntaxError</span><span class="p">,</span> <span class="ne">OSError</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">ast</span><span class="o">.</span><span class="n">get_docstring</span><span class="p">(</span><span class="n">ast</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">read_text</span><span class="p">()))</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
     <span class="k">return</span> <span class="s2">&quot;&quot;</span></div>
 
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_find_xontrib_file</span><span class="p">(</span><span class="n">module</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Path | None&quot;</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Locate the source file for a ``xontrib.&lt;name&gt;`` module.</span>
+
+<span class="sd">    Handles ``.py``, ``.xsh``, and package-style xontribs by scanning the</span>
+<span class="sd">    physical locations of the ``xontrib`` namespace package directly. Used</span>
+<span class="sd">    as a fallback for cases that ``importlib.util.find_spec`` cannot</span>
+<span class="sd">    resolve — most notably ``.xsh`` xontribs (the standard import</span>
+<span class="sd">    machinery doesn&#39;t recognize the extension).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">module</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;xontrib.&quot;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">module</span><span class="o">.</span><span class="n">removeprefix</span><span class="p">(</span><span class="s2">&quot;xontrib.&quot;</span><span class="p">)</span>
+    <span class="n">spec</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="s2">&quot;xontrib&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">spec</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">spec</span><span class="o">.</span><span class="n">submodule_search_locations</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">for</span> <span class="n">loc</span> <span class="ow">in</span> <span class="n">spec</span><span class="o">.</span><span class="n">submodule_search_locations</span><span class="p">:</span>
+        <span class="n">base</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">loc</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">candidate</span> <span class="ow">in</span> <span class="p">(</span><span class="n">base</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.py&quot;</span><span class="p">,</span> <span class="n">base</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.xsh&quot;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">candidate</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+                <span class="k">return</span> <span class="n">candidate</span>
+        <span class="n">pkg</span> <span class="o">=</span> <span class="n">base</span> <span class="o">/</span> <span class="n">name</span> <span class="o">/</span> <span class="s2">&quot;__init__.py&quot;</span>
+        <span class="k">if</span> <span class="n">pkg</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">return</span> <span class="n">pkg</span>
+    <span class="k">return</span> <span class="kc">None</span>
 
 
 <div class="viewcode-block" id="get_xontribs">
@@ -765,6 +798,16 @@
 
 
 
+<div class="viewcode-block" id="xontrib_any_completer">
+<a class="viewcode-back" href="../../lib/_autosummary/helpers/xonsh.xontribs.html#xonsh.xontribs.xontrib_any_completer">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">xontrib_any_completer</span><span class="p">(</span><span class="o">**</span><span class="n">_</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">xontrib</span> <span class="ow">in</span> <span class="n">get_xontribs</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">yield</span> <span class="n">RichCompletion</span><span class="p">(</span>
+            <span class="n">name</span><span class="p">,</span> <span class="n">append_space</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="n">xontrib</span><span class="o">.</span><span class="n">get_description</span><span class="p">()</span>
+        <span class="p">)</span></div>
+
+
+
 <div class="viewcode-block" id="xontribs_load">
 <a class="viewcode-back" href="../../lib/_autosummary/helpers/xonsh.xontribs.html#xonsh.xontribs.xontribs_load">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">xontribs_load</span><span class="p">(</span>
@@ -876,6 +919,73 @@
             <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;reloading xontrib </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="n">xontribs_unload</span><span class="p">([</span><span class="n">name</span><span class="p">])</span>
         <span class="n">xontribs_load</span><span class="p">([</span><span class="n">name</span><span class="p">])</span></div>
+
+
+
+<div class="viewcode-block" id="xontribs_info">
+<a class="viewcode-back" href="../../lib/_autosummary/helpers/xonsh.xontribs.html#xonsh.xontribs.xontribs_info">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">xontribs_info</span><span class="p">(</span>
+    <span class="n">name</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Arg</span><span class="p">(</span><span class="n">completer</span><span class="o">=</span><span class="n">xontrib_any_completer</span><span class="p">)],</span>
+    <span class="n">_stdout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Show details about an installed xontrib.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    name</span>
+<span class="sd">        name of the xontrib</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">xontribs</span> <span class="o">=</span> <span class="n">get_xontribs</span><span class="p">()</span>
+    <span class="n">xontrib</span> <span class="o">=</span> <span class="n">xontribs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">xontrib</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Fall back to a direct module lookup so users can inspect xontribs</span>
+        <span class="c1"># that aren&#39;t surfaced via the ``xontrib`` package or the</span>
+        <span class="c1"># ``xonsh.xontribs`` entry-point group (e.g. ``xontrib info</span>
+        <span class="c1"># some.module --full`` style lookups in the future).</span>
+        <span class="n">spec</span> <span class="o">=</span> <span class="n">find_xontrib</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">spec</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">print_color</span><span class="p">(</span>
+                <span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">Xontrib &quot;</span> <span class="o">+</span> <span class="n">name</span> <span class="o">+</span> <span class="s2">&quot; is not installed.</span><span class="si">{RESET}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">_stdout</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">ExitCode</span><span class="o">.</span><span class="n">NOT_FOUND</span>
+        <span class="n">xontrib</span> <span class="o">=</span> <span class="n">Xontrib</span><span class="p">(</span><span class="n">spec</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+
+    <span class="n">spec</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="n">xontrib</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
+    <span class="n">origin</span> <span class="o">=</span> <span class="n">spec</span><span class="o">.</span><span class="n">origin</span> <span class="k">if</span> <span class="n">spec</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">origin</span><span class="p">:</span>
+        <span class="c1"># ``.xsh`` xontribs (and other non-importable modules) are not</span>
+        <span class="c1"># surfaced by ``find_spec`` — fall back to scanning the namespace</span>
+        <span class="c1"># package locations directly.</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">_find_xontrib_file</span><span class="p">(</span><span class="n">xontrib</span><span class="o">.</span><span class="n">module</span><span class="p">)</span>
+        <span class="n">origin</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="k">if</span> <span class="n">path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">&quot;(builtin)&quot;</span>
+
+    <span class="n">source</span> <span class="o">=</span> <span class="n">xontrib</span><span class="o">.</span><span class="n">module</span>
+    <span class="k">if</span> <span class="n">xontrib</span><span class="o">.</span><span class="n">distribution</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">dist_name</span> <span class="o">=</span> <span class="n">xontrib</span><span class="o">.</span><span class="n">distribution</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;Name&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
+        <span class="n">dist_version</span> <span class="o">=</span> <span class="n">xontrib</span><span class="o">.</span><span class="n">distribution</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;Version&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">dist_name</span><span class="p">:</span>
+            <span class="n">source</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; (</span><span class="si">{</span><span class="n">dist_name</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">dist_version</span><span class="si">}</span><span class="s2">)&quot;</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span>
+    <span class="n">source</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; at </span><span class="si">{</span><span class="n">origin</span><span class="si">}</span><span class="s2">&quot;</span>
+
+    <span class="n">description</span> <span class="o">=</span> <span class="n">xontrib</span><span class="o">.</span><span class="n">get_description</span><span class="p">()</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span>
+
+    <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s2">&quot;</span><span class="si">{PURPLE}</span><span class="s2">Name</span><span class="si">{RESET}</span><span class="s2">: &quot;</span> <span class="o">+</span> <span class="n">name</span><span class="p">,</span>
+        <span class="s2">&quot;</span><span class="si">{PURPLE}</span><span class="s2">Source</span><span class="si">{RESET}</span><span class="s2">: &quot;</span> <span class="o">+</span> <span class="n">source</span><span class="p">,</span>
+        <span class="s2">&quot;</span><span class="si">{PURPLE}</span><span class="s2">Description</span><span class="si">{RESET}</span><span class="s2">: &quot;</span> <span class="o">+</span> <span class="n">description</span><span class="p">,</span>
+    <span class="p">]</span>
+    <span class="k">if</span> <span class="n">xontrib</span><span class="o">.</span><span class="n">url</span><span class="p">:</span>
+        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{PURPLE}</span><span class="s2">URL</span><span class="si">{RESET}</span><span class="s2">: &quot;</span> <span class="o">+</span> <span class="n">xontrib</span><span class="o">.</span><span class="n">url</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">xontrib</span><span class="o">.</span><span class="n">license</span><span class="p">:</span>
+        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{PURPLE}</span><span class="s2">License</span><span class="si">{RESET}</span><span class="s2">: &quot;</span> <span class="o">+</span> <span class="n">xontrib</span><span class="o">.</span><span class="n">license</span><span class="p">)</span>
+    <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+        <span class="s2">&quot;</span><span class="si">{PURPLE}</span><span class="s2">Loaded</span><span class="si">{RESET}</span><span class="s2">: &quot;</span>
+        <span class="o">+</span> <span class="p">(</span><span class="s2">&quot;</span><span class="si">{GREEN}</span><span class="s2">yes</span><span class="si">{RESET}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">xontrib</span><span class="o">.</span><span class="n">is_loaded</span> <span class="k">else</span> <span class="s2">&quot;</span><span class="si">{RED}</span><span class="s2">no</span><span class="si">{RESET}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="o">+</span> <span class="p">(</span><span class="s2">&quot; </span><span class="si">{GREEN}</span><span class="s2">(auto)</span><span class="si">{RESET}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">xontrib</span><span class="o">.</span><span class="n">is_auto_loaded</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">print_color</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">),</span> <span class="n">file</span><span class="o">=</span><span class="n">_stdout</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">ExitCode</span><span class="o">.</span><span class="n">OK</span></div>
 
 
 
@@ -994,6 +1104,7 @@
         <span class="n">parser</span><span class="o">.</span><span class="n">add_command</span><span class="p">(</span><span class="n">xontribs_unload</span><span class="p">,</span> <span class="n">prog</span><span class="o">=</span><span class="s2">&quot;unload&quot;</span><span class="p">)</span>
         <span class="n">parser</span><span class="o">.</span><span class="n">add_command</span><span class="p">(</span><span class="n">xontribs_reload</span><span class="p">,</span> <span class="n">prog</span><span class="o">=</span><span class="s2">&quot;reload&quot;</span><span class="p">)</span>
         <span class="n">parser</span><span class="o">.</span><span class="n">add_command</span><span class="p">(</span><span class="n">xontribs_list</span><span class="p">,</span> <span class="n">prog</span><span class="o">=</span><span class="s2">&quot;list&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">parser</span><span class="o">.</span><span class="n">add_command</span><span class="p">(</span><span class="n">xontribs_info</span><span class="p">,</span> <span class="n">prog</span><span class="o">=</span><span class="s2">&quot;info&quot;</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">parser</span></div>
 </div>
 
@@ -1032,7 +1143,7 @@
       
     </aside>
   </div>
-</div><script src="../../_static/documentation_options.js?v=7f5a2138"></script>
+</div><script src="../../_static/documentation_options.js?v=48a2ab52"></script>
     <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
     <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>
