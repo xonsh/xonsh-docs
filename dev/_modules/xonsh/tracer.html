@@ -503,6 +503,8 @@
     <span class="s2">&quot;terminal&quot;</span><span class="p">,</span>
 <span class="p">)</span>
 
+<span class="n">_CACHE_MISS</span> <span class="o">=</span> <span class="nb">object</span><span class="p">()</span>
+
 
 <div class="viewcode-block" id="TracerType">
 <a class="viewcode-back" href="../../lib/_autosummary/helpers/xonsh.tracer.html#xonsh.tracer.TracerType">[docs]</a>
@@ -526,6 +528,11 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">lexer</span> <span class="o">=</span> <span class="n">pyghooks</span><span class="o">.</span><span class="n">XonshLexer</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">formatter</span> <span class="o">=</span> <span class="n">terminal</span><span class="o">.</span><span class="n">TerminalFormatter</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_last</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># filename, lineno tuple</span>
+        <span class="c1"># Per-code-object cache for find_file(frame). Code objects are</span>
+        <span class="c1"># immutable and reused across calls, so resolving the file path once</span>
+        <span class="c1"># per code object is enough — avoids hitting the filesystem on every</span>
+        <span class="c1"># line event. See xonsh/xonsh#3063.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_fname_cache</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="n">tp</span><span class="o">.</span><span class="n">Any</span><span class="p">,</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__del__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">files</span><span class="p">):</span>
@@ -574,26 +581,65 @@
 
 <div class="viewcode-block" id="TracerType.trace">
 <a class="viewcode-back" href="../../lib/_autosummary/helpers/xonsh.tracer.html#xonsh.tracer.TracerType.trace">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">trace</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">frame</span><span class="p">,</span> <span class="n">event</span><span class="p">,</span> <span class="n">arg</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">find_file</span><span class="o">=</span><span class="n">find_file</span><span class="p">,</span> <span class="n">print_color</span><span class="o">=</span><span class="n">print_color</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Implements a line tracing function.&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">trace</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">frame</span><span class="p">,</span>
+        <span class="n">event</span><span class="p">,</span>
+        <span class="n">arg</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">find_file</span><span class="o">=</span><span class="n">find_file</span><span class="p">,</span>
+        <span class="n">print_color</span><span class="o">=</span><span class="n">print_color</span><span class="p">,</span>
+        <span class="n">linecache</span><span class="o">=</span><span class="n">linecache</span><span class="p">,</span>
+        <span class="n">sys</span><span class="o">=</span><span class="n">sys</span><span class="p">,</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Implements a line tracing function.</span>
+
+<span class="sd">        Default-argument bindings keep cross-module references alive inside</span>
+<span class="sd">        ``__kwdefaults__``. At interpreter shutdown, weakref callbacks like</span>
+<span class="sd">        ``logging._removeHandlerRef`` can fire while ``xonsh.tracer``&#39;s globals</span>
+<span class="sd">        are being cleared, and without these bindings the lookups would raise</span>
+<span class="sd">        ``TypeError: &#39;NoneType&#39; object is not callable``. See #4924 / #5806.</span>
+<span class="sd">        ``tracer_format_line`` is intentionally *not* bound here: it lives in</span>
+<span class="sd">        this same module, so its lifetime matches ``trace`` itself.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">event</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">valid_events</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">trace</span>
-        <span class="n">fname</span> <span class="o">=</span> <span class="n">find_file</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">fname</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">files</span><span class="p">:</span>
-            <span class="n">lineno</span> <span class="o">=</span> <span class="n">frame</span><span class="o">.</span><span class="n">f_lineno</span>
-            <span class="n">curr</span> <span class="o">=</span> <span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="n">lineno</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">curr</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_last</span><span class="p">:</span>
-                <span class="n">line</span> <span class="o">=</span> <span class="n">linecache</span><span class="o">.</span><span class="n">getline</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="n">lineno</span><span class="p">)</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span>
-                <span class="n">s</span> <span class="o">=</span> <span class="n">tracer_format_line</span><span class="p">(</span>
-                    <span class="n">fname</span><span class="p">,</span>
-                    <span class="n">lineno</span><span class="p">,</span>
-                    <span class="n">line</span><span class="p">,</span>
-                    <span class="n">color</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">usecolor</span><span class="p">,</span>
-                    <span class="n">lexer</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">lexer</span><span class="p">,</span>
-                    <span class="n">formatter</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">formatter</span><span class="p">,</span>
-                <span class="p">)</span>
-                <span class="n">print_color</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_last</span> <span class="o">=</span> <span class="n">curr</span>
+        <span class="c1"># Resolve the frame&#39;s file path. Cached on the code object: code</span>
+        <span class="c1"># objects are immutable and reused across invocations, so we hit the</span>
+        <span class="c1"># filesystem (inspect.getabsfile + normabspath) at most once per</span>
+        <span class="c1"># distinct callable in the program. This matters because the global</span>
+        <span class="c1"># tracer fires on every &quot;call&quot; event — for every frame entered, in</span>
+        <span class="c1"># every file — so the per-event cost has to be near-zero.</span>
+        <span class="n">code</span> <span class="o">=</span> <span class="n">frame</span><span class="o">.</span><span class="n">f_code</span>
+        <span class="n">cache</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fname_cache</span>
+        <span class="n">fname</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">_CACHE_MISS</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">fname</span> <span class="ow">is</span> <span class="n">_CACHE_MISS</span><span class="p">:</span>
+            <span class="n">fname</span> <span class="o">=</span> <span class="n">find_file</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>
+            <span class="n">cache</span><span class="p">[</span><span class="n">code</span><span class="p">]</span> <span class="o">=</span> <span class="n">fname</span>
+        <span class="k">if</span> <span class="n">fname</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">files</span><span class="p">:</span>
+            <span class="c1"># Returning None tells Python not to install this function as the</span>
+            <span class="c1"># frame&#39;s local trace function. Line events inside this frame</span>
+            <span class="c1"># (and its children, until they cross back into a traced file)</span>
+            <span class="c1"># will not fire at all — that is the source of the speedup for</span>
+            <span class="c1"># #3063. Without this, every line of every imported module gets</span>
+            <span class="c1"># a Python-level callback, which is two orders of magnitude</span>
+            <span class="c1"># slower than running with the tracer off.</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">lineno</span> <span class="o">=</span> <span class="n">frame</span><span class="o">.</span><span class="n">f_lineno</span>
+        <span class="n">curr</span> <span class="o">=</span> <span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="n">lineno</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">curr</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_last</span><span class="p">:</span>
+            <span class="n">line</span> <span class="o">=</span> <span class="n">linecache</span><span class="o">.</span><span class="n">getline</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="n">lineno</span><span class="p">)</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="n">tracer_format_line</span><span class="p">(</span>
+                <span class="n">fname</span><span class="p">,</span>
+                <span class="n">lineno</span><span class="p">,</span>
+                <span class="n">line</span><span class="p">,</span>
+                <span class="n">color</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">usecolor</span><span class="p">,</span>
+                <span class="n">lexer</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">lexer</span><span class="p">,</span>
+                <span class="n">formatter</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">formatter</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">print_color</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_last</span> <span class="o">=</span> <span class="n">curr</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">trace</span></div>
 
 
