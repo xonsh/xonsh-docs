@@ -493,6 +493,26 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit</span><span class="w"> </span><span class="kn">import</span> <span class="n">ANSI</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.application.current</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_app</span>
+
+<span class="c1"># When xonsh runs inside an SSH session, suppress prompt-toolkit&#39;s Cursor</span>
+<span class="c1"># Position Report (CPR) query — see issue #5686. CPR (`\x1b[6n`) asks the</span>
+<span class="c1"># terminal to report the cursor position, and the terminal answers by</span>
+<span class="c1"># sending bytes back through *stdin*. Those bytes pass through the local</span>
+<span class="c1"># ssh client, which uses byte-stream state (`last_was_cr`) to detect tilde</span>
+<span class="c1"># escape sequences. A CPR response arriving between the user&#39;s Enter and</span>
+<span class="c1"># the following `~` resets `last_was_cr` to 0, so ssh never sees `\r~` and</span>
+<span class="c1"># the escape (`~.`, `~^Z`, `~?`…) silently fails. Disabling CPR makes</span>
+<span class="c1"># prompt-toolkit fall back to assuming the cursor is at column 0, which</span>
+<span class="c1"># is correct in almost all cases (we just wrote a newline) and is the</span>
+<span class="c1"># same assumption bash&#39;s readline makes.</span>
+<span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;SSH_TTY&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;SSH_CONNECTION&quot;</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.output.vt100</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vt100_Output</span> <span class="k">as</span> <span class="n">_XPtkVt100Output</span>
+
+        <span class="n">_XPtkVt100Output</span><span class="o">.</span><span class="n">ask_for_cpr</span> <span class="o">=</span> <span class="k">lambda</span> <span class="bp">self</span><span class="p">:</span> <span class="kc">None</span>
+        <span class="n">_XPtkVt100Output</span><span class="o">.</span><span class="n">responds_to_cpr</span> <span class="o">=</span> <span class="nb">property</span><span class="p">(</span><span class="k">lambda</span> <span class="bp">self</span><span class="p">:</span> <span class="kc">False</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="k">pass</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.auto_suggest</span><span class="w"> </span><span class="kn">import</span> <span class="n">AutoSuggestFromHistory</span><span class="p">,</span> <span class="n">Suggestion</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.clipboard</span><span class="w"> </span><span class="kn">import</span> <span class="n">InMemoryClipboard</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.document</span><span class="w"> </span><span class="kn">import</span> <span class="n">Document</span>
