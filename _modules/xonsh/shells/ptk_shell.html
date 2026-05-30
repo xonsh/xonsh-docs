@@ -7,7 +7,7 @@
         <link rel="prefetch" href="../../../_static/xonsh_terminal_icon_256.png" as="image">
 
     <link rel="shortcut icon" href="../../../_static/magic_conch.ico"><!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
-        <title>xonsh.shells.ptk_shell - Xonsh 0.23.7 Documentation</title>
+        <title>xonsh.shells.ptk_shell - Xonsh 0.23.8 Documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css?v=4ae1632d" />
@@ -189,7 +189,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../../contents.html"><div class="brand">Xonsh 0.23.7 Documentation</div></a>
+      <a href="../../../contents.html"><div class="brand">Xonsh 0.23.8 Documentation</div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -213,7 +213,7 @@
     <img class="sidebar-logo" src="../../../_static/xonsh_terminal_icon_256.png" alt="Logo"/>
   </div>
   
-  <span class="sidebar-brand-text">Xonsh 0.23.7 Documentation</span>
+  <span class="sidebar-brand-text">Xonsh 0.23.8 Documentation</span>
   
 </a><form class="sidebar-search-container" method="get" action="../../../search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -486,8 +486,33 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">wraps</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">types</span><span class="w"> </span><span class="kn">import</span> <span class="n">MethodType</span>
 
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">termios</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>  <span class="c1"># Windows</span>
+    <span class="n">termios</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># type: ignore[assignment]</span>
+
 <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit</span><span class="w"> </span><span class="kn">import</span> <span class="n">ANSI</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.application.current</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_app</span>
+
+<span class="c1"># When xonsh runs inside an SSH session, suppress prompt-toolkit&#39;s Cursor</span>
+<span class="c1"># Position Report (CPR) query — see issue #5686. CPR (`\x1b[6n`) asks the</span>
+<span class="c1"># terminal to report the cursor position, and the terminal answers by</span>
+<span class="c1"># sending bytes back through *stdin*. Those bytes pass through the local</span>
+<span class="c1"># ssh client, which uses byte-stream state (`last_was_cr`) to detect tilde</span>
+<span class="c1"># escape sequences. A CPR response arriving between the user&#39;s Enter and</span>
+<span class="c1"># the following `~` resets `last_was_cr` to 0, so ssh never sees `\r~` and</span>
+<span class="c1"># the escape (`~.`, `~^Z`, `~?`…) silently fails. Disabling CPR makes</span>
+<span class="c1"># prompt-toolkit fall back to assuming the cursor is at column 0, which</span>
+<span class="c1"># is correct in almost all cases (we just wrote a newline) and is the</span>
+<span class="c1"># same assumption bash&#39;s readline makes.</span>
+<span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;SSH_TTY&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;SSH_CONNECTION&quot;</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.output.vt100</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vt100_Output</span> <span class="k">as</span> <span class="n">_XPtkVt100Output</span>
+
+        <span class="n">_XPtkVt100Output</span><span class="o">.</span><span class="n">ask_for_cpr</span> <span class="o">=</span> <span class="k">lambda</span> <span class="bp">self</span><span class="p">:</span> <span class="kc">None</span>
+        <span class="n">_XPtkVt100Output</span><span class="o">.</span><span class="n">responds_to_cpr</span> <span class="o">=</span> <span class="nb">property</span><span class="p">(</span><span class="k">lambda</span> <span class="bp">self</span><span class="p">:</span> <span class="kc">False</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="k">pass</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.auto_suggest</span><span class="w"> </span><span class="kn">import</span> <span class="n">AutoSuggestFromHistory</span><span class="p">,</span> <span class="n">Suggestion</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.clipboard</span><span class="w"> </span><span class="kn">import</span> <span class="n">InMemoryClipboard</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.document</span><span class="w"> </span><span class="kn">import</span> <span class="n">Document</span>
@@ -919,19 +944,34 @@
         <span class="k">if</span> <span class="n">emit_modify_other_keys</span><span class="p">:</span>
             <span class="n">output</span><span class="o">.</span><span class="n">write_raw</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\x1b</span><span class="s2">[&gt;4;1m&quot;</span><span class="p">)</span>
             <span class="n">output</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+        <span class="n">eintr_retry_types</span><span class="p">:</span> <span class="nb">tuple</span> <span class="o">=</span> <span class="p">(</span><span class="ne">InterruptedError</span><span class="p">,)</span>
+        <span class="k">if</span> <span class="n">termios</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">eintr_retry_types</span> <span class="o">=</span> <span class="p">(</span><span class="ne">InterruptedError</span><span class="p">,</span> <span class="n">termios</span><span class="o">.</span><span class="n">error</span><span class="p">)</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
                 <span class="k">try</span><span class="p">:</span>
                     <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">prompter</span><span class="o">.</span><span class="n">prompt</span><span class="p">(</span><span class="o">**</span><span class="n">prompt_args</span><span class="p">)</span>
                     <span class="k">break</span>
-                <span class="k">except</span> <span class="ne">InterruptedError</span><span class="p">:</span>
+                <span class="k">except</span> <span class="n">eintr_retry_types</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
                     <span class="c1"># Retry on EINTR — tcsetattr in prompt_toolkit&#39;s</span>
                     <span class="c1"># raw_mode() is not automatically retried by Python</span>
-                    <span class="c1"># (PEP 475 doesn&#39;t cover termios). This happens when a</span>
-                    <span class="c1"># signal (e.g. SIGCHLD from a process launcher like</span>
-                    <span class="c1"># `uv run`) arrives during terminal setup. Narrow to</span>
-                    <span class="c1"># InterruptedError so EOFError/KeyboardInterrupt/etc.</span>
+                    <span class="c1"># (PEP 475 doesn&#39;t cover termios). This happens when</span>
+                    <span class="c1"># a signal (e.g. SIGCHLD from a process launcher like</span>
+                    <span class="c1"># `uv run` or `chezmoi cd`) arrives during terminal</span>
+                    <span class="c1"># setup. termios.error is declared in CPython as</span>
+                    <span class="c1"># PyErr_NewException(&quot;termios.error&quot;, NULL, ...) — it</span>
+                    <span class="c1"># inherits directly from Exception, not OSError, so</span>
+                    <span class="c1"># InterruptedError alone does not cover it (issues</span>
+                    <span class="c1"># #5791, #5871). Gate termios.error on errno==EINTR</span>
+                    <span class="c1"># so unrelated termios failures (EIO, ENOTTY, …)</span>
+                    <span class="c1"># still surface. EOFError/KeyboardInterrupt/etc.</span>
                     <span class="c1"># propagate to cmdloop unchanged (issue #6412).</span>
+                    <span class="k">if</span> <span class="p">(</span>
+                        <span class="n">termios</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                        <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="n">termios</span><span class="o">.</span><span class="n">error</span><span class="p">)</span>
+                        <span class="ow">and</span> <span class="p">(</span><span class="ow">not</span> <span class="n">e</span><span class="o">.</span><span class="n">args</span> <span class="ow">or</span> <span class="n">e</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">4</span><span class="p">)</span>
+                    <span class="p">):</span>
+                        <span class="k">raise</span>
                     <span class="k">continue</span>
         <span class="k">finally</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">emit_modify_other_keys</span><span class="p">:</span>
@@ -1245,7 +1285,7 @@
         <div class="bottom-of-page">
           <div class="left-details">
             <div class="copyright">
-                Copyright &#169; Xonsh Contributors / https://github.com/xonsh/xonsh/graphs/contributors
+                Copyright &#169; Xonsh Contributors / https://github.com/xonsh/xonsh/graphs/contributors?all=1
             </div>
             Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
             
@@ -1265,7 +1305,7 @@
       
     </aside>
   </div>
-</div><script src="../../../_static/documentation_options.js?v=ecda2f4b"></script>
+</div><script src="../../../_static/documentation_options.js?v=04c08c89"></script>
     <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
     <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="../../../_static/scripts/furo.js?v=46bd48cc"></script>

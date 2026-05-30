@@ -7,7 +7,7 @@
         <link rel="prefetch" href="../../_static/xonsh_terminal_icon_256.png" as="image">
 
     <link rel="shortcut icon" href="../../_static/magic_conch.ico"><!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
-        <title>xonsh.aliases - Xonsh 0.23.7 Documentation</title>
+        <title>xonsh.aliases - Xonsh 0.23.8 Documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
@@ -189,7 +189,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../contents.html"><div class="brand">Xonsh 0.23.7 Documentation</div></a>
+      <a href="../../contents.html"><div class="brand">Xonsh 0.23.8 Documentation</div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -213,7 +213,7 @@
     <img class="sidebar-logo" src="../../_static/xonsh_terminal_icon_256.png" alt="Logo"/>
   </div>
   
-  <span class="sidebar-brand-text">Xonsh 0.23.7 Documentation</span>
+  <span class="sidebar-brand-text">Xonsh 0.23.8 Documentation</span>
   
 </a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -506,7 +506,11 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.cli_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">Annotated</span><span class="p">,</span> <span class="n">Arg</span><span class="p">,</span> <span class="n">ArgParserAlias</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.dirstack</span><span class="w"> </span><span class="kn">import</span> <span class="n">_get_cwd</span><span class="p">,</span> <span class="n">cd</span><span class="p">,</span> <span class="n">dirs</span><span class="p">,</span> <span class="n">popd</span><span class="p">,</span> <span class="n">pushd</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.environ</span><span class="w"> </span><span class="kn">import</span> <span class="n">locate_binary</span><span class="p">,</span> <span class="n">make_args_env</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.foreign_shells</span><span class="w"> </span><span class="kn">import</span> <span class="n">foreign_shell_data</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.foreign_shells</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">CANON_SHELL_NAMES</span><span class="p">,</span>
+    <span class="n">DEFAULT_SOURCERS</span><span class="p">,</span>
+    <span class="n">foreign_shell_data</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.lib.lazyasd</span><span class="w"> </span><span class="kn">import</span> <span class="n">lazyobject</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.parsers.ast</span><span class="w"> </span><span class="kn">import</span> <span class="n">isexpression</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.platform</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
@@ -1609,7 +1613,24 @@
         <span class="k">pass</span>  <span class="c1"># don&#39;t change prevcmd if given explicitly</span>
     <span class="k">elif</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">files_or_code</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">sourcer</span><span class="p">:</span>
-            <span class="k">return</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;xonsh: error: `sourcer` command is not mentioned.</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="c1"># Issue #5895: ``--sourcer`` used to be mandatory whenever a</span>
+            <span class="c1"># file argument was given, even though every shell xonsh</span>
+            <span class="c1"># knows about already has a default in ``DEFAULT_SOURCERS``.</span>
+            <span class="c1"># Fall back to that default when the shell canonicalizes</span>
+            <span class="c1"># (&quot;/bin/bash&quot; → &quot;bash&quot; → &quot;source&quot;); only error out for a</span>
+            <span class="c1"># truly unknown shell.</span>
+            <span class="n">shkey</span> <span class="o">=</span> <span class="n">CANON_SHELL_NAMES</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">shell</span><span class="p">)</span> <span class="ow">or</span> <span class="n">CANON_SHELL_NAMES</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">shell</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">sourcer</span> <span class="o">=</span> <span class="n">DEFAULT_SOURCERS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">shkey</span><span class="p">)</span> <span class="k">if</span> <span class="n">shkey</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">sourcer</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="kc">None</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">&quot;xonsh: error: cannot determine how to source files for &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;foreign shell </span><span class="si">{</span><span class="n">shell</span><span class="si">!r}</span><span class="s2">. Pass --sourcer &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;(for example --sourcer . for POSIX).</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="mi">1</span><span class="p">,</span>
+            <span class="p">)</span>
         <span class="c1"># we have filenames to source</span>
         <span class="n">shell_name</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">shell</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
         <span class="n">quote</span> <span class="o">=</span> <span class="p">(</span>
@@ -1617,7 +1638,7 @@
             <span class="k">if</span> <span class="n">shell_name</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;cmd&quot;</span><span class="p">,</span> <span class="s2">&quot;cmd.exe&quot;</span><span class="p">}</span>
             <span class="k">else</span> <span class="n">shlex</span><span class="o">.</span><span class="n">quote</span>
         <span class="p">)</span>
-        <span class="n">prevcmd</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">sourcer</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">quote</span><span class="p">(</span><span class="n">f</span><span class="p">)</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">files_or_code</span><span class="p">)</span>
+        <span class="n">prevcmd</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">sourcer</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">quote</span><span class="p">(</span><span class="n">f</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">files_or_code</span><span class="p">)</span>
         <span class="n">files</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">files_or_code</span><span class="p">)</span>
     <span class="k">elif</span> <span class="ow">not</span> <span class="n">prevcmd</span><span class="p">:</span>
         <span class="n">prevcmd</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">files_or_code</span><span class="p">)</span>  <span class="c1"># code to run, no files</span>
@@ -1646,8 +1667,16 @@
         <span class="k">if</span> <span class="n">dryrun</span><span class="p">:</span>
             <span class="k">return</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;xonsh: error: Source failed: </span><span class="si">{</span><span class="n">prevcmd</span><span class="si">!r}</span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="n">msg</span> <span class="o">+=</span> <span class="s2">&quot;xonsh: error: Possible reasons: File not found or syntax error</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="n">what</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">files</span><span class="p">)</span> <span class="k">if</span> <span class="n">files</span> <span class="k">else</span> <span class="n">prevcmd</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;xonsh: error: Failed to source: </span><span class="si">{</span><span class="n">what</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+                <span class="s2">&quot;xonsh: error: The foreign shell exited with an error &quot;</span>
+                <span class="s2">&quot;(its stderr is forwarded above if any). Common causes: &quot;</span>
+                <span class="s2">&quot;the shell binary is missing, the file has a syntax error, &quot;</span>
+                <span class="s2">&quot;or the sourced script returned non-zero (for example an &quot;</span>
+                <span class="s2">&quot;early-exit guard in shell rc files). Re-run with &quot;</span>
+                <span class="s2">&quot;--show-output for full stdout/stderr.</span><span class="se">\n</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
             <span class="k">return</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">msg</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
     <span class="c1"># apply results</span>
     <span class="n">denv</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">detype</span><span class="p">()</span>
@@ -2241,6 +2270,15 @@
             <span class="n">has_args</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="n">prog</span><span class="o">=</span><span class="s2">&quot;source-bash&quot;</span><span class="p">,</span>
         <span class="p">),</span>
+        <span class="c1"># Issue #5894: ``/bin/sh`` may be bash, dash, or another POSIX</span>
+        <span class="c1"># shell — default to the POSIX dot sourcer so this works on dash-</span>
+        <span class="c1"># based distros too. Users can still pass --sourcer source to</span>
+        <span class="c1"># opt into the bash/zsh extension.</span>
+        <span class="s2">&quot;source-sh&quot;</span><span class="p">:</span> <span class="n">SourceForeignAlias</span><span class="p">(</span>
+            <span class="n">func</span><span class="o">=</span><span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span><span class="n">source_foreign_fn</span><span class="p">,</span> <span class="s2">&quot;sh&quot;</span><span class="p">,</span> <span class="n">sourcer</span><span class="o">=</span><span class="s2">&quot;.&quot;</span><span class="p">),</span>
+            <span class="n">has_args</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">prog</span><span class="o">=</span><span class="s2">&quot;source-sh&quot;</span><span class="p">,</span>
+        <span class="p">),</span>
         <span class="s2">&quot;source-cmd&quot;</span><span class="p">:</span> <span class="n">source_cmd</span><span class="p">,</span>
         <span class="s2">&quot;source-foreign&quot;</span><span class="p">:</span> <span class="n">source_foreign</span><span class="p">,</span>
         <span class="s2">&quot;history&quot;</span><span class="p">:</span> <span class="n">xhm</span><span class="o">.</span><span class="n">history_main</span><span class="p">,</span>
@@ -2383,7 +2421,7 @@
         <div class="bottom-of-page">
           <div class="left-details">
             <div class="copyright">
-                Copyright &#169; Xonsh Contributors / https://github.com/xonsh/xonsh/graphs/contributors
+                Copyright &#169; Xonsh Contributors / https://github.com/xonsh/xonsh/graphs/contributors?all=1
             </div>
             Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
             
@@ -2403,7 +2441,7 @@
       
     </aside>
   </div>
-</div><script src="../../_static/documentation_options.js?v=ecda2f4b"></script>
+</div><script src="../../_static/documentation_options.js?v=04c08c89"></script>
     <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
     <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>
