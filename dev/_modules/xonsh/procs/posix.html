@@ -564,8 +564,16 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">proc</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># has to be here for closure for handles</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">old_int_handler</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_winch_handler</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">old_tstp_handler</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_quit_handler</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">old_break_handler</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="n">xt</span><span class="o">.</span><span class="n">on_main_thread</span><span class="p">():</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">old_int_handler</span> <span class="o">=</span> <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGINT</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal_int</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
+                <span class="c1"># Windows Ctrl+Break -&gt; CTRL_BREAK_EVENT -&gt; SIGBREAK. With no</span>
+                <span class="c1"># handler the default action would terminate xonsh itself</span>
+                <span class="c1"># (issue #4852); mirror the SIGINT handling instead.</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">old_break_handler</span> <span class="o">=</span> <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span>
+                    <span class="n">signal</span><span class="o">.</span><span class="n">SIGBREAK</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal_break</span>
+                <span class="p">)</span>
             <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_POSIX</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">old_tstp_handler</span> <span class="o">=</span> <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGTSTP</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal_tstp</span><span class="p">)</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">old_quit_handler</span> <span class="o">=</span> <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGQUIT</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal_quit</span><span class="p">)</span>
@@ -853,6 +861,37 @@
                 <span class="n">old</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGINT</span><span class="p">,</span> <span class="n">frame</span><span class="p">)</span>
 
     <span class="c1">#</span>
+    <span class="c1"># SIGBREAK handler (Windows Ctrl+Break)</span>
+    <span class="c1">#</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_signal_break</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">signum</span><span class="p">,</span> <span class="n">frame</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Signal handler for SIGBREAK - Windows Ctrl+Break may have been pressed.</span>
+
+<span class="sd">        Counterpart to :meth:`_signal_int`. When the user presses Ctrl+Break</span>
+<span class="sd">        the console delivers ``CTRL_BREAK_EVENT`` to every process in the</span>
+<span class="sd">        group, so the child has already received it and will exit on its own</span>
+<span class="sd">        — there is nothing to forward. Handling the signal here exists only to</span>
+<span class="sd">        stop its default action from terminating xonsh itself (issue #4852):</span>
+<span class="sd">        we mark the interrupt and let the normal teardown collect the child.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interrupted</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_interrupted</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">proc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">proc</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigbreak</span><span class="p">(</span><span class="n">frame</span><span class="o">=</span><span class="n">frame</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_restore_sigbreak</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">frame</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">old</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_break_handler</span>
+        <span class="k">if</span> <span class="n">old</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">xt</span><span class="o">.</span><span class="n">on_main_thread</span><span class="p">():</span>
+                <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGBREAK</span><span class="p">,</span> <span class="n">old</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">old_break_handler</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">frame</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_disable_cbreak_stdin</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">old</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">old</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal_break</span><span class="p">:</span>
+                <span class="n">old</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGBREAK</span><span class="p">,</span> <span class="n">frame</span><span class="p">)</span>
+
+    <span class="c1">#</span>
     <span class="c1"># SIGTSTP handler</span>
     <span class="c1">#</span>
 
@@ -986,6 +1025,7 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_clean_up</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigint</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigbreak</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigtstp</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigquit</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigwinch</span><span class="p">()</span>

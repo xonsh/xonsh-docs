@@ -926,8 +926,15 @@
         <span class="c1"># Set some signal handles, if we can. Must come before process</span>
         <span class="c1"># is started to prevent deadlock on windows</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">old_int_handler</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">old_break_handler</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="n">xt</span><span class="o">.</span><span class="n">on_main_thread</span><span class="p">():</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">old_int_handler</span> <span class="o">=</span> <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGINT</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal_int</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span><span class="p">:</span>
+                <span class="c1"># Windows Ctrl+Break would otherwise terminate xonsh itself</span>
+                <span class="c1"># (issue #4852); mirror the SIGINT handling instead.</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">old_break_handler</span> <span class="o">=</span> <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span>
+                    <span class="n">signal</span><span class="o">.</span><span class="n">SIGBREAK</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal_break</span>
+                <span class="p">)</span>
         <span class="c1"># start up the proc</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
         <span class="c1"># This is so the thread will use the same swapped values as the origin one.</span>
@@ -936,6 +943,7 @@
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__del__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigint</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigbreak</span><span class="p">()</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">pipe_channels</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -1097,6 +1105,7 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Waits for the process to finish and returns the return code.&quot;&quot;&quot;</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigint</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigbreak</span><span class="p">()</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">returncode</span></div>
 
 
@@ -1133,6 +1142,30 @@
         <span class="k">if</span> <span class="n">frame</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">old</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">old</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal_int</span><span class="p">:</span>
                 <span class="n">old</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGINT</span><span class="p">,</span> <span class="n">frame</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interrupted</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">returncode</span> <span class="o">=</span> <span class="mi">1</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_signal_break</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">signum</span><span class="p">,</span> <span class="n">frame</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Signal handler for SIGBREAK - Windows Ctrl+Break.</span>
+
+<span class="sd">        Counterpart to :meth:`_signal_int` so the break interrupts the</span>
+<span class="sd">        callable alias instead of terminating xonsh itself (issue #4852).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interrupted</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_interrupted</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">poll</span><span class="p">()</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_restore_sigbreak</span><span class="p">(</span><span class="n">frame</span><span class="o">=</span><span class="n">frame</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_restore_sigbreak</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">frame</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">old</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">old_break_handler</span>
+        <span class="k">if</span> <span class="n">old</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">xt</span><span class="o">.</span><span class="n">on_main_thread</span><span class="p">():</span>
+                <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGBREAK</span><span class="p">,</span> <span class="n">old</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">old_break_handler</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">frame</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">old</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">old</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal_break</span><span class="p">:</span>
+                <span class="n">old</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGBREAK</span><span class="p">,</span> <span class="n">frame</span><span class="p">)</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_interrupted</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">returncode</span> <span class="o">=</span> <span class="mi">1</span>
 

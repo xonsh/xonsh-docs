@@ -513,6 +513,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.timings</span><span class="w"> </span><span class="kn">import</span> <span class="n">setup_timings</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.tools</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">display_error_message</span><span class="p">,</span>
+    <span class="n">on_main_thread</span><span class="p">,</span>
     <span class="n">print_color</span><span class="p">,</span>
     <span class="n">print_exception</span><span class="p">,</span>
     <span class="n">to_bool_or_int</span><span class="p">,</span>
@@ -1116,6 +1117,37 @@
         <span class="n">_fg_tty_state</span><span class="p">[</span><span class="s2">&quot;old_fg&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_setup_ctrl_break</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Windows: make Ctrl+Break interrupt the foreground job, not kill xonsh.</span>
+
+<span class="sd">    The Windows console delivers ``CTRL_BREAK_EVENT`` to *every* process</span>
+<span class="sd">    attached to the console — xonsh and the subprocess it is waiting on</span>
+<span class="sd">    alike. Python maps that event to ``SIGBREAK``, whose default disposition</span>
+<span class="sd">    terminates the process, so with no handler installed xonsh itself is torn</span>
+<span class="sd">    down the moment the user presses Ctrl+Break while a child is running</span>
+<span class="sd">    (issue #4852).</span>
+
+<span class="sd">    Install :func:`signal.default_int_handler` for ``SIGBREAK`` so the event</span>
+<span class="sd">    surfaces as a catchable ``KeyboardInterrupt``, exactly like ``SIGINT``</span>
+<span class="sd">    (Ctrl+C) already does. The foreground child still receives the console</span>
+<span class="sd">    event directly and exits on its own; xonsh&#39;s wait then unblocks, the</span>
+<span class="sd">    ``KeyboardInterrupt`` is handled by the shell loop, and we return to the</span>
+<span class="sd">    prompt instead of dying. Threaded/captured subprocesses additionally</span>
+<span class="sd">    install their own ``SIGBREAK`` handler while running (see</span>
+<span class="sd">    ``xonsh/procs/posix.py`` and ``xonsh/procs/proxies.py``).</span>
+
+<span class="sd">    ``signal.signal`` only works on the main thread, so skip otherwise</span>
+<span class="sd">    (embedded hosts that call :func:`setup` off-main), matching the guard in</span>
+<span class="sd">    :func:`xonsh.built_ins.resetting_signal_handle`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">on_main_thread</span><span class="p">():</span>
+        <span class="k">return</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">signal</span><span class="p">,</span> <span class="s2">&quot;SIGBREAK&quot;</span><span class="p">):</span>
+        <span class="c1"># SIGBREAK is a Windows-only signal; nothing to do elsewhere.</span>
+        <span class="k">return</span>
+    <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGBREAK</span><span class="p">,</span> <span class="n">signal</span><span class="o">.</span><span class="n">default_int_handler</span><span class="p">)</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_setup_controlling_terminal</span><span class="p">():</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Run the TTY startup handshake and install matching signal handlers.</span>
 
@@ -1195,6 +1227,8 @@
     <span class="k">if</span> <span class="n">_tty_setup_done</span><span class="p">:</span>
         <span class="k">return</span>
     <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
+        <span class="n">_setup_ctrl_break</span><span class="p">()</span>
+        <span class="n">_tty_setup_done</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="k">return</span>
     <span class="n">_tty_setup_done</span> <span class="o">=</span> <span class="kc">True</span>
 
