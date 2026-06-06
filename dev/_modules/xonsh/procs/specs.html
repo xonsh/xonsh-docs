@@ -648,18 +648,27 @@
             <span class="k">return</span> <span class="n">o</span> <span class="o">+</span> <span class="p">[</span><span class="n">fname</span><span class="p">]</span> <span class="o">+</span> <span class="n">args</span>
         <span class="c1"># 5) Unknown file type — no recognised extension, no shebang</span>
         <span class="k">return</span> <span class="kc">None</span>
-    <span class="c1"># --- POSIX path (unchanged) ---</span>
+    <span class="c1"># --- POSIX path ---</span>
     <span class="n">shebang</span> <span class="o">=</span> <span class="n">parse_shebang_from_file</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span>
     <span class="n">m</span> <span class="o">=</span> <span class="n">RE_SHEBANG</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">shebang</span><span class="p">)</span>
-    <span class="c1"># xonsh is the default interpreter</span>
-    <span class="k">if</span> <span class="n">m</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">interp</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;xonsh&quot;</span><span class="p">]</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">interp</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">interp</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="n">interp</span> <span class="o">=</span> <span class="n">shlex</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">interp</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
+    <span class="n">interp</span> <span class="o">=</span> <span class="n">shlex</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span> <span class="k">if</span> <span class="n">m</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">interp</span><span class="p">:</span>
+        <span class="c1"># No shebang (or an empty one).</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">ext</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">splitext</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">ext</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;.xsh&quot;</span><span class="p">,</span> <span class="s2">&quot;.py&quot;</span><span class="p">,</span> <span class="s2">&quot;.pyw&quot;</span><span class="p">}:</span>
+            <span class="c1"># xonsh/Python scripts run with the current xonsh interpreter,</span>
+            <span class="c1"># mirroring the Windows branch above.</span>
             <span class="n">interp</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;xonsh&quot;</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Any other text file follows the POSIX ENOEXEC convention used</span>
+            <span class="c1"># by bash, zsh, dash, ksh, fish and tcsh alike: an executable</span>
+            <span class="c1"># text file without a shebang is run as a ``sh`` script</span>
+            <span class="c1"># (https://github.com/xonsh/xonsh/issues/5843).</span>
+            <span class="n">interp</span> <span class="o">=</span> <span class="p">[</span><span class="n">xp</span><span class="o">.</span><span class="n">path_bshell</span><span class="p">()]</span>
+    <span class="k">if</span> <span class="n">interp</span><span class="p">[:</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="p">[</span><span class="s2">&quot;xonsh&quot;</span><span class="p">]:</span>
+        <span class="c1"># Run with the current xonsh rather than whatever ``xonsh`` happens</span>
+        <span class="c1"># to be first on $PATH (which may belong to a different Python).</span>
+        <span class="n">interp</span> <span class="o">=</span> <span class="p">[</span><span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">,</span> <span class="s2">&quot;-m&quot;</span><span class="p">,</span> <span class="s2">&quot;xonsh&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">interp</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
     <span class="k">return</span> <span class="n">interp</span> <span class="o">+</span> <span class="p">[</span><span class="n">fname</span><span class="p">]</span> <span class="o">+</span> <span class="n">args</span></div>
 
 
