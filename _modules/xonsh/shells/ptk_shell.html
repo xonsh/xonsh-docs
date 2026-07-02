@@ -7,11 +7,11 @@
         <link rel="prefetch" href="../../../_static/xonsh_terminal_icon_256.png" as="image">
 
     <link rel="shortcut icon" href="../../../_static/magic_conch.ico"><!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
-        <title>xonsh.shells.ptk_shell - Xonsh 0.23.8 Documentation</title>
+        <title>xonsh.shells.ptk_shell - Xonsh 0.24.0 Documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css?v=4ae1632d" />
-    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=14628d38" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=d27b64cb" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo-extensions.css?v=8dab3a3b" />
     
     
@@ -189,7 +189,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../../contents.html"><div class="brand">Xonsh 0.23.8 Documentation</div></a>
+      <a href="../../../contents.html"><div class="brand">Xonsh 0.24.0 Documentation</div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -213,7 +213,7 @@
     <img class="sidebar-logo" src="../../../_static/xonsh_terminal_icon_256.png" alt="Logo"/>
   </div>
   
-  <span class="sidebar-brand-text">Xonsh 0.23.8 Documentation</span>
+  <span class="sidebar-brand-text">Xonsh 0.24.0 Documentation</span>
   
 </a><form class="sidebar-search-container" method="get" action="../../../search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
@@ -714,6 +714,11 @@
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">ON_WINDOWS</span><span class="p">:</span>
             <span class="n">winutils</span><span class="o">.</span><span class="n">enable_virtual_terminal_processing</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">nbuf</span> <span class="o">:=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_WIN_CONSOLE_HISTORY_BUFFERS&quot;</span><span class="p">):</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">winutils</span><span class="o">.</span><span class="n">set_console_history_info</span><span class="p">(</span><span class="n">nbuf</span><span class="o">=</span><span class="n">nbuf</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+                    <span class="k">pass</span>  <span class="c1"># stdin is not a real console (redirect/ConPTY)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_first_prompt</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">history</span> <span class="o">=</span> <span class="n">ThreadedHistory</span><span class="p">(</span><span class="n">PromptToolkitHistory</span><span class="p">())</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">push</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_push</span>
@@ -931,6 +936,30 @@
         <span class="n">cursor_shape</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_PROMPT_CURSOR_SHAPE&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">cursor_shape</span><span class="p">:</span>
             <span class="n">prompt_args</span><span class="p">[</span><span class="s2">&quot;cursor&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">cursor_shape</span>
+
+        <span class="c1"># Vim-like key-sequence timeouts (seconds) of the prompt_toolkit</span>
+        <span class="c1"># application, re-read on every prompt so they can be tuned at</span>
+        <span class="c1"># runtime. These are intentionally not registered in environ.py —</span>
+        <span class="c1"># low-level escape hatches, not advertised settings.</span>
+        <span class="c1">#</span>
+        <span class="c1"># ttimeoutlen: how long the vt100 parser waits after a lone ESC</span>
+        <span class="c1"># byte for the rest of a terminal escape sequence (an arrow key is</span>
+        <span class="c1"># &quot;\x1b[A&quot; etc.) before treating it as the Escape key. The ptk</span>
+        <span class="c1"># default of 0.5 makes leaving vi insert mode feel sluggish</span>
+        <span class="c1"># (issue #6507). 0.05 matches Neovim&#39;s default (IPython ships</span>
+        <span class="c1"># 0.01, tmux &gt;= 3.5 uses 0.01) and is still safe on slow</span>
+        <span class="c1"># connections: a terminal emits a sequence in a single write, so</span>
+        <span class="c1"># its bytes virtually never arrive more than 50ms apart. Raise it</span>
+        <span class="c1"># back if a link really does split sequences (e.g. a serial line).</span>
+        <span class="c1">#</span>
+        <span class="c1"># timeoutlen: how long the key processor waits for a continuation</span>
+        <span class="c1"># once the pressed keys are a prefix of a longer binding, e.g.</span>
+        <span class="c1"># &quot;d&quot; of &quot;dd&quot; in vi normal mode, or ESC of (Escape, ControlJ) —</span>
+        <span class="c1"># after this wait the shorter match runs. Plain &lt;Esc&gt; in vi mode</span>
+        <span class="c1"># does not depend on it: eager bindings in key_bindings.py fire</span>
+        <span class="c1"># immediately.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">prompter</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">ttimeoutlen</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_PTK_TTIMEOUTLEN&quot;</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">prompter</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">timeoutlen</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_PTK_TIMEOUTLEN&quot;</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span>
 
         <span class="n">events</span><span class="o">.</span><span class="n">on_pre_prompt</span><span class="o">.</span><span class="n">fire</span><span class="p">()</span>
         <span class="c1"># Enable xterm modifyOtherKeys mode so the terminal sends</span>
@@ -1305,7 +1334,7 @@
       
     </aside>
   </div>
-</div><script src="../../../_static/documentation_options.js?v=04c08c89"></script>
+</div><script src="../../../_static/documentation_options.js?v=a9084e48"></script>
     <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
     <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="../../../_static/scripts/furo.js?v=46bd48cc"></script>
