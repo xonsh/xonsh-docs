@@ -340,6 +340,7 @@
 <li class="toctree-l4"><a class="reference internal" href="../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.completer.html">xonsh.shells.ptk_shell.completer</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.formatter.html">xonsh.shells.ptk_shell.formatter</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.history.html">xonsh.shells.ptk_shell.history</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.input_hook.html">xonsh.shells.ptk_shell.input_hook</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.key_bindings.html">xonsh.shells.ptk_shell.key_bindings</a></li>
 <li class="toctree-l4"><a class="reference internal" href="../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.updator.html">xonsh.shells.ptk_shell.updator</a></li>
 </ul>
@@ -353,6 +354,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.completer.html">xonsh.shells.ptk_shell.completer</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.formatter.html">xonsh.shells.ptk_shell.formatter</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.history.html">xonsh.shells.ptk_shell.history</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.input_hook.html">xonsh.shells.ptk_shell.input_hook</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.key_bindings.html">xonsh.shells.ptk_shell.key_bindings</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.updator.html">xonsh.shells.ptk_shell.updator</a></li>
 </ul>
@@ -541,6 +543,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.shells.ptk_shell.completer</span><span class="w"> </span><span class="kn">import</span> <span class="n">PromptToolkitCompleter</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.shells.ptk_shell.formatter</span><span class="w"> </span><span class="kn">import</span> <span class="n">PTKPromptFormatter</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.shells.ptk_shell.history</span><span class="w"> </span><span class="kn">import</span> <span class="n">PromptToolkitHistory</span><span class="p">,</span> <span class="n">_cust_history_matches</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.shells.ptk_shell.input_hook</span><span class="w"> </span><span class="kn">import</span> <span class="n">PTKInputHook</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.shells.ptk_shell.key_bindings</span><span class="w"> </span><span class="kn">import</span> <span class="n">load_xonsh_bindings</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.style_tools</span><span class="w"> </span><span class="kn">import</span> <span class="n">DEFAULT_STYLE_DICT</span><span class="p">,</span> <span class="n">_TokenType</span><span class="p">,</span> <span class="n">partial_color_tokenize</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.tools</span><span class="w"> </span><span class="kn">import</span> <span class="n">carriage_return</span><span class="p">,</span> <span class="n">print_exception</span><span class="p">,</span> <span class="n">print_warning</span>
@@ -721,6 +724,10 @@
                 <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
                     <span class="k">pass</span>  <span class="c1"># stdin is not a real console (redirect/ConPTY)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_first_prompt</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="c1"># Installed for the duration of ``cmdloop`` only, so that</span>
+        <span class="c1"># non-interactive runs (``-c``, scripts, piped stdin) keep the</span>
+        <span class="c1"># interpreter&#39;s own ``input()``.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">input_hook</span> <span class="o">=</span> <span class="n">PTKInputHook</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">history</span> <span class="o">=</span> <span class="n">ThreadedHistory</span><span class="p">(</span><span class="n">PromptToolkitHistory</span><span class="p">())</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">push</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_push</span>
 
@@ -1044,35 +1051,39 @@
         <span class="k">if</span> <span class="n">intro</span><span class="p">:</span>
             <span class="nb">print</span><span class="p">(</span><span class="n">intro</span><span class="p">)</span>
         <span class="n">auto_suggest</span> <span class="o">=</span> <span class="n">AutoSuggestFromHistory</span><span class="p">()</span>
-        <span class="k">while</span> <span class="n">XSH</span><span class="o">.</span><span class="n">exit</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">try</span><span class="p">:</span>
-                <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">singleline</span><span class="p">(</span><span class="n">auto_suggest</span><span class="o">=</span><span class="n">auto_suggest</span><span class="p">)</span>
-                <span class="k">if</span> <span class="ow">not</span> <span class="n">line</span><span class="p">:</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">emptyline</span><span class="p">()</span>
-                <span class="k">else</span><span class="p">:</span>
-                    <span class="n">raw_line</span> <span class="o">=</span> <span class="n">line</span>
-                    <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">precmd</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">default</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">raw_line</span><span class="p">)</span>
-            <span class="k">except</span> <span class="p">(</span><span class="ne">KeyboardInterrupt</span><span class="p">,</span> <span class="ne">SystemExit</span><span class="p">)</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">reset_buffer</span><span class="p">()</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="ne">KeyboardInterrupt</span><span class="p">):</span>
-                    <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_HISTORY_SIGINT_FLUSH&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
-<span class="w">                        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">                        Development tools like PyCharm send SIGINT before SIGKILL.</span>
-<span class="sd">                        This is the last chance to save history in this case.</span>
-<span class="sd">                        &quot;&quot;&quot;</span>
-                        <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_DEBUG&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
-                            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Flushing history after SIGINT.&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
-                        <span class="n">XSH</span><span class="o">.</span><span class="n">history</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
-                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="ne">SystemExit</span><span class="p">):</span>
-                    <span class="n">get_app</span><span class="p">()</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>  <span class="c1"># Reset TTY mouse and keys handlers.</span>
-                    <span class="bp">self</span><span class="o">.</span><span class="n">restore_tty_sanity</span><span class="p">()</span>  <span class="c1"># Reset TTY SIGINT handlers.</span>
-                    <span class="k">raise</span>
-            <span class="k">except</span> <span class="ne">EOFError</span><span class="p">:</span>
-                <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;IGNOREEOF&quot;</span><span class="p">):</span>
-                    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Use &quot;exit&quot; to leave the shell.&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
-                <span class="k">else</span><span class="p">:</span>
-                    <span class="k">break</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">input_hook</span><span class="o">.</span><span class="n">install</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">while</span> <span class="n">XSH</span><span class="o">.</span><span class="n">exit</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">singleline</span><span class="p">(</span><span class="n">auto_suggest</span><span class="o">=</span><span class="n">auto_suggest</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">line</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">emptyline</span><span class="p">()</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">raw_line</span> <span class="o">=</span> <span class="n">line</span>
+                        <span class="n">line</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">precmd</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">default</span><span class="p">(</span><span class="n">line</span><span class="p">,</span> <span class="n">raw_line</span><span class="p">)</span>
+                <span class="k">except</span> <span class="p">(</span><span class="ne">KeyboardInterrupt</span><span class="p">,</span> <span class="ne">SystemExit</span><span class="p">)</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">reset_buffer</span><span class="p">()</span>
+                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="ne">KeyboardInterrupt</span><span class="p">):</span>
+                        <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_HISTORY_SIGINT_FLUSH&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
+<span class="w">                            </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">                            Development tools like PyCharm send SIGINT before SIGKILL.</span>
+<span class="sd">                            This is the last chance to save history in this case.</span>
+<span class="sd">                            &quot;&quot;&quot;</span>
+                            <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_DEBUG&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+                                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Flushing history after SIGINT.&quot;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+                            <span class="n">XSH</span><span class="o">.</span><span class="n">history</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="ne">SystemExit</span><span class="p">):</span>
+                        <span class="n">get_app</span><span class="p">()</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>  <span class="c1"># Reset TTY mouse and keys handlers.</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">restore_tty_sanity</span><span class="p">()</span>  <span class="c1"># Reset TTY SIGINT handlers.</span>
+                        <span class="k">raise</span>
+                <span class="k">except</span> <span class="ne">EOFError</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;IGNOREEOF&quot;</span><span class="p">):</span>
+                        <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Use &quot;exit&quot; to leave the shell.&#39;</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="k">break</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">input_hook</span><span class="o">.</span><span class="n">restore</span><span class="p">()</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_get_prompt_tokens</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">prompt_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>

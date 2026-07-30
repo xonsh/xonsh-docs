@@ -3,11 +3,11 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="../../../../genindex.html"><link rel="search" title="Search" href="../../../../search.html">
-        <link rel="canonical" href="https://xon.sh/_modules/xonsh/shells/ptk_shell/history.html">
+        <link rel="canonical" href="https://xon.sh/_modules/xonsh/shells/ptk_shell/input_hook.html">
         <link rel="prefetch" href="../../../../_static/xonsh_terminal_icon_256.png" as="image">
 
     <link rel="shortcut icon" href="../../../../_static/magic_conch.ico"><!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
-        <title>xonsh.shells.ptk_shell.history - Xonsh 0.24.0 Documentation</title>
+        <title>xonsh.shells.ptk_shell.input_hook - Xonsh 0.24.0 Documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=4ae1632d" />
@@ -44,9 +44,9 @@
     "@graph": [
       {
         "@type": "TechArticle",
-        "@id": "https://xon.sh/_modules/xonsh/shells/ptk_shell/history.html#techarticle",
-        "headline": "xonsh.shells.ptk_shell.history",
-        "url": "https://xon.sh/_modules/xonsh/shells/ptk_shell/history.html",
+        "@id": "https://xon.sh/_modules/xonsh/shells/ptk_shell/input_hook.html#techarticle",
+        "headline": "xonsh.shells.ptk_shell.input_hook",
+        "url": "https://xon.sh/_modules/xonsh/shells/ptk_shell/input_hook.html",
         "isPartOf": {"@id": "https://xon.sh/#website"},
         "about": {"@id": "https://xon.sh/#software"},
         "inLanguage": "en",
@@ -57,7 +57,7 @@
         "@type": "BreadcrumbList",
         "itemListElement": [
           {"@type": "ListItem", "position": 1, "name": "Home", "item": "https://xon.sh/"},{"@type": "ListItem", "position": 2, "name": "Contents", "item": "https://xon.sh/contents.html"}
-          ,{"@type": "ListItem", "position": 3, "name": "xonsh.shells.ptk_shell.history", "item": "https://xon.sh/_modules/xonsh/shells/ptk_shell/history.html"}
+          ,{"@type": "ListItem", "position": 3, "name": "xonsh.shells.ptk_shell.input_hook", "item": "https://xon.sh/_modules/xonsh/shells/ptk_shell/input_hook.html"}
         ]
       }
     ]
@@ -480,70 +480,162 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <h1>Source code for xonsh.shells.ptk_shell.history</h1><div class="highlight"><pre>
-<span></span><span class="sd">&quot;&quot;&quot;History object for use with prompt_toolkit.&quot;&quot;&quot;</span>
+          <h1>Source code for xonsh.shells.ptk_shell.input_hook</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Serve the built-in ``input()`` from a prompt_toolkit prompt.</span>
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">prompt_toolkit.history</span>
+<span class="sd">CPython&#39;s ``input()`` only gets line editing when the ``readline`` module</span>
+<span class="sd">has been imported: importing it installs ``PyOS_ReadlineFunctionPointer``,</span>
+<span class="sd">which ``input()`` calls whenever stdin and stdout are interactive. The</span>
+<span class="sd">prompt_toolkit shell never imports ``readline``, so ``input()`` falls back</span>
+<span class="sd">to a plain read from the terminal in canonical mode. There the kernel</span>
+<span class="sd">assembles the line and caps it at ``MAX_CANON`` — 1024 bytes on macOS and</span>
+<span class="sd">the BSDs, 4096 on Linux. Everything past the cap is discarded, *including*</span>
+<span class="sd">the terminating newline, so the read never completes and the call hangs</span>
+<span class="sd">until the user interrupts it. ``getpass.getpass()`` has the same problem:</span>
+<span class="sd">it clears ``ECHO`` but leaves canonical mode on.</span>
+
+<span class="sd">Routing ``input()`` through prompt_toolkit puts the terminal in raw mode</span>
+<span class="sd">for the duration of the read, which removes the limit and adds the usual</span>
+<span class="sd">line editing, kill/yank and history keys.</span>
+
+<span class="sd">The hook is installed only while the interactive prompt_toolkit shell is</span>
+<span class="sd">running its command loop (see ``PromptToolkitShell.cmdloop``), and it hands</span>
+<span class="sd">the call back to the original ``input()`` whenever a prompt_toolkit prompt</span>
+<span class="sd">cannot be driven safely — off the main thread, without a terminal, or</span>
+<span class="sd">while another prompt_toolkit application already owns the screen.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">builtins</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">xonsh.built_ins</span><span class="w"> </span><span class="kn">import</span> <span class="n">XSH</span>
 
+<span class="n">_NOT_GIVEN</span> <span class="o">=</span> <span class="nb">object</span><span class="p">()</span>
 
-<div class="viewcode-block" id="PromptToolkitHistory">
-<a class="viewcode-back" href="../../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.history.html#xonsh.shells.ptk_shell.history.PromptToolkitHistory">[docs]</a>
-<span class="k">class</span><span class="w"> </span><span class="nc">PromptToolkitHistory</span><span class="p">(</span><span class="n">prompt_toolkit</span><span class="o">.</span><span class="n">history</span><span class="o">.</span><span class="n">History</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;History class that implements the prompt-toolkit history interface</span>
-<span class="sd">    with the xonsh backend.</span>
+
+<div class="viewcode-block" id="PTKInputHook">
+<a class="viewcode-back" href="../../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.input_hook.html#xonsh.shells.ptk_shell.input_hook.PTKInputHook">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PTKInputHook</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Callable replacement for ``builtins.input``.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    shell : PromptToolkitShell</span>
+<span class="sd">        The shell that owns this hook. Only used to read the editing mode,</span>
+<span class="sd">        so the ``input()`` prompt matches the shell&#39;s key bindings.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">load_prev</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize history object.&quot;&quot;&quot;</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">load_prev</span> <span class="o">=</span> <span class="n">load_prev</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">shell</span> <span class="o">=</span> <span class="n">shell</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">installed</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_original</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_session</span> <span class="o">=</span> <span class="kc">None</span>
 
-<div class="viewcode-block" id="PromptToolkitHistory.store_string">
-<a class="viewcode-back" href="../../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.history.html#xonsh.shells.ptk_shell.history.PromptToolkitHistory.store_string">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">store_string</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entry</span><span class="p">):</span>
-        <span class="k">pass</span></div>
-
-
-<div class="viewcode-block" id="PromptToolkitHistory.load_history_strings">
-<a class="viewcode-back" href="../../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.history.html#xonsh.shells.ptk_shell.history.PromptToolkitHistory.load_history_strings">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">load_history_strings</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Loads synchronous history strings&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">load_prev</span><span class="p">:</span>
+<div class="viewcode-block" id="PTKInputHook.install">
+<a class="viewcode-back" href="../../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.input_hook.html#xonsh.shells.ptk_shell.input_hook.PTKInputHook.install">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">install</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Replace ``builtins.input`` with this hook.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">installed</span><span class="p">:</span>
             <span class="k">return</span>
-        <span class="n">hist</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">history</span>
-        <span class="k">if</span> <span class="n">hist</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_original</span> <span class="o">=</span> <span class="n">builtins</span><span class="o">.</span><span class="n">input</span>
+        <span class="n">builtins</span><span class="o">.</span><span class="n">input</span> <span class="o">=</span> <span class="bp">self</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">installed</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+
+<div class="viewcode-block" id="PTKInputHook.restore">
+<a class="viewcode-back" href="../../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.input_hook.html#xonsh.shells.ptk_shell.input_hook.PTKInputHook.restore">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">restore</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Put the original ``builtins.input`` back.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">installed</span><span class="p">:</span>
             <span class="k">return</span>
-        <span class="n">prev_line</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">for</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="n">hist</span><span class="o">.</span><span class="n">all_items</span><span class="p">(</span><span class="n">newest_first</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
-            <span class="n">line</span> <span class="o">=</span> <span class="n">cmd</span><span class="p">[</span><span class="s2">&quot;inp&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">rstrip</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">line</span> <span class="o">!=</span> <span class="n">prev_line</span><span class="p">:</span>
-                <span class="k">yield</span> <span class="n">line</span>
-            <span class="n">prev_line</span> <span class="o">=</span> <span class="n">line</span></div>
+        <span class="c1"># Someone may have replaced ``input`` after us (a xontrib, ``pdb``,</span>
+        <span class="c1"># user code). Their hook wins — dropping ours on the floor is better</span>
+        <span class="c1"># than clobbering theirs.</span>
+        <span class="k">if</span> <span class="n">builtins</span><span class="o">.</span><span class="n">input</span> <span class="ow">is</span> <span class="bp">self</span><span class="p">:</span>
+            <span class="n">builtins</span><span class="o">.</span><span class="n">input</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_original</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">installed</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_session</span> <span class="o">=</span> <span class="kc">None</span></div>
 
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_strings</span><span class="p">()[</span><span class="n">index</span><span class="p">]</span>
+<div class="viewcode-block" id="PTKInputHook.usable">
+<a class="viewcode-back" href="../../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.input_hook.html#xonsh.shells.ptk_shell.input_hook.PTKInputHook.usable">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">usable</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Whether a prompt_toolkit prompt can be driven right now.&quot;&quot;&quot;</span>
+        <span class="c1"># Undeclared on purpose: an escape hatch, not a documented setting.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_PTK_INPUT_HOOK&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="c1"># prompt_toolkit needs the main thread: it installs signal handlers</span>
+        <span class="c1"># and runs an event loop. Callable aliases execute in worker threads.</span>
+        <span class="k">if</span> <span class="n">threading</span><span class="o">.</span><span class="n">current_thread</span><span class="p">()</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">threading</span><span class="o">.</span><span class="n">main_thread</span><span class="p">():</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">stdin</span><span class="o">.</span><span class="n">isatty</span><span class="p">()</span> <span class="ow">and</span> <span class="n">sys</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">isatty</span><span class="p">()):</span>
+                <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">OSError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+            <span class="c1"># Detached, closed or replaced streams.</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.application.current</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_app_or_none</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_strings</span><span class="p">())</span>
+        <span class="n">app</span> <span class="o">=</span> <span class="n">get_app_or_none</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">app</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">app</span><span class="o">.</span><span class="n">is_running</span><span class="p">:</span>
+            <span class="c1"># Called from a completer, a key binding or a prompt formatter,</span>
+            <span class="c1"># i.e. from inside a running application. Nesting would deadlock.</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">return</span> <span class="kc">True</span></div>
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__iter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="nb">iter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_strings</span><span class="p">())</span></div>
+
+<div class="viewcode-block" id="PTKInputHook.prompt">
+<a class="viewcode-back" href="../../../../lib/_autosummary/cmd/xonsh.shells.ptk_shell.input_hook.html#xonsh.shells.ptk_shell.input_hook.PTKInputHook.prompt">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Read one line through a dedicated prompt_toolkit session.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_session</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.enums</span><span class="w"> </span><span class="kn">import</span> <span class="n">EditingMode</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.history</span><span class="w"> </span><span class="kn">import</span> <span class="n">InMemoryHistory</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.shortcuts.prompt</span><span class="w"> </span><span class="kn">import</span> <span class="n">PromptSession</span>
+
+            <span class="n">editing_mode</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">EditingMode</span><span class="o">.</span><span class="n">VI</span> <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;VI_MODE&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="n">EditingMode</span><span class="o">.</span><span class="n">EMACS</span>
+            <span class="p">)</span>
+            <span class="c1"># A session of its own, never the shell&#39;s: reusing the session</span>
+            <span class="c1"># that drives the command prompt hangs, and answers to ``input()``</span>
+            <span class="c1"># have no business in the command history.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_session</span> <span class="o">=</span> <span class="n">PromptSession</span><span class="p">(</span>
+                <span class="n">history</span><span class="o">=</span><span class="n">InMemoryHistory</span><span class="p">(),</span> <span class="n">editing_mode</span><span class="o">=</span><span class="n">editing_mode</span>
+            <span class="p">)</span>
+        <span class="c1"># Grey fish-style suggestion from earlier answers, accepted with the</span>
+        <span class="c1"># right arrow — the same mechanic as the command prompt, honoring the</span>
+        <span class="c1"># same setting. ``PromptSession`` loads the key bindings that accept a</span>
+        <span class="c1"># suggestion on its own. Read per call so the setting can be flipped</span>
+        <span class="c1"># while the session is running.</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">prompt_toolkit.auto_suggest</span><span class="w"> </span><span class="kn">import</span> <span class="n">AutoSuggestFromHistory</span>
+
+        <span class="n">auto_suggest</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">AutoSuggestFromHistory</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XONSH_PROMPT_AUTO_SUGGEST&quot;</span><span class="p">)</span>
+            <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_session</span><span class="o">.</span><span class="n">prompt</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">auto_suggest</span><span class="o">=</span><span class="n">auto_suggest</span><span class="p">)</span></div>
 
 
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="o">=</span><span class="n">_NOT_GIVEN</span><span class="p">,</span> <span class="o">/</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Read a line, matching the semantics of the built-in ``input()``.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">usable</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">prompt</span> <span class="ow">is</span> <span class="n">_NOT_GIVEN</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_original</span><span class="p">()</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_original</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">prompt</span><span class="p">(</span><span class="s2">&quot;&quot;</span> <span class="k">if</span> <span class="n">prompt</span> <span class="ow">is</span> <span class="n">_NOT_GIVEN</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">prompt</span><span class="p">))</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">EOFError</span><span class="p">,</span> <span class="ne">KeyboardInterrupt</span><span class="p">):</span>
+            <span class="c1"># Ctrl-D / Ctrl-C: the built-in raises these too.</span>
+            <span class="k">raise</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="c1"># A broken prompt_toolkit prompt must never make ``input()``</span>
+            <span class="c1"># unusable — fall back to the interpreter&#39;s own implementation.</span>
+            <span class="k">if</span> <span class="n">prompt</span> <span class="ow">is</span> <span class="n">_NOT_GIVEN</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_original</span><span class="p">()</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_original</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span></div>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_cust_history_matches</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">i</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Custom history search method for prompt_toolkit that matches previous</span>
-<span class="sd">    commands anywhere on a line, not just at the start.</span>
-
-<span class="sd">    This gets monkeypatched into the prompt_toolkit prompter if</span>
-<span class="sd">    ``XONSH_HISTORY_MATCH_ANYWHERE=True``&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="p">(</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">history_search_text</span> <span class="ow">is</span> <span class="kc">None</span>
-        <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">history_search_text</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_working_lines</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
-    <span class="p">)</span>
 </pre></div>
         </article>
       </div>
