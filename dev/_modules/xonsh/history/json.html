@@ -485,6 +485,7 @@
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">collections</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">cabc</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">contextlib</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
@@ -816,6 +817,57 @@
 
 
 
+<span class="nd">@contextlib</span><span class="o">.</span><span class="n">contextmanager</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_xhj_queue_turn</span><span class="p">(</span><span class="n">queue</span><span class="p">,</span> <span class="n">item</span><span class="p">,</span> <span class="n">cond</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Take a turn at the head of a history file access queue.</span>
+
+<span class="sd">    ``queue`` holds every reader and writer waiting for exclusive access to a</span>
+<span class="sd">    history file, oldest first, and ``cond`` guards it. Callers append ``item``</span>
+<span class="sd">    themselves before entering, at the moment the access is requested, so that</span>
+<span class="sd">    the queue order matches the order the reads and writes were issued in.</span>
+
+<span class="sd">    Sitting at the head of ``queue`` *is* the exclusive access token, so ``cond``</span>
+<span class="sd">    is only ever held for the queue bookkeeping and never for the file I/O</span>
+<span class="sd">    itself. That matters at shutdown: a writer wedged on an unresponsive</span>
+<span class="sd">    filesystem parks at the head of the queue without holding ``cond``, which</span>
+<span class="sd">    leaves everyone behind it waiting on the condition rather than on the lock,</span>
+<span class="sd">    and so still able to time out.</span>
+
+<span class="sd">    Yields ``True`` once ``item`` reaches the head, and always drops it from the</span>
+<span class="sd">    queue and wakes the next waiter on the way out, including when the body</span>
+<span class="sd">    raises. An item left behind would sit at the head forever and block every</span>
+<span class="sd">    later reader and writer for the rest of the session.</span>
+
+<span class="sd">    If ``timeout`` seconds pass without the turn coming, ``item`` is dropped</span>
+<span class="sd">    from the queue and ``False`` is yielded, without exclusive access ever</span>
+<span class="sd">    having been granted.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    queue : collections.deque</span>
+<span class="sd">        The FIFO of pending history file users.</span>
+<span class="sd">    item : object</span>
+<span class="sd">        The entry the caller has already appended to ``queue``.</span>
+<span class="sd">    cond : threading.Condition</span>
+<span class="sd">        The condition guarding ``queue``.</span>
+<span class="sd">    timeout : float or None, optional</span>
+<span class="sd">        Seconds to wait for the turn, or ``None`` to wait indefinitely.</span>
+<span class="sd">    """</span>
+    <span class="k">with</span> <span class="n">cond</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cond</span><span class="o">.</span><span class="n">wait_for</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="nb">bool</span><span class="p">(</span><span class="n">queue</span><span class="p">)</span> <span class="ow">and</span> <span class="n">item</span> <span class="ow">is</span> <span class="n">queue</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">timeout</span><span class="p">):</span>
+            <span class="k">with</span> <span class="n">contextlib</span><span class="o">.</span><span class="n">suppress</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">):</span>
+                <span class="n">queue</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+            <span class="n">cond</span><span class="o">.</span><span class="n">notify_all</span><span class="p">()</span>
+            <span class="k">yield</span> <span class="kc">False</span>
+            <span class="k">return</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">yield</span> <span class="kc">True</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="k">with</span> <span class="n">cond</span><span class="p">:</span>
+            <span class="n">queue</span><span class="o">.</span><span class="n">popleft</span><span class="p">()</span>
+            <span class="n">cond</span><span class="o">.</span><span class="n">notify_all</span><span class="p">()</span>
+
+
 <div class="viewcode-block" id="JsonHistoryFlusher">
 <a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.history.json.html#xonsh.history.json.JsonHistoryFlusher">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">JsonHistoryFlusher</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">):</span>
@@ -826,6 +878,11 @@
     <span class="p">):</span>
 <span class="w">        </span><span class="sd">"""Thread for flushing history."""</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="c1"># History must never be the reason the interpreter cannot shut down:</span>
+        <span class="c1"># non-daemon threads are joined before the at-exit flush handler even</span>
+        <span class="c1"># runs, so a flusher stuck on an unresponsive filesystem would hang the</span>
+        <span class="c1"># process past any timeout the exit path could apply.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">daemon</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">filename</span> <span class="o">=</span> <span class="n">filename</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">buffer</span> <span class="o">=</span> <span class="n">buffer</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">queue</span> <span class="o">=</span> <span class="n">queue</span>
@@ -834,29 +891,27 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">at_exit</span> <span class="o">=</span> <span class="n">at_exit</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">skip</span> <span class="o">=</span> <span class="n">skip</span>
         <span class="k">if</span> <span class="n">at_exit</span><span class="p">:</span>
-            <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">cond</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">cond</span><span class="o">.</span><span class="n">wait_for</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">i_am_at_the_front</span><span class="p">)</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">dump</span><span class="p">()</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="o">.</span><span class="n">popleft</span><span class="p">()</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">cond</span><span class="o">.</span><span class="n">notify_all</span><span class="p">()</span>
+            <span class="n">timeout</span> <span class="o">=</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"XONSH_HISTORY_EXIT_FLUSH_TIMEOUT"</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">)</span>
+            <span class="k">with</span> <span class="n">_xhj_queue_turn</span><span class="p">(</span><span class="n">queue</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="n">cond</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">)</span> <span class="k">as</span> <span class="n">my_turn</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">my_turn</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">dump</span><span class="p">()</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">"history: dropping </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span><span class="si">}</span><span class="s2"> command(s): an "</span>
+                        <span class="sa">f</span><span class="s2">"earlier history write did not finish within </span><span class="si">{</span><span class="n">timeout</span><span class="si">}</span><span class="s2">s "</span>
+                        <span class="s2">"(see $XONSH_HISTORY_EXIT_FLUSH_TIMEOUT)."</span><span class="p">,</span>
+                        <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">,</span>
+                    <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
 
 <div class="viewcode-block" id="JsonHistoryFlusher.run">
 <a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.history.json.html#xonsh.history.json.JsonHistoryFlusher.run">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">cond</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">cond</span><span class="o">.</span><span class="n">wait_for</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">i_am_at_the_front</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">dump</span><span class="p">()</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="o">.</span><span class="n">popleft</span><span class="p">()</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">cond</span><span class="o">.</span><span class="n">notify_all</span><span class="p">()</span></div>
-
-
-<div class="viewcode-block" id="JsonHistoryFlusher.i_am_at_the_front">
-<a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.history.json.html#xonsh.history.json.JsonHistoryFlusher.i_am_at_the_front">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">i_am_at_the_front</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">"""Tests if the flusher is at the front of the queue."""</span>
-        <span class="k">return</span> <span class="bp">self</span> <span class="ow">is</span> <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></div>
+        <span class="c1"># No timeout here: a background flusher may wait as long as it takes,</span>
+        <span class="c1"># and being a daemon thread it cannot hold up shutdown.</span>
+        <span class="k">with</span> <span class="n">_xhj_queue_turn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cond</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">dump</span><span class="p">()</span></div>
 
 
 <div class="viewcode-block" id="JsonHistoryFlusher.dump">
@@ -903,6 +958,8 @@
                 <span class="n">xlj</span><span class="o">.</span><span class="n">ljdump</span><span class="p">(</span><span class="n">hist</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">err</span><span class="p">:</span>
             <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"history: failed to write </span><span class="si">{</span><span class="n">tmpname</span><span class="si">!r}</span><span class="s2">: </span><span class="si">{</span><span class="n">err</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+            <span class="k">with</span> <span class="n">contextlib</span><span class="o">.</span><span class="n">suppress</span><span class="p">(</span><span class="ne">OSError</span><span class="p">):</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="n">tmpname</span><span class="p">)</span>
             <span class="k">return</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">os</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tmpname</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">)</span>
@@ -910,7 +967,9 @@
             <span class="nb">print</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">"history: failed to replace </span><span class="si">{</span><span class="n">tmpname</span><span class="si">!r}</span><span class="s2"> -&gt; </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="si">!r}</span><span class="s2">: </span><span class="si">{</span><span class="n">err</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
                 <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">,</span>
-            <span class="p">)</span></div>
+            <span class="p">)</span>
+            <span class="k">with</span> <span class="n">contextlib</span><span class="o">.</span><span class="n">suppress</span><span class="p">(</span><span class="ne">OSError</span><span class="p">):</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="n">tmpname</span><span class="p">)</span></div>
 </div>
 
 
@@ -961,22 +1020,13 @@
         <span class="c1"># now we know we have to go into the file</span>
         <span class="n">queue</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hist</span><span class="o">.</span><span class="n">_queue</span>
         <span class="n">queue</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">hist</span><span class="o">.</span><span class="n">_cond</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">hist</span><span class="o">.</span><span class="n">_cond</span><span class="o">.</span><span class="n">wait_for</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">i_am_at_the_front</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">_xhj_queue_turn</span><span class="p">(</span><span class="n">queue</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">hist</span><span class="o">.</span><span class="n">_cond</span><span class="p">):</span>
             <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hist</span><span class="o">.</span><span class="n">filename</span><span class="p">,</span> <span class="n">newline</span><span class="o">=</span><span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
                 <span class="n">lj</span> <span class="o">=</span> <span class="n">xlj</span><span class="o">.</span><span class="n">LazyJSON</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">reopen</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
                 <span class="n">rtn</span> <span class="o">=</span> <span class="n">lj</span><span class="p">[</span><span class="s2">"cmds"</span><span class="p">][</span><span class="n">key</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">field</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">default</span><span class="p">)</span>
                 <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">rtn</span><span class="p">,</span> <span class="n">xlj</span><span class="o">.</span><span class="n">LJNode</span><span class="p">):</span>
                     <span class="n">rtn</span> <span class="o">=</span> <span class="n">rtn</span><span class="o">.</span><span class="n">load</span><span class="p">()</span>
-            <span class="n">queue</span><span class="o">.</span><span class="n">popleft</span><span class="p">()</span>
-        <span class="k">return</span> <span class="n">rtn</span>
-
-<div class="viewcode-block" id="JsonCommandField.i_am_at_the_front">
-<a class="viewcode-back" href="../../../lib/_autosummary/cmd/xonsh.history.json.html#xonsh.history.json.JsonCommandField.i_am_at_the_front">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">i_am_at_the_front</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">"""Tests if the command field is at the front of the queue."""</span>
-        <span class="k">return</span> <span class="bp">self</span> <span class="ow">is</span> <span class="bp">self</span><span class="o">.</span><span class="n">hist</span><span class="o">.</span><span class="n">_queue</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></div>
-</div>
+        <span class="k">return</span> <span class="n">rtn</span></div>
 
 
 
