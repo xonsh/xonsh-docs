@@ -651,6 +651,13 @@
             <span class="k">return</span> <span class="p">[</span><span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">,</span> <span class="s2">"-m"</span><span class="p">,</span> <span class="s2">"xonsh"</span><span class="p">,</span> <span class="n">fname</span><span class="p">]</span> <span class="o">+</span> <span class="n">args</span>
         <span class="c1"># 3) Other PATHEXT extensions — delegate to OS file associations</span>
         <span class="k">if</span> <span class="n">ext_upper</span> <span class="ow">in</span> <span class="p">{</span><span class="n">e</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">XSH</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"PATHEXT"</span><span class="p">,</span> <span class="p">[])}:</span>
+            <span class="c1"># CreateProcess runs .bat/.cmd itself and wraps the whole command</span>
+            <span class="c1"># line in quotes for cmd.exe. "cmd /c" would strip only the first</span>
+            <span class="c1"># and last quote, splitting a path with spaces when an argument</span>
+            <span class="c1"># is quoted too. Windows adds those quotes only when no</span>
+            <span class="c1"># application name is given, so Popen must not get executable=.</span>
+            <span class="k">if</span> <span class="n">ext_upper</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">".BAT"</span><span class="p">,</span> <span class="s2">".CMD"</span><span class="p">}:</span>
+                <span class="k">return</span> <span class="p">[</span><span class="n">fname</span><span class="p">]</span> <span class="o">+</span> <span class="n">args</span>
             <span class="k">return</span> <span class="p">[</span><span class="s2">"cmd"</span><span class="p">,</span> <span class="s2">"/c"</span><span class="p">,</span> <span class="n">fname</span><span class="p">]</span> <span class="o">+</span> <span class="n">args</span>
         <span class="c1"># 4) Try shebang for any other text file</span>
         <span class="n">shebang</span> <span class="o">=</span> <span class="n">parse_shebang_from_file</span><span class="p">(</span><span class="n">fname</span><span class="p">)</span>
@@ -1537,9 +1544,10 @@
             <span class="n">scriptcmd</span> <span class="o">=</span> <span class="n">get_script_subproc_command</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
             <span class="k">if</span> <span class="n">scriptcmd</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span> <span class="o">=</span> <span class="n">scriptcmd</span>
-                <span class="c1"># Update binary_loc to the interpreter, not the script.</span>
-                <span class="c1"># Otherwise _run_binary() (PR #4077) would launch the script</span>
-                <span class="c1"># directly via CreateProcess, causing WinError 193 on Windows.</span>
+                <span class="c1"># Update binary_loc to scriptcmd[0]: the interpreter, or the</span>
+                <span class="c1"># script itself for .bat/.cmd, which CreateProcess can launch.</span>
+                <span class="c1"># Launching e.g. a .xsh directly via _run_binary() (PR #4077)</span>
+                <span class="c1"># would cause WinError 193 on Windows.</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">binary_loc</span> <span class="o">=</span> <span class="n">locate_executable</span><span class="p">(</span><span class="n">scriptcmd</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
             <span class="k">elif</span> <span class="n">xp</span><span class="o">.</span><span class="n">ON_WINDOWS</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_is_binary</span><span class="p">(</span><span class="n">fname</span><span class="p">):</span>
                 <span class="c1"># get_script_subproc_command returned None for a non-binary</span>
